@@ -330,10 +330,68 @@ async function initRepertoireTabs(username) {
 }
 
 function loadColorAnalytics(username, color, op) {
+    loadDecisiveHistoryChart(username, color, op);
     loadRatingDiff(username, color, op);
     loadGameLength(username, color, op);
     loadTimeRemaining(username, color, op);
     loadClockAdvantage(username, color, op);
+}
+
+
+async function loadDecisiveHistoryChart(username, color, op) {
+    const chartKey = "loadDecisiveHistory";
+    try {
+        const data = await fetchJSON(`/api/players/${username}/analytics/decisive-history${colorParams(color, op)}`);
+        if (charts[chartKey]) charts[chartKey].destroy();
+
+        charts[chartKey] = new Chart(document.getElementById("decisive-history-chart").getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: data.map(d => d.week),
+                datasets: [
+                    {
+                        label: 'Decisive Win Rate %',
+                        data: data.map(d => d.win_rate_no_draws),
+                        borderColor: '#818cf8',
+                        backgroundColor: 'rgba(129, 140, 248, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Draw Rate %',
+                        data: data.map(d => d.draw_rate),
+                        borderColor: '#eab308',
+                        backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                        borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
+                    tooltip: {
+                        callbacks: {
+                            afterBody: (items) => {
+                                const d = data[items[0].dataIndex];
+                                return `Week: ${d.week}\nTotal Games: ${d.total_games}\nWins: ${d.wins}\nLosses: ${d.losses}\nDraws: ${d.draws}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: { min: 0, max: 100, grid: { color: 'rgba(42, 53, 72, 0.5)' }, ticks: { callback: v => v + '%' } }
+                }
+            }
+        });
+    } catch (e) { console.error('Decisive history chart error:', e); }
 }
 
 function colorParams(color, op) {

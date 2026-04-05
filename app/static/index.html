@@ -128,6 +128,18 @@
 
             <!-- ═══ Consolidated Analytics ═══ -->
             <div id="analytics-section" class="perspective-section">
+                <!-- Game Length -->
+                <div class="analytic-row">
+                    <h4 class="chart-title">📏 Game Length vs Win Rate</h4>
+                    <div class="chart-container"><canvas id="game-length-chart"></canvas></div>
+                </div>
+
+                <!-- Clock Advantage -->
+                <div class="analytic-row">
+                    <h4 class="chart-title">⏰ Clock Advantage</h4>
+                    <div class="chart-container"><canvas id="clock-chart"></canvas></div>
+                </div>
+
                 <!-- Rating Diff -->
                 <div class="analytic-row">
                     <h4 class="chart-title">📊 Win Rate vs Opponent Rating</h4>
@@ -137,22 +149,17 @@
                     </div>
                 </div>
 
-                <!-- Game Length -->
-                <div class="analytic-row">
-                    <h4 class="chart-title">📏 Game Length vs Win Rate</h4>
-                    <div class="chart-container"><canvas id="game-length-chart"></canvas></div>
-                </div>
-
                 <!-- Time Remaining -->
                 <div class="analytic-row">
                     <h4 class="chart-title">⏱ Final Time Remaining vs Result</h4>
                     <div class="chart-container"><canvas id="time-remaining-chart"></canvas></div>
                 </div>
 
-                <!-- Clock Advantage -->
+                <!-- Decisive History -->
                 <div class="analytic-row" style="margin-bottom: 2rem;">
-                    <h4 class="chart-title">⏰ Clock Advantage</h4>
-                    <div class="chart-container"><canvas id="clock-chart"></canvas></div>
+                    <h4 class="chart-title">📈 Win & Draw Rate Over Time</h4>
+                    <div class="chart-container" style="height: 300px;"><canvas id="decisive-history-chart"></canvas>
+                    </div>
                 </div>
             </div>
         </section>

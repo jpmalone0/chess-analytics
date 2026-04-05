@@ -454,6 +454,55 @@ def analyze_clock_advantage(
     return result
 
 
+# ── Decisive & Draw Rate History ─────────────────────────
+
+def decisive_rate_history(
+    db: Session, player_id: int,
+    time_class: str = None,
+    start_date: date = None,
+    end_date: date = None,
+    player_color: str = None,
+    opening_names: str = None,
+):
+    """Get decisive win rate and draw rate bucketed by week."""
+    games = _player_games_query(db, player_id, time_class, start_date, end_date, player_color, opening_names).all()
+
+    weekly = {}
+    for g in games:
+        if not g.date_played:
+            continue
+            
+        w = g.date_played.strftime("%Y-W%W")
+        if w not in weekly:
+            weekly[w] = {"wins": 0, "losses": 0, "draws": 0}
+            
+        outcome = _game_outcome(g, player_id)
+        if outcome == "win":
+            weekly[w]["wins"] += 1
+        elif outcome == "loss":
+            weekly[w]["losses"] += 1
+        else:
+            weekly[w]["draws"] += 1
+
+    results = []
+    # Sort weeks chronologically
+    for w in sorted(weekly.keys()):
+        b = weekly[w]
+        total = b["wins"] + b["losses"] + b["draws"]
+        decisive = b["wins"] + b["losses"]
+        results.append({
+            "week": w,
+            "total_games": total,
+            "wins": b["wins"],
+            "losses": b["losses"],
+            "draws": b["draws"],
+            "win_rate_no_draws": round(b["wins"] / decisive * 100, 1) if decisive else 0,
+            "draw_rate": round(b["draws"] / total * 100, 1) if total else 0,
+        })
+
+    return results
+
+
 # ── Elo History ──────────────────────────────────────────
 
 def elo_history(
