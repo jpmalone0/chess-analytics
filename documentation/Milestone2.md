@@ -1,40 +1,6 @@
 # Final Project Milestone 2
 ## ER Diagram
-```mermaid
-erDiagram
-    PLAYER ||--o{ GAME : "plays as white"
-    PLAYER ||--o{ GAME : "plays as black"
-    GAME ||--o{ MOVE : "contains"
-
-    PLAYER {
-        int player_id
-        string username
-        string platform
-    }
-    GAME {
-        int game_id
-        int white_player_id
-        int black_player_id
-        string result
-        date date_played
-        string time_control
-        int white_elo
-        int black_elo
-        string eco
-        string opening_name
-        int total_moves
-    }
-    MOVE {
-        int move_id
-        int game_id
-        int ply
-        int move_number
-        string color
-        string move_san
-        float clock_seconds
-        float time_spent_seconds
-    }
-```
+<img src="diagram.png" width="200">
 
 ## Conceptual Schema
 ### Entities
@@ -133,6 +99,16 @@ CREATE INDEX IF NOT EXISTS idx_games_date          ON games(date_played);
 CREATE INDEX IF NOT EXISTS idx_games_time_class    ON games(time_class);
 CREATE INDEX IF NOT EXISTS idx_moves_game_ply      ON moves(game_id, ply);
 CREATE INDEX IF NOT EXISTS idx_moves_game_color    ON moves(game_id, color);
+
+INSERT INTO players (username, platform) 
+VALUES ('Hikaru', 'chess.com');
+
+INSERT INTO games (white_player_id, black_player_id, result, date_played, time_control, time_class, total_moves)
+VALUES (1, 2, '1-0', '2026-04-07', '600', 'rapid', 42);
+
+UPDATE games 
+SET result = '1/2-1/2' 
+WHERE game_id = 1;
 ```
 
 ## Acknowledgments
