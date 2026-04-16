@@ -7,25 +7,24 @@ analyzed (reviewed) by the player — roughly 24% of games
 for this account.
 """
 
-import sys
-import os
-import time
-import requests
 import argparse
+import os
+import sys
+from typing import Optional
+
+import requests  # type: ignore[import-untyped]
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import text
 from app.database import SessionLocal, init_db
 from app.models import Game
-
 
 HEADERS = {
     "User-Agent": "MyChessStyle/1.0 (contact: jpmalone0@gmail.com)"
 }
 
 
-def fetch_accuracies(username: str, start_date: str = None, end_date: str = None):
+def fetch_accuracies(username: str, start_date: Optional[str] = None, end_date: Optional[str] = None):
     """Pull accuracy data from the chess.com JSON API and update the games table."""
     init_db()
     db = SessionLocal()

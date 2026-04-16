@@ -11,12 +11,13 @@ Clock computation:
   First move's time_spent = initial_clock - clock_after_first_move.
 """
 
-import re
-import os
-import chess.pgn
 import io
+import os
+import re
 from datetime import datetime
 from typing import Generator
+
+import chess.pgn
 
 
 def _parse_clock(comment: str) -> float | None:
@@ -30,7 +31,7 @@ def _parse_clock(comment: str) -> float | None:
 
 def _parse_time_control(tc_str: str) -> float | None:
     """Parse time control string to get base time in seconds.
-    
+
     Examples: '180' -> 180, '600+2' -> 600, '1/259200' -> daily
     """
     if not tc_str:
@@ -74,7 +75,7 @@ def _extract_opening_name(eco_url: str | None) -> str | None:
 def parse_pgn_file(filepath: str) -> Generator[tuple[dict, list[dict]], None, None]:
     """
     Parse a single PGN file and yield (game_dict, moves_list) tuples.
-    
+
     Handles multi-game PGN files (chess.com monthly archives).
     """
     with open(filepath, 'r', errors='replace') as f:

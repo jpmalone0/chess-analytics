@@ -6,14 +6,20 @@ No local PGN files needed; works entirely via HTTP + in-memory parsing.
 """
 
 import io
-import re
-import httpx
-import chess.pgn
 from datetime import date, datetime
+
+import chess.pgn
+import httpx
 from sqlalchemy.orm import Session
 
-from app.models import Player, Game, Move
-from etl.parse_pgn import _parse_clock, _parse_time_control, _classify_time_class, _extract_opening_name, _safe_int
+from app.models import Game, Move, Player
+from etl.parse_pgn import (
+    _classify_time_class,
+    _extract_opening_name,
+    _parse_clock,
+    _parse_time_control,
+    _safe_int,
+)
 
 
 def _get_or_create_player(db: Session, username: str) -> Player:
@@ -188,7 +194,7 @@ def sync_player(
         archive_data = resp.json()
         games_in_month = archive_data.get("games", [])
         urls = [g.get("url") for g in games_in_month if g.get("url")]
-        
+
         # Bulk DB check for all games in the month
         existing_urls_tuple = db.query(Game.chess_com_url).filter(Game.chess_com_url.in_(urls)).all()
         existing_urls = {r[0] for r in existing_urls_tuple}
@@ -207,7 +213,7 @@ def sync_player(
             if url and url in existing_urls:
                 total_skipped += 1
                 continue
-            
+
             pgn_text = api_game.get("pgn")
             if not pgn_text:
                 continue

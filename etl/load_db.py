@@ -4,16 +4,17 @@ Load parsed PGN data into the database.
 Idempotent: skips games that already exist (by chess_com_url).
 """
 
-import sys
-import os
 import argparse
+import os
+import sys
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy.orm import Session
+
 from app.database import SessionLocal, init_db
-from app.models import Player, Game, Move
+from app.models import Game, Move, Player
 from etl.parse_pgn import parse_all_pgns
 
 
@@ -39,9 +40,6 @@ def load_games(pgn_directory: str, batch_size: int = 500):
 
         print(f"Loading games from: {pgn_directory}")
         print()
-
-        batch_games = []
-        batch_moves = []
 
         for game_dict, moves_list in parse_all_pgns(pgn_directory):
             # Skip if already loaded
@@ -101,14 +99,14 @@ def load_games(pgn_directory: str, batch_size: int = 500):
         # Final commit
         db.commit()
         print()
-        print(f"Done!")
+        print("Done!")
         print(f"  Games loaded:  {total_games}")
         print(f"  Games skipped: {skipped} (already in DB)")
         print(f"  Moves loaded:  {total_moves}")
 
         # Print table counts
         print()
-        print(f"  Table counts:")
+        print("  Table counts:")
         print(f"    players:    {db.query(Player).count()}")
         print(f"    games:      {db.query(Game).count()}")
         print(f"    moves:      {db.query(Move).count()}")
