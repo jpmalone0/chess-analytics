@@ -9,6 +9,7 @@ let charts = {};
 let gamesPage = 0;
 const GAMES_PER_PAGE = 10;
 const requestCache = {};
+let analyticsLoadId = 0;
 
 // Chart.js defaults
 Chart.defaults.color = '#8b9ab8';
@@ -75,10 +76,11 @@ function hideSyncBanner() {
 // ═══════════════════════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Default to last 6 months
-    const d = new Date();
-    d.setMonth(d.getMonth() - 6);
-    document.getElementById('start-date').value = d.toISOString().split('T')[0];
+    // Default to today (local date)
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    document.getElementById('start-date').value = today;
+    document.getElementById('end-date').value = today;
 
     document.querySelectorAll('.tc-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -91,6 +93,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('username-input').addEventListener('keydown', e => {
         if (e.key === 'Enter') loadPlayer();
+    });
+
+    // Register main perspective tab listeners once (static DOM elements)
+    document.querySelectorAll('#main-perspective-tabs .tab-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('#main-perspective-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+            const targetId = e.target.dataset.target;
+            document.getElementById('white-tabs-container').classList.add('hidden');
+            document.getElementById('black-tabs-container').classList.add('hidden');
+            if (targetId !== 'global') {
+                document.getElementById(targetId + '-tabs-container').classList.remove('hidden');
+                const activeSub = document.querySelector(`#${targetId}-tabs .tab-btn.active`);
+                const op = activeSub ? activeSub.dataset.op : "";
+                loadColorAnalytics(currentUsername, targetId, op);
+            } else {
+                loadColorAnalytics(currentUsername, 'global', "");
+            }
+        });
     });
 });
 
@@ -140,6 +161,12 @@ async function loadPlayer() {
     gamesPage = 0;
     document.querySelectorAll('.tc-btn').forEach(b => b.classList.remove('active'));
     document.querySelector('.tc-btn[data-tc="rapid"]').classList.add('active');
+
+    // Reset perspective tabs to Overall so initRepertoireTabs loads global data
+    document.querySelectorAll('#main-perspective-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector('#main-perspective-tabs .tab-btn[data-target="global"]').classList.add('active');
+    document.getElementById('white-tabs-container').classList.add('hidden');
+    document.getElementById('black-tabs-container').classList.add('hidden');
 
     await ensureSynced(username);
     await refreshAll();
@@ -270,27 +297,19 @@ async function loadEloChart(username) {
 
 async function initRepertoireTabs(username) {
     try {
-        // Main perspective tabs
-        document.querySelectorAll('#main-perspective-tabs .tab-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                document.querySelectorAll('#main-perspective-tabs .tab-btn').forEach(b => b.classList.remove('active'));
-                e.target.classList.add('active');
-                const targetId = e.target.dataset.target;
-                document.getElementById('white-tabs-container').classList.add('hidden');
-                document.getElementById('black-tabs-container').classList.add('hidden');
-                if (targetId !== 'global') {
-                    document.getElementById(targetId + '-tabs-container').classList.remove('hidden');
-                    const activeSub = document.querySelector(`#${targetId}-tabs .tab-btn.active`);
-                    const op = activeSub ? activeSub.dataset.op : "";
-                    loadColorAnalytics(currentUsername, targetId, op);
-                } else {
-                    loadColorAnalytics(currentUsername, 'global', "");
-                }
-            });
-        });
-
-        // Load global analytics
-        loadColorAnalytics(username, 'global', "");
+        // Load analytics for whichever main tab is currently active
+        const activeMainTab = document.querySelector('#main-perspective-tabs .tab-btn.active');
+        const activeTarget = activeMainTab ? activeMainTab.dataset.target : 'global';
+        if (activeTarget !== 'global') {
+            document.getElementById('white-tabs-container').classList.add('hidden');
+            document.getElementById('black-tabs-container').classList.add('hidden');
+            document.getElementById(activeTarget + '-tabs-container').classList.remove('hidden');
+            const activeSub = document.querySelector(`#${activeTarget}-tabs .tab-btn.active`);
+            const op = activeSub ? activeSub.dataset.op : "";
+            loadColorAnalytics(username, activeTarget, op);
+        } else {
+            loadColorAnalytics(username, 'global', "");
+        }
 
         const topOpenings = await fetchJSON(`/api/players/${username}/analytics/top-openings${buildFilterParams()}`);
         
@@ -314,25 +333,25 @@ async function initRepertoireTabs(username) {
                     loadColorAnalytics(currentUsername, color, op);
                 });
             });
-            
-            loadColorAnalytics(currentUsername, color, "");
         }
     } catch (e) { console.error('Error loading top openings', e); }
 }
 
 function loadColorAnalytics(username, color, op) {
-    loadDecisiveHistoryChart(username, color, op);
-    loadRatingDiff(username, color, op);
-    loadGameLength(username, color, op);
-    loadTimeRemaining(username, color, op);
-    loadClockAdvantage(username, color, op);
+    const loadId = ++analyticsLoadId;
+    loadDecisiveHistoryChart(username, color, op, loadId);
+    loadRatingDiff(username, color, op, loadId);
+    loadGameLength(username, color, op, loadId);
+    loadTimeRemaining(username, color, op, loadId);
+    loadClockAdvantage(username, color, op, loadId);
 }
 
 
-async function loadDecisiveHistoryChart(username, color, op) {
+async function loadDecisiveHistoryChart(username, color, op, loadId) {
     const chartKey = "loadDecisiveHistory";
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/decisive-history${colorParams(color, op)}`);
+        if (loadId !== analyticsLoadId) return;
         if (charts[chartKey]) charts[chartKey].destroy();
 
         charts[chartKey] = new Chart(document.getElementById("decisive-history-chart").getContext('2d'), {
@@ -396,10 +415,11 @@ function colorParams(color, op) {
 // Feature 1: Rating Differential (10pt buckets within ±50)
 // ═══════════════════════════════════════════════════════════
 
-async function loadRatingDiff(username, color, op) {
+async function loadRatingDiff(username, color, op, loadId) {
     const chartKey = "loadRatingDiff";
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/rating-diff${colorParams(color, op)}`);
+        if (loadId !== analyticsLoadId) return;
         if (charts[chartKey]) charts[chartKey].destroy();
 
         const buckets = data.buckets;
@@ -488,10 +508,11 @@ async function loadRatingDiff(username, color, op) {
 // Feature 2: Game Length vs Win Rate
 // ═══════════════════════════════════════════════════════════
 
-async function loadGameLength(username, color, op) {
+async function loadGameLength(username, color, op, loadId) {
     const chartKey = "loadGameLength";
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/game-length${colorParams(color, op)}`);
+        if (loadId !== analyticsLoadId) return;
         if (charts[chartKey]) charts[chartKey].destroy();
 
         charts[chartKey] = new Chart(document.getElementById("game-length-chart").getContext('2d'), {
@@ -546,10 +567,11 @@ async function loadGameLength(username, color, op) {
 // Feature 3: Final Time Remaining vs Result (inverted x-axis)
 // ═══════════════════════════════════════════════════════════
 
-async function loadTimeRemaining(username, color, op) {
+async function loadTimeRemaining(username, color, op, loadId) {
     const chartKey = "loadTimeRemaining";
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/time-remaining${colorParams(color, op)}`);
+        if (loadId !== analyticsLoadId) return;
         if (charts[chartKey]) charts[chartKey].destroy();
 
         charts[chartKey] = new Chart(document.getElementById("time-remaining-chart").getContext('2d'), {
@@ -604,10 +626,11 @@ async function loadTimeRemaining(username, color, op) {
 // Clock Advantage (with key/legend)
 // ═══════════════════════════════════════════════════════════
 
-async function loadClockAdvantage(username, color, op) {
+async function loadClockAdvantage(username, color, op, loadId) {
     const chartKey = "loadClockAdvantage";
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/clock-advantage${colorParams(color, op)}`);
+        if (loadId !== analyticsLoadId) return;
         if (charts[chartKey]) charts[chartKey].destroy();
 
         // Friendly labels with second thresholds
