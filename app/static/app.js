@@ -89,15 +89,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    const handleDateChange = async () => {
-        if (currentUsername) {
-            await ensureSynced(currentUsername);
-            await refreshAll();
-        }
-    };
-
-    document.getElementById('btn-update-dates').addEventListener('click', handleDateChange);
-
     document.getElementById('username-input').addEventListener('keydown', e => {
         if (e.key === 'Enter') loadPlayer();
     });
