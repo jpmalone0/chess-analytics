@@ -2,12 +2,11 @@
 SQLAlchemy ORM models — mirrors db/schema.sql.
 """
 
-from datetime import datetime, date
-from sqlalchemy import (
-    Column, Integer, String, Float, Date, DateTime, Text,
-    ForeignKey, UniqueConstraint
-)
+from datetime import datetime
+
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship
+
 from app.database import Base
 
 

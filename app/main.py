@@ -4,18 +4,17 @@ Chess Analytics — FastAPI Web Application
 Run with: uv run uvicorn app.main:app --reload
 """
 
-from fastapi import FastAPI, Depends, HTTPException, Query
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
-from typing import Optional
-from datetime import date
-
-from app.database import get_db, init_db
-from app.models import Player, Game
-from app import crud, schemas
-
 import os
+from datetime import date
+from typing import Optional
+
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
+
+from app import crud, schemas
+from app.database import get_db, init_db
 
 app = FastAPI(title="Chess Analytics", version="1.0.0")
 

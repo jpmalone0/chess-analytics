@@ -1,0 +1,25 @@
+{
+  "name": "chess-analytics",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "lint": "eslint app/static/app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jpmalone0/chess-analytics.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/jpmalone0/chess-analytics/issues"
+  },
+  "homepage": "https://github.com/jpmalone0/chess-analytics#readme",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.0"
+  }
+}

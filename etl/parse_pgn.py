@@ -118,7 +118,7 @@ def parse_pgn_file(filepath: str) -> Generator[tuple[dict, list[dict]], None, No
 
         # Walk the move tree and extract moves + clocks
         moves_list = []
-        node = game
+        node: chess.pgn.GameNode = game
         ply = 0
         white_prev_clock = _parse_time_control(tc)
         black_prev_clock = _parse_time_control(tc)

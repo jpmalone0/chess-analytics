@@ -91,8 +91,18 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    document.getElementById('username-input').addEventListener('keydown', e => {
-        if (e.key === 'Enter') loadPlayer();
+    const input = document.getElementById('username-input');
+
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { hideRecentDropdown(); loadPlayer(); }
+        if (e.key === 'Escape') hideRecentDropdown();
+    });
+
+    input.addEventListener('focus', () => renderRecentDropdown());
+    input.addEventListener('input', () => renderRecentDropdown());
+
+    document.addEventListener('click', e => {
+        if (!e.target.closest('.search-wrap')) hideRecentDropdown();
     });
 
     // Register main perspective tab listeners once (static DOM elements)
@@ -114,6 +124,46 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 });
+
+
+// ═══════════════════════════════════════════════════════════
+// Recent Searches
+// ═══════════════════════════════════════════════════════════
+
+const RECENT_KEY = 'chess_recent_searches';
+const RECENT_MAX = 8;
+
+function getRecentSearches() {
+    try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; }
+    catch { return []; }
+}
+
+function saveRecentSearch(username) {
+    const recent = getRecentSearches().filter(u => u !== username);
+    recent.unshift(username);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recent.slice(0, RECENT_MAX)));
+}
+
+function renderRecentDropdown() {
+    const input = document.getElementById('username-input');
+    const dropdown = document.getElementById('recent-searches');
+    const query = input.value.trim().toLowerCase();
+    const recent = getRecentSearches().filter(u => !query || u.includes(query));
+    if (recent.length === 0) { hideRecentDropdown(); return; }
+    dropdown.innerHTML = recent.map(u => `<li>${u}</li>`).join('');
+    dropdown.querySelectorAll('li').forEach(li => {
+        li.addEventListener('click', () => {
+            input.value = li.textContent;
+            hideRecentDropdown();
+            loadPlayer();
+        });
+    });
+    dropdown.classList.remove('hidden');
+}
+
+function hideRecentDropdown() {
+    document.getElementById('recent-searches').classList.add('hidden');
+}
 
 
 // ═══════════════════════════════════════════════════════════
@@ -155,6 +205,7 @@ async function loadPlayer() {
     const input = document.getElementById('username-input');
     const username = input.value.trim().toLowerCase();
     if (!username) return;
+    saveRecentSearch(username);
 
     currentUsername = username;
     currentTimeClass = 'rapid';

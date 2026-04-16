@@ -24,7 +24,10 @@
                 <h1>Chess Analytics</h1>
             </div>
             <div class="player-search">
-                <input type="text" id="username-input" placeholder="Enter chess.com username..." value="ballasack6">
+                <div class="search-wrap">
+                    <input type="text" id="username-input" placeholder="Enter chess.com username..." value="ballasack6" autocomplete="off">
+                    <ul id="recent-searches" class="recent-dropdown hidden"></ul>
+                </div>
                 <button id="load-btn" onclick="loadPlayer()">Analyze</button>
             </div>
         </div>

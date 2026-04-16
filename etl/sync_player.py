@@ -96,7 +96,7 @@ def _parse_pgn_text(pgn_text: str):
         }
 
         moves_list = []
-        node = game
+        node: chess.pgn.GameNode = game
         ply = 0
         white_prev_clock = _parse_time_control(tc)
         black_prev_clock = _parse_time_control(tc)

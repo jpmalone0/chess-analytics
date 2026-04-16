@@ -2,11 +2,13 @@
 Database query functions for CRUD operations and analytics.
 """
 
-from sqlalchemy.orm import Session
-from sqlalchemy import func, case, and_, or_, text
-from app.models import Player, Game, Move
-from datetime import datetime, date
+from datetime import date
+from typing import Any, Optional
 
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session
+
+from app.models import Game, Move, Player
 
 # ═══════════════════════════════════════════════════════════
 # Helpers
@@ -14,11 +16,11 @@ from datetime import datetime, date
 
 def _player_games_query(
     db: Session, player_id: int,
-    time_class: str = None,
-    start_date: date = None,
-    end_date: date = None,
-    player_color: str = None,
-    opening_names: str = None,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
 ):
     """Base query: all games for a player, filtered by time class, date range, color, and openings."""
     if player_color == "white":
@@ -58,7 +60,7 @@ def _game_outcome(game, player_id: int) -> str:
 
 # ── Players ───────────────────────────────────────────────
 
-def get_players(db: Session, search: str = None, limit: int = 50):
+def get_players(db: Session, search: Optional[str] = None, limit: int = 50):
     q = db.query(Player)
     if search:
         q = q.filter(Player.username.ilike(f"%{search}%"))
@@ -73,9 +75,9 @@ def get_player(db: Session, username: str):
 
 def get_games_for_player(
     db: Session, player_id: int,
-    time_class: str = None,
-    start_date: date = None,
-    end_date: date = None,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
     limit: int = 50, offset: int = 0,
 ):
     q = _player_games_query(db, player_id, time_class, start_date, end_date)
@@ -105,9 +107,9 @@ def delete_game(db: Session, game_id: int) -> bool:
 
 def get_player_stats(
     db: Session, player_id: int,
-    time_class: str = None,
-    start_date: date = None,
-    end_date: date = None,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
 ):
     """Overall stats summary for a player, filtered by date range."""
     games = _player_games_query(db, player_id, time_class, start_date, end_date).all()
@@ -116,9 +118,12 @@ def get_player_stats(
     wins = losses = draws = 0
     for g in games:
         outcome = _game_outcome(g, player_id)
-        if outcome == "win": wins += 1
-        elif outcome == "loss": losses += 1
-        else: draws += 1
+        if outcome == "win":
+            wins += 1
+        elif outcome == "loss":
+            losses += 1
+        else:
+            draws += 1
 
     by_tc = {}
     for g in games:
@@ -127,9 +132,12 @@ def get_player_stats(
             by_tc[tc] = {"total": 0, "wins": 0, "losses": 0, "draws": 0}
         by_tc[tc]["total"] += 1
         outcome = _game_outcome(g, player_id)
-        if outcome == "win": by_tc[tc]["wins"] += 1
-        elif outcome == "loss": by_tc[tc]["losses"] += 1
-        else: by_tc[tc]["draws"] += 1
+        if outcome == "win":
+            by_tc[tc]["wins"] += 1
+        elif outcome == "loss":
+            by_tc[tc]["losses"] += 1
+        else:
+            by_tc[tc]["draws"] += 1
 
     return {
         "total_games": total,
@@ -145,11 +153,11 @@ def get_player_stats(
 
 def rating_differential(
     db: Session, player_id: int,
-    time_class: str = None,
-    start_date: date = None,
-    end_date: date = None,
-    player_color: str = None,
-    opening_names: str = None,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
 ):
     """
     Win rate bucketed by rating gap (player Elo - opponent Elo).
@@ -188,12 +196,15 @@ def rating_differential(
 
         for label, test in bucket_defs:
             if test(diff):
-                if outcome == "win": buckets[label]["wins"] += 1
-                elif outcome == "loss": buckets[label]["losses"] += 1
-                else: buckets[label]["draws"] += 1
+                if outcome == "win":
+                    buckets[label]["wins"] += 1
+                elif outcome == "loss":
+                    buckets[label]["losses"] += 1
+                else:
+                    buckets[label]["draws"] += 1
                 break
 
-    results = []
+    results: list[dict[str, Any]] = []
     for label, _ in bucket_defs:
         b = buckets[label]
         total = b["wins"] + b["losses"] + b["draws"]
@@ -242,11 +253,11 @@ def rating_differential(
 
 def game_length_vs_winrate(
     db: Session, player_id: int,
-    time_class: str = None,
-    start_date: date = None,
-    end_date: date = None,
-    player_color: str = None,
-    opening_names: str = None,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
 ):
     """
     Win rate bucketed by total moves (game length).
@@ -275,9 +286,12 @@ def game_length_vs_winrate(
         outcome = _game_outcome(g, player_id)
         for label, lo, hi in bucket_defs:
             if lo <= moves <= hi:
-                if outcome == "win": buckets[label]["wins"] += 1
-                elif outcome == "loss": buckets[label]["losses"] += 1
-                else: buckets[label]["draws"] += 1
+                if outcome == "win":
+                    buckets[label]["wins"] += 1
+                elif outcome == "loss":
+                    buckets[label]["losses"] += 1
+                else:
+                    buckets[label]["draws"] += 1
                 break
 
     results = []
@@ -303,11 +317,11 @@ def game_length_vs_winrate(
 
 def time_remaining_vs_result(
     db: Session, player_id: int,
-    time_class: str = None,
-    start_date: date = None,
-    end_date: date = None,
-    player_color: str = None,
-    opening_names: str = None,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
 ):
     """
     Result distribution based on the player's final clock reading.
@@ -347,9 +361,12 @@ def time_remaining_vs_result(
 
         for label, lo, hi in bucket_defs:
             if lo <= final_clock < hi:
-                if outcome == "win": buckets[label]["wins"] += 1
-                elif outcome == "loss": buckets[label]["losses"] += 1
-                else: buckets[label]["draws"] += 1
+                if outcome == "win":
+                    buckets[label]["wins"] += 1
+                elif outcome == "loss":
+                    buckets[label]["losses"] += 1
+                else:
+                    buckets[label]["draws"] += 1
                 break
 
     results = []
@@ -375,11 +392,11 @@ def time_remaining_vs_result(
 
 def analyze_clock_advantage(
     db: Session, player_id: int,
-    time_class: str = None,
-    start_date: date = None,
-    end_date: date = None,
-    player_color: str = None,
-    opening_names: str = None,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
 ):
     """
     For each game, compute the average clock advantage (player's time - opponent's time).
@@ -425,15 +442,23 @@ def analyze_clock_advantage(
         avg_advantage = sum(advantages) / len(advantages)
         outcome = _game_outcome(game, player_id)
 
-        if avg_advantage < -15: bucket = "far_behind"
-        elif avg_advantage < -5: bucket = "behind"
-        elif avg_advantage <= 5: bucket = "even"
-        elif avg_advantage <= 15: bucket = "ahead"
-        else: bucket = "far_ahead"
+        if avg_advantage < -15:
+            bucket = "far_behind"
+        elif avg_advantage < -5:
+            bucket = "behind"
+        elif avg_advantage <= 5:
+            bucket = "even"
+        elif avg_advantage <= 15:
+            bucket = "ahead"
+        else:
+            bucket = "far_ahead"
 
-        if outcome == "win": buckets[bucket]["wins"] += 1
-        elif outcome == "loss": buckets[bucket]["losses"] += 1
-        else: buckets[bucket]["draws"] += 1
+        if outcome == "win":
+            buckets[bucket]["wins"] += 1
+        elif outcome == "loss":
+            buckets[bucket]["losses"] += 1
+        else:
+            buckets[bucket]["draws"] += 1
 
     result = []
     for label in ["far_behind", "behind", "even", "ahead", "far_ahead"]:
@@ -458,11 +483,11 @@ def analyze_clock_advantage(
 
 def decisive_rate_history(
     db: Session, player_id: int,
-    time_class: str = None,
-    start_date: date = None,
-    end_date: date = None,
-    player_color: str = None,
-    opening_names: str = None,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
 ):
     """Get decisive win rate and draw rate bucketed by week."""
     games = _player_games_query(db, player_id, time_class, start_date, end_date, player_color, opening_names).all()
@@ -471,11 +496,11 @@ def decisive_rate_history(
     for g in games:
         if not g.date_played:
             continue
-            
+
         w = g.date_played.strftime("%Y-W%W")
         if w not in weekly:
             weekly[w] = {"wins": 0, "losses": 0, "draws": 0}
-            
+
         outcome = _game_outcome(g, player_id)
         if outcome == "win":
             weekly[w]["wins"] += 1
@@ -507,9 +532,9 @@ def decisive_rate_history(
 
 def elo_history(
     db: Session, player_id: int,
-    time_class: str = None,
-    start_date: date = None,
-    end_date: date = None,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
 ):
     """Get the player's Elo rating over time."""
     q = _player_games_query(db, player_id, time_class, start_date, end_date)
@@ -533,34 +558,33 @@ def elo_history(
 
 def get_top_openings(
     db: Session, player_id: int,
-    time_class: str = None,
-    start_date: date = None,
-    end_date: date = None,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
     limit: int = 5
 ):
     """Returns top N opening names for white and black separately."""
-    result = {"white": [], "black": []}
-    
+    result: dict[str, list[str]] = {"white": [], "black": []}
+
     for color in ["white", "black"]:
         q = db.query(Game.opening_name, func.count(Game.game_id).label("cnt"))
         if color == "white":
             q = q.filter(Game.white_player_id == player_id)
         else:
             q = q.filter(Game.black_player_id == player_id)
-            
+
         if time_class:
             q = q.filter(Game.time_class == time_class)
         if start_date:
             q = q.filter(Game.date_played >= start_date)
         if end_date:
             q = q.filter(Game.date_played <= end_date)
-            
+
         q = q.filter(Game.opening_name.isnot(None), Game.opening_name != "")\
              .group_by(Game.opening_name)\
              .order_by(func.count(Game.game_id).desc())\
              .limit(limit)
-             
-        result[color] = [row.opening_name for row in q.all()]
-        
-    return result
 
+        result[color] = [row.opening_name for row in q.all()]
+
+    return result
