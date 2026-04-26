@@ -284,6 +284,24 @@ async function syncPlayerFromChessCom(username) {
 }
 
 
+function syncEloYAxes() {
+    const c1 = charts['elo'];
+    const c2 = charts['elo-compare'];
+    if (!c1 || !c2) return;
+    const allY = [
+        ...c1.data.datasets.flatMap(ds => ds.data.map(p => p.y)),
+        ...c2.data.datasets.flatMap(ds => ds.data.map(p => p.y))
+    ].filter(v => v != null);
+    if (!allY.length) return;
+    const yMin = Math.floor(Math.min(...allY) / 20) * 20;
+    const yMax = Math.ceil(Math.max(...allY) / 20) * 20;
+    for (const c of [c1, c2]) {
+        c.options.scales.y.min = yMin;
+        c.options.scales.y.max = yMax;
+        c.update('none');
+    }
+}
+
 async function refreshAll() {
     Object.keys(requestCache).forEach(k => delete requestCache[k]);
 
@@ -299,8 +317,10 @@ async function refreshAll() {
     ];
     if (compareMode && currentCompareUsername) {
         promises.push(loadCompareStats(currentCompareUsername));
+        promises.push(loadEloChart(currentCompareUsername, '-compare'));
     }
     await Promise.all(promises);
+    if (compareMode && currentCompareUsername) syncEloYAxes();
 }
 
 
@@ -349,7 +369,8 @@ async function loadComparePlayer() {
     const op = activeSub?.dataset.op || '';
     loadColorAnalytics(currentUsername, color, op);
 
-    loadEloChart(username, '-compare');
+    await loadEloChart(username, '-compare');
+    syncEloYAxes();
     loadGames(username, '-compare');
 }
 
