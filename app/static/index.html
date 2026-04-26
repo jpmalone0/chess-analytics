@@ -25,10 +25,18 @@
             </div>
             <div class="player-search">
                 <div class="search-wrap">
-                    <input type="text" id="username-input" placeholder="Enter chess.com username..." value="ballasack6" autocomplete="off">
+                    <input type="text" id="player-search" placeholder="Enter chess.com username..." value="ballasack6" autocomplete="off">
                     <ul id="recent-searches" class="recent-dropdown hidden"></ul>
                 </div>
                 <button id="load-btn" onclick="loadPlayer()">Analyze</button>
+                <button class="compare-btn" id="compare-toggle-btn" onclick="toggleCompare()">Compare</button>
+                <div class="compare-search-wrap hidden" id="compare-search-wrap">
+                    <div class="search-wrap">
+                        <input type="text" id="compare-search" placeholder="Compare with..." autocomplete="off">
+                    </div>
+                    <button class="compare-btn active" onclick="loadComparePlayer()">Load</button>
+                    <button class="compare-exit-btn" onclick="exitCompareMode()" title="Exit compare">✕</button>
+                </div>
             </div>
         </div>
     </header>
@@ -73,26 +81,43 @@
                 <h2>Player Overview</h2>
                 <span class="date-range-label" id="date-range-label"></span>
             </div>
-            <div class="stats-grid">
-                <div class="stat-card" id="stat-total">
-                    <div class="stat-label">Total Games</div>
-                    <div class="stat-value" id="val-total">—</div>
+            <div class="compare-overview-row">
+                <div class="compare-overview-col">
+                    <div class="compare-user-label primary-col-label" id="primary-stat-label"></div>
+                    <div class="stats-grid">
+                        <div class="stat-card" id="stat-total">
+                            <div class="stat-label">Total Games</div>
+                            <div class="stat-value" id="val-total">—</div>
+                        </div>
+                        <div class="stat-card win" id="stat-wins">
+                            <div class="stat-label">Wins</div>
+                            <div class="stat-value" id="val-wins">—</div>
+                        </div>
+                        <div class="stat-card loss" id="stat-losses">
+                            <div class="stat-label">Losses</div>
+                            <div class="stat-value" id="val-losses">—</div>
+                        </div>
+                        <div class="stat-card draw" id="stat-draws">
+                            <div class="stat-label">Draws</div>
+                            <div class="stat-value" id="val-draws">—</div>
+                        </div>
+                        <div class="stat-card accent" id="stat-winrate">
+                            <div class="stat-label">Win Rate</div>
+                            <div class="stat-value" id="val-winrate">—</div>
+                        </div>
+                        <div class="stat-card accent" id="stat-decisive">
+                            <div class="stat-label">Decisive Win Rate</div>
+                            <div class="stat-value" id="val-decisive">—</div>
+                        </div>
+                        <div class="stat-card draw" id="stat-drawrate">
+                            <div class="stat-label">Draw Rate</div>
+                            <div class="stat-value" id="val-drawrate">—</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-card win" id="stat-wins">
-                    <div class="stat-label">Wins</div>
-                    <div class="stat-value" id="val-wins">—</div>
-                </div>
-                <div class="stat-card loss" id="stat-losses">
-                    <div class="stat-label">Losses</div>
-                    <div class="stat-value" id="val-losses">—</div>
-                </div>
-                <div class="stat-card draw" id="stat-draws">
-                    <div class="stat-label">Draws</div>
-                    <div class="stat-value" id="val-draws">—</div>
-                </div>
-                <div class="stat-card accent" id="stat-winrate">
-                    <div class="stat-label">Win Rate</div>
-                    <div class="stat-value" id="val-winrate">—</div>
+                <div class="compare-overview-col compare-secondary" id="compare-stats-section">
+                    <div class="compare-user-label" id="compare-stat-label"></div>
+                    <div class="stats-grid" id="compare-stats-grid"></div>
                 </div>
             </div>
         </section>
@@ -129,39 +154,90 @@
 
             <!-- ═══ Consolidated Analytics ═══ -->
             <div id="analytics-section" class="perspective-section">
+
+                <!-- Column labels (only visible in compare mode) -->
+                <div class="compare-section-labels">
+                    <div><span class="compare-user-label" id="analytics-primary-label"></span></div>
+                    <div><span class="compare-user-label" id="analytics-compare-label"></span></div>
+                </div>
+
                 <!-- Game Length -->
                 <div class="analytic-row">
                     <h4 class="chart-title">📏 Game Length vs Win Rate</h4>
-                    <div class="chart-container"><canvas id="game-length-chart"></canvas></div>
+                    <div class="compare-wrap">
+                        <div class="compare-col">
+                            <div class="chart-container"><canvas id="game-length-chart"></canvas></div>
+                        </div>
+                        <div class="compare-col compare-secondary">
+                            <div class="chart-container"><canvas id="game-length-chart-compare"></canvas></div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Clock Advantage -->
                 <div class="analytic-row">
                     <h4 class="chart-title">⏰ Clock Advantage</h4>
-                    <div class="chart-container"><canvas id="clock-chart"></canvas></div>
+                    <div class="compare-wrap">
+                        <div class="compare-col">
+                            <div class="chart-container"><canvas id="clock-chart"></canvas></div>
+                        </div>
+                        <div class="compare-col compare-secondary">
+                            <div class="chart-container"><canvas id="clock-chart-compare"></canvas></div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Rating Diff -->
                 <div class="analytic-row">
                     <h4 class="chart-title">📊 Win Rate vs Opponent Rating</h4>
-                    <div class="two-col">
-                        <div class="chart-container"><canvas id="rating-diff-chart"></canvas></div>
-                        <div class="headline-stats" id="rating-diff-headlines"></div>
+                    <div class="compare-wrap">
+                        <div class="compare-col">
+                            <div class="two-col">
+                                <div class="chart-container"><canvas id="rating-diff-chart"></canvas></div>
+                                <div class="headline-stats" id="rating-diff-headlines"></div>
+                            </div>
+                        </div>
+                        <div class="compare-col compare-secondary">
+                            <div class="two-col">
+                                <div class="chart-container"><canvas id="rating-diff-chart-compare"></canvas></div>
+                                <div class="headline-stats" id="rating-diff-headlines-compare"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Time Remaining -->
+                <!-- Move Time Distribution -->
                 <div class="analytic-row">
-                    <h4 class="chart-title">⏱ Final Time Remaining vs Result</h4>
-                    <div class="chart-container"><canvas id="time-remaining-chart"></canvas></div>
-                </div>
-
-                <!-- Decisive History -->
-                <div class="analytic-row" style="margin-bottom: 2rem;">
-                    <h4 class="chart-title">📈 Win & Draw Rate Over Time</h4>
-                    <div class="chart-container" style="height: 300px;"><canvas id="decisive-history-chart"></canvas>
+                    <h4 class="chart-title">⏱ Time per Move Distribution</h4>
+                    <div class="compare-wrap">
+                        <div class="compare-col">
+                            <div class="two-col">
+                                <div class="chart-container"><canvas id="move-time-dist-chart"></canvas></div>
+                                <div class="headline-stats" id="move-time-stats"></div>
+                            </div>
+                        </div>
+                        <div class="compare-col compare-secondary">
+                            <div class="two-col">
+                                <div class="chart-container"><canvas id="move-time-dist-chart-compare"></canvas></div>
+                                <div class="headline-stats" id="move-time-stats-compare"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
+                <!-- Avg Time by Move Number -->
+                <div class="analytic-row">
+                    <h4 class="chart-title">📈 Avg Think Time by Move Number</h4>
+                    <div class="compare-wrap">
+                        <div class="compare-col">
+                            <div class="chart-container"><canvas id="move-time-by-move-chart"></canvas></div>
+                        </div>
+                        <div class="compare-col compare-secondary">
+                            <div class="chart-container"><canvas id="move-time-by-move-chart-compare"></canvas></div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </section>
 
@@ -211,7 +287,7 @@
         <p>D532 Final Project — Chess Analytics Dashboard</p>
     </footer>
 
-    <script src="/static/app.js?v=6"></script>
+    <script src="/static/app.js?v=7"></script>
 </body>
 
 </html>

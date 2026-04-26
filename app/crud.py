@@ -2,6 +2,7 @@
 Database query functions for CRUD operations and analytics.
 """
 
+import statistics as _stats
 from datetime import date
 from typing import Any, Optional
 
@@ -139,12 +140,15 @@ def get_player_stats(
         else:
             by_tc[tc]["draws"] += 1
 
+    decisive = wins + losses
     return {
         "total_games": total,
         "wins": wins,
         "losses": losses,
         "draws": draws,
-        "win_rate": wins / total * 100 if total else 0,
+        "win_rate": round(wins / total * 100, 1) if total else 0,
+        "decisive_win_rate": round(wins / decisive * 100, 1) if decisive else 0,
+        "draw_rate": round(draws / total * 100, 1) if total else 0,
         "by_time_class": by_tc,
     }
 
@@ -313,80 +317,6 @@ def game_length_vs_winrate(
     return results
 
 
-# ── Feature 3: Final Time Remaining vs Result ────────────
-
-def time_remaining_vs_result(
-    db: Session, player_id: int,
-    time_class: Optional[str] = None,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
-    player_color: Optional[str] = None,
-    opening_names: Optional[str] = None,
-):
-    """
-    Result distribution based on the player's final clock reading.
-    Answers: when games end with <1 min on my clock, how often do I win?
-    """
-    games = _player_games_query(db, player_id, time_class, start_date, end_date, player_color, opening_names).all()
-
-    bucket_defs = [
-        ("10m+",   600, 99999),
-        ("5–10m",  300,   600),
-        ("3–5m",   180,   300),
-        ("2–3m",   120,   180),
-        ("1–2m",    60,   120),
-        ("30s–1m",  30,    60),
-        ("10–30s",  10,    30),
-        ("< 10s",    0,    10),
-    ]
-
-    buckets = {label: {"wins": 0, "losses": 0, "draws": 0} for label, _, _ in bucket_defs}
-
-    for game in games:
-        is_white = game.white_player_id == player_id
-        player_color = "white" if is_white else "black"
-
-        # Get the LAST move's clock for this player (final clock reading)
-        last_move = db.query(Move).filter(
-            Move.game_id == game.game_id,
-            Move.color == player_color,
-            Move.clock_seconds.isnot(None),
-        ).order_by(Move.ply.desc()).first()
-
-        if not last_move:
-            continue
-
-        final_clock = last_move.clock_seconds
-        outcome = _game_outcome(game, player_id)
-
-        for label, lo, hi in bucket_defs:
-            if lo <= final_clock < hi:
-                if outcome == "win":
-                    buckets[label]["wins"] += 1
-                elif outcome == "loss":
-                    buckets[label]["losses"] += 1
-                else:
-                    buckets[label]["draws"] += 1
-                break
-
-    results = []
-    for label, _, _ in bucket_defs:
-        b = buckets[label]
-        total = b["wins"] + b["losses"] + b["draws"]
-        decisive = b["wins"] + b["losses"]
-        results.append({
-            "bucket": label,
-            "total_games": total,
-            "wins": b["wins"],
-            "losses": b["losses"],
-            "draws": b["draws"],
-            "win_rate": round(b["wins"] / total * 100, 1) if total else 0,
-            "win_rate_no_draws": round(b["wins"] / decisive * 100, 1) if decisive else 0,
-            "draw_rate": round(b["draws"] / total * 100, 1) if total else 0,
-        })
-
-    return results
-
 
 # ── Clock Advantage ──────────────────────────────────────
 
@@ -442,13 +372,13 @@ def analyze_clock_advantage(
         avg_advantage = sum(advantages) / len(advantages)
         outcome = _game_outcome(game, player_id)
 
-        if avg_advantage < -15:
+        if avg_advantage < -30:
             bucket = "far_behind"
-        elif avg_advantage < -5:
+        elif avg_advantage < -15:
             bucket = "behind"
-        elif avg_advantage <= 5:
-            bucket = "even"
         elif avg_advantage <= 15:
+            bucket = "even"
+        elif avg_advantage <= 30:
             bucket = "ahead"
         else:
             bucket = "far_ahead"
@@ -479,9 +409,9 @@ def analyze_clock_advantage(
     return result
 
 
-# ── Decisive & Draw Rate History ─────────────────────────
+# ── Move Time Distribution & By Move Number ──────────────
 
-def decisive_rate_history(
+def move_time_stats(
     db: Session, player_id: int,
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
@@ -489,43 +419,74 @@ def decisive_rate_history(
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
 ):
-    """Get decisive win rate and draw rate bucketed by week."""
     games = _player_games_query(db, player_id, time_class, start_date, end_date, player_color, opening_names).all()
+    if not games:
+        return {"buckets": [], "mean": 0, "std_dev": 0, "median": 0, "total_moves": 0, "by_move_number": []}
 
-    weekly = {}
-    for g in games:
-        if not g.date_played:
-            continue
+    all_times: list[float] = []
+    by_move: dict[int, list[float]] = {}
 
-        w = g.date_played.strftime("%Y-W%W")
-        if w not in weekly:
-            weekly[w] = {"wins": 0, "losses": 0, "draws": 0}
+    for game in games:
+        color = "white" if game.white_player_id == player_id else "black"
+        for m in db.query(Move).filter(
+            Move.game_id == game.game_id,
+            Move.color == color,
+            Move.time_spent_seconds.isnot(None),
+            Move.time_spent_seconds >= 0,
+        ).all():
+            all_times.append(m.time_spent_seconds)
+            by_move.setdefault(m.move_number, []).append(m.time_spent_seconds)
 
-        outcome = _game_outcome(g, player_id)
-        if outcome == "win":
-            weekly[w]["wins"] += 1
-        elif outcome == "loss":
-            weekly[w]["losses"] += 1
-        else:
-            weekly[w]["draws"] += 1
+    if not all_times:
+        return {"buckets": [], "mean": 0, "std_dev": 0, "median": 0, "total_moves": 0, "by_move_number": []}
 
-    results = []
-    # Sort weeks chronologically
-    for w in sorted(weekly.keys()):
-        b = weekly[w]
-        total = b["wins"] + b["losses"] + b["draws"]
-        decisive = b["wins"] + b["losses"]
-        results.append({
-            "week": w,
-            "total_games": total,
-            "wins": b["wins"],
-            "losses": b["losses"],
-            "draws": b["draws"],
-            "win_rate_no_draws": round(b["wins"] / decisive * 100, 1) if decisive else 0,
-            "draw_rate": round(b["draws"] / total * 100, 1) if total else 0,
-        })
+    bucket_defs = [
+        ("< 1s",   0,    1),
+        ("1–3s",   1,    3),
+        ("3–5s",   3,    5),
+        ("5–10s",  5,   10),
+        ("10–20s", 10,  20),
+        ("20–30s", 20,  30),
+        ("30–60s", 30,  60),
+        ("60s+",   60, 9999),
+    ]
 
-    return results
+    counts = {label: 0 for label, _, _ in bucket_defs}
+    for t in all_times:
+        for label, lo, hi in bucket_defs:
+            if lo <= t < hi:
+                counts[label] += 1
+                break
+
+    total = len(all_times)
+    buckets = [
+        {"label": label, "count": counts[label], "pct": round(counts[label] / total * 100, 1)}
+        for label, _, _ in bucket_defs
+    ]
+
+    mean = _stats.mean(all_times)
+    std_dev = _stats.stdev(all_times) if total > 1 else 0.0
+    median = _stats.median(all_times)
+
+    by_move_number = [
+        {
+            "move_number": mn,
+            "avg_seconds": round(_stats.mean(by_move[mn]), 2),
+            "count": len(by_move[mn]),
+        }
+        for mn in sorted(by_move)
+        if mn <= 60
+    ]
+
+    return {
+        "buckets": buckets,
+        "mean": round(mean, 2),
+        "std_dev": round(std_dev, 2),
+        "median": round(median, 2),
+        "total_moves": total,
+        "by_move_number": by_move_number,
+    }
+
 
 
 # ── Elo History ──────────────────────────────────────────

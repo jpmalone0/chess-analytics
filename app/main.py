@@ -185,24 +185,6 @@ def delete_game(game_id: int, db: Session = Depends(get_db)):
 # Analytics
 # ═══════════════════════════════════════════════════════════
 
-@app.get("/api/players/{username}/analytics/decisive-history")
-def decisive_history(
-    username: str,
-    time_class: Optional[str] = None,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
-    player_color: Optional[str] = None,
-    opening_names: Optional[str] = None,
-    db: Session = Depends(get_db),
-):
-    player = crud.get_player(db, username)
-    if not player:
-        raise HTTPException(404, f"Player '{username}' not found")
-    return crud.decisive_rate_history(
-        db, player.player_id, time_class,
-        start_date, end_date, player_color, opening_names
-    )
-
 
 @app.get("/api/players/{username}/analytics/rating-diff")
 def rating_diff(
@@ -242,24 +224,6 @@ def game_length(
     )
 
 
-@app.get("/api/players/{username}/analytics/time-remaining")
-def time_remaining(
-    username: str,
-    time_class: Optional[str] = None,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
-    player_color: Optional[str] = None,
-    opening_names: Optional[str] = None,
-    db: Session = Depends(get_db),
-):
-    player = crud.get_player(db, username)
-    if not player:
-        raise HTTPException(404, f"Player '{username}' not found")
-    return crud.time_remaining_vs_result(
-        db, player.player_id, time_class,
-        start_date, end_date, player_color, opening_names
-    )
-
 
 @app.get("/api/players/{username}/analytics/clock-advantage")
 def clock_advantage(
@@ -294,6 +258,25 @@ def elo_history(
     return crud.elo_history(
         db, player.player_id, time_class,
         start_date, end_date,
+    )
+
+
+@app.get("/api/players/{username}/analytics/move-time")
+def move_time(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    player = crud.get_player(db, username)
+    if not player:
+        raise HTTPException(404, f"Player '{username}' not found")
+    return crud.move_time_stats(
+        db, player.player_id, time_class,
+        start_date, end_date, player_color, opening_names
     )
 
 

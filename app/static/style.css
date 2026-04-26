@@ -828,3 +828,78 @@ body {
     margin-bottom: 1rem;
     color: var(--text-primary);
 }
+
+/* ── Compare Mode ─────────────────────────────────────────── */
+
+.compare-secondary { display: none; }
+body.compare-mode .compare-secondary { display: block; }
+
+.compare-wrap {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+}
+.compare-wrap > .compare-col { flex: 1; min-width: 0; }
+
+.compare-overview-row { display: flex; gap: 2rem; }
+.compare-overview-col { flex: 1; min-width: 0; }
+
+.compare-user-label {
+    display: inline-block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.2rem 0.6rem;
+    margin-bottom: 0.75rem;
+    letter-spacing: 0.03em;
+}
+
+.compare-section-labels {
+    display: none;
+    gap: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+body.compare-mode .compare-section-labels { display: flex; }
+.compare-section-labels > div { flex: 1; min-width: 0; }
+
+.primary-col-label {
+    display: none;
+    margin-bottom: 0.75rem;
+}
+body.compare-mode .primary-col-label { display: block; }
+
+.compare-btn {
+    font-size: 0.85rem;
+    padding: 0.45rem 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    font-family: var(--font-sans);
+}
+.compare-btn:hover { border-color: var(--accent); color: var(--accent-light); }
+.compare-btn.active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent-light); }
+
+.compare-search-wrap {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+.compare-exit-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0.25rem 0.4rem;
+    border-radius: var(--radius-sm);
+    line-height: 1;
+}
+.compare-exit-btn:hover { color: var(--red); }

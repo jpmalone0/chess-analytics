@@ -4,12 +4,15 @@
 
 const API = '';
 let currentUsername = '';
+let currentCompareUsername = '';
+let compareMode = false;
 let currentTimeClass = 'rapid';
 let charts = {};
 let gamesPage = 0;
 const GAMES_PER_PAGE = 10;
 const requestCache = {};
 let analyticsLoadId = 0;
+let compareLoadId = 0;
 
 // Chart.js defaults
 Chart.defaults.color = '#8b9ab8';
@@ -76,10 +79,13 @@ function hideSyncBanner() {
 // ═══════════════════════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Default to today (local date)
+    // Default to last 30 days
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    document.getElementById('start-date').value = today;
+    const monthAgo = new Date(now);
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    const startDefault = `${monthAgo.getFullYear()}-${String(monthAgo.getMonth() + 1).padStart(2, '0')}-${String(monthAgo.getDate()).padStart(2, '0')}`;
+    document.getElementById('start-date').value = startDefault;
     document.getElementById('end-date').value = today;
 
     document.querySelectorAll('.tc-btn').forEach(btn => {
@@ -91,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    const input = document.getElementById('username-input');
+    const input = document.getElementById('player-search');
 
     input.addEventListener('keydown', e => {
         if (e.key === 'Enter') { hideRecentDropdown(); loadPlayer(); }
@@ -103,6 +109,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.addEventListener('click', e => {
         if (!e.target.closest('.search-wrap')) hideRecentDropdown();
+    });
+
+    const compareInput = document.getElementById('compare-search');
+    compareInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') loadComparePlayer();
+        if (e.key === 'Escape') exitCompareMode();
     });
 
     // Register main perspective tab listeners once (static DOM elements)
@@ -145,7 +157,7 @@ function saveRecentSearch(username) {
 }
 
 function renderRecentDropdown() {
-    const input = document.getElementById('username-input');
+    const input = document.getElementById('player-search');
     const dropdown = document.getElementById('recent-searches');
     const query = input.value.trim().toLowerCase();
     const recent = getRecentSearches().filter(u => !query || u.includes(query));
@@ -202,7 +214,7 @@ async function ensureSynced(username) {
 }
 
 async function loadPlayer() {
-    const input = document.getElementById('username-input');
+    const input = document.getElementById('player-search');
     const username = input.value.trim().toLowerCase();
     if (!username) return;
     saveRecentSearch(username);
@@ -251,12 +263,99 @@ async function refreshAll() {
     gamesPage = 0;
     document.querySelectorAll('.section').forEach(s => s.classList.remove('hidden'));
 
-    await Promise.all([
+    const promises = [
         loadStats(currentUsername),
         loadEloChart(currentUsername),
         loadGames(currentUsername),
-        initRepertoireTabs(currentUsername)
-    ]);
+        initRepertoireTabs(currentUsername),
+    ];
+    if (compareMode && currentCompareUsername) {
+        promises.push(loadCompareStats(currentCompareUsername));
+    }
+    await Promise.all(promises);
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// Compare Mode
+// ═══════════════════════════════════════════════════════════
+
+function toggleCompare() {
+    if (compareMode) {
+        exitCompareMode();
+    } else {
+        document.getElementById('compare-search-wrap').classList.remove('hidden');
+        document.getElementById('compare-toggle-btn').classList.add('active');
+        document.getElementById('compare-search').focus();
+    }
+}
+
+async function loadComparePlayer() {
+    const username = document.getElementById('compare-search').value.trim().toLowerCase();
+    if (!username || username === currentUsername) return;
+
+    currentCompareUsername = username;
+    compareMode = true;
+    document.body.classList.add('compare-mode');
+
+    document.getElementById('primary-stat-label').textContent = currentUsername;
+    document.getElementById('compare-stat-label').textContent = username;
+    document.getElementById('analytics-primary-label').textContent = currentUsername;
+    document.getElementById('analytics-compare-label').textContent = username;
+
+    await ensureSynced(username);
+    await loadCompareStats(username);
+
+    const activeTab = document.querySelector('#main-perspective-tabs .tab-btn.active');
+    const targetId = activeTab?.dataset.target || 'global';
+    const color = targetId === 'global' ? 'global' : targetId;
+    const activeSub = targetId !== 'global' ? document.querySelector(`#${targetId}-tabs .tab-btn.active`) : null;
+    const op = activeSub?.dataset.op || '';
+    loadColorAnalytics(currentUsername, color, op);
+}
+
+function exitCompareMode() {
+    compareMode = false;
+    currentCompareUsername = '';
+    document.body.classList.remove('compare-mode');
+    document.getElementById('compare-search-wrap').classList.add('hidden');
+    document.getElementById('compare-toggle-btn').classList.remove('active');
+    document.getElementById('compare-search').value = '';
+    document.getElementById('compare-stats-grid').innerHTML = '';
+
+    const compareKeys = ['loadGameLength', 'loadClockAdvantage', 'loadRatingDiff', 'loadMoveTimeDist', 'loadMoveTimeByMove'];
+    compareKeys.forEach(k => {
+        const key = k + '-compare';
+        if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+    });
+}
+
+async function loadCompareStats(username) {
+    try {
+        const data = await fetchJSON(`/api/players/${username}/stats${buildFilterParams()}`);
+        let stats = data;
+
+        if (currentTimeClass && data.by_time_class[currentTimeClass]) {
+            const tc = data.by_time_class[currentTimeClass];
+            const decisive = tc.wins + tc.losses;
+            stats = {
+                total_games: tc.total, wins: tc.wins, losses: tc.losses, draws: tc.draws,
+                win_rate: tc.total ? (tc.wins / tc.total * 100) : 0,
+                decisive_win_rate: decisive ? (tc.wins / decisive * 100) : 0,
+                draw_rate: tc.total ? (tc.draws / tc.total * 100) : 0,
+            };
+        }
+
+        document.getElementById('compare-stats-grid').innerHTML = `
+            <div class="stat-card"><div class="stat-label">Total Games</div><div class="stat-value">${stats.total_games.toLocaleString()}</div></div>
+            <div class="stat-card win"><div class="stat-label">Wins</div><div class="stat-value">${stats.wins.toLocaleString()}</div></div>
+            <div class="stat-card loss"><div class="stat-label">Losses</div><div class="stat-value">${stats.losses.toLocaleString()}</div></div>
+            <div class="stat-card draw"><div class="stat-label">Draws</div><div class="stat-value">${stats.draws.toLocaleString()}</div></div>
+            <div class="stat-card accent"><div class="stat-label">Win Rate</div><div class="stat-value">${stats.win_rate.toFixed(1)}%</div></div>
+            <div class="stat-card accent"><div class="stat-label">Decisive Win Rate</div><div class="stat-value">${(stats.decisive_win_rate ?? 0).toFixed(1)}%</div></div>
+            <div class="stat-card draw"><div class="stat-label">Draw Rate</div><div class="stat-value">${(stats.draw_rate ?? 0).toFixed(1)}%</div></div>
+        `;
+    } catch (e) { console.error('Compare stats error:', e.message, e); }
 }
 
 
@@ -271,9 +370,12 @@ async function loadStats(username) {
 
         if (currentTimeClass && data.by_time_class[currentTimeClass]) {
             const tc = data.by_time_class[currentTimeClass];
+            const decisive = tc.wins + tc.losses;
             stats = {
                 total_games: tc.total, wins: tc.wins, losses: tc.losses, draws: tc.draws,
                 win_rate: tc.total ? (tc.wins / tc.total * 100) : 0,
+                decisive_win_rate: decisive ? (tc.wins / decisive * 100) : 0,
+                draw_rate: tc.total ? (tc.draws / tc.total * 100) : 0,
             };
         }
 
@@ -282,7 +384,9 @@ async function loadStats(username) {
         document.getElementById('val-losses').textContent = stats.losses.toLocaleString();
         document.getElementById('val-draws').textContent = stats.draws.toLocaleString();
         document.getElementById('val-winrate').textContent = stats.win_rate.toFixed(1) + '%';
-    } catch (e) { console.error('Stats error:', e); }
+        document.getElementById('val-decisive').textContent = (stats.decisive_win_rate ?? 0).toFixed(1) + '%';
+        document.getElementById('val-drawrate').textContent = (stats.draw_rate ?? 0).toFixed(1) + '%';
+    } catch (e) { console.error('Stats error:', e.message, e); }
 }
 
 
@@ -390,70 +494,21 @@ async function initRepertoireTabs(username) {
 
 function loadColorAnalytics(username, color, op) {
     const loadId = ++analyticsLoadId;
-    loadDecisiveHistoryChart(username, color, op, loadId);
     loadRatingDiff(username, color, op, loadId);
     loadGameLength(username, color, op, loadId);
-    loadTimeRemaining(username, color, op, loadId);
     loadClockAdvantage(username, color, op, loadId);
+    loadMoveTime(username, color, op, loadId);
+
+    if (compareMode && currentCompareUsername) {
+        const cId = ++compareLoadId;
+        loadRatingDiff(currentCompareUsername, color, op, cId, '-compare');
+        loadGameLength(currentCompareUsername, color, op, cId, '-compare');
+        loadClockAdvantage(currentCompareUsername, color, op, cId, '-compare');
+        loadMoveTime(currentCompareUsername, color, op, cId, '-compare');
+    }
 }
 
 
-async function loadDecisiveHistoryChart(username, color, op, loadId) {
-    const chartKey = "loadDecisiveHistory";
-    try {
-        const data = await fetchJSON(`/api/players/${username}/analytics/decisive-history${colorParams(color, op)}`);
-        if (loadId !== analyticsLoadId) return;
-        if (charts[chartKey]) charts[chartKey].destroy();
-
-        charts[chartKey] = new Chart(document.getElementById("decisive-history-chart").getContext('2d'), {
-            type: 'line',
-            data: {
-                labels: data.map(d => d.week),
-                datasets: [
-                    {
-                        label: 'Decisive Win Rate %',
-                        data: data.map(d => d.win_rate_no_draws),
-                        borderColor: '#818cf8',
-                        backgroundColor: 'rgba(129, 140, 248, 0.1)',
-                        fill: true,
-                        tension: 0.3,
-                        pointRadius: 4,
-                        borderWidth: 2
-                    },
-                    {
-                        label: 'Draw Rate %',
-                        data: data.map(d => d.draw_rate),
-                        borderColor: '#eab308',
-                        backgroundColor: 'rgba(234, 179, 8, 0.1)',
-                        fill: true,
-                        tension: 0.3,
-                        pointRadius: 4,
-                        borderWidth: 2
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
-                    tooltip: {
-                        callbacks: {
-                            afterBody: (items) => {
-                                const d = data[items[0].dataIndex];
-                                return `Week: ${d.week}\nTotal Games: ${d.total_games}\nWins: ${d.wins}\nLosses: ${d.losses}\nDraws: ${d.draws}`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: { grid: { display: false } },
-                    y: { min: 0, max: 100, grid: { color: 'rgba(42, 53, 72, 0.5)' }, ticks: { callback: v => v + '%' } }
-                }
-            }
-        });
-    } catch (e) { console.error('Decisive history chart error:', e); }
-}
 
 function colorParams(color, op) {
     const ext = {};
@@ -466,15 +521,15 @@ function colorParams(color, op) {
 // Feature 1: Rating Differential (10pt buckets within ±50)
 // ═══════════════════════════════════════════════════════════
 
-async function loadRatingDiff(username, color, op, loadId) {
-    const chartKey = "loadRatingDiff";
+async function loadRatingDiff(username, color, op, loadId, suffix = '') {
+    const chartKey = "loadRatingDiff" + suffix;
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/rating-diff${colorParams(color, op)}`);
-        if (loadId !== analyticsLoadId) return;
+        if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
         if (charts[chartKey]) charts[chartKey].destroy();
 
         const buckets = data.buckets;
-        charts[chartKey] = new Chart(document.getElementById("rating-diff-chart").getContext('2d'), {
+        charts[chartKey] = new Chart(document.getElementById("rating-diff-chart" + suffix).getContext('2d'), {
             type: 'bar',
             data: {
                 labels: buckets.map(b => b.bucket),
@@ -519,7 +574,7 @@ async function loadRatingDiff(username, color, op, loadId) {
             }
         });
 
-        document.getElementById("rating-diff-headlines").innerHTML = `
+        document.getElementById("rating-diff-headlines" + suffix).innerHTML = `
             <div class="headline-stat" style="padding: 1rem; border-left-color: #475569;">
                 <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
                     Overall Decisive Win Rate: 
@@ -559,14 +614,14 @@ async function loadRatingDiff(username, color, op, loadId) {
 // Feature 2: Game Length vs Win Rate
 // ═══════════════════════════════════════════════════════════
 
-async function loadGameLength(username, color, op, loadId) {
-    const chartKey = "loadGameLength";
+async function loadGameLength(username, color, op, loadId, suffix = '') {
+    const chartKey = "loadGameLength" + suffix;
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/game-length${colorParams(color, op)}`);
-        if (loadId !== analyticsLoadId) return;
+        if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
         if (charts[chartKey]) charts[chartKey].destroy();
 
-        charts[chartKey] = new Chart(document.getElementById("game-length-chart").getContext('2d'), {
+        charts[chartKey] = new Chart(document.getElementById("game-length-chart" + suffix).getContext('2d'), {
             type: 'bar',
             data: {
                 labels: data.map(d => d.bucket + ' moves'),
@@ -614,86 +669,28 @@ async function loadGameLength(username, color, op, loadId) {
 }
 
 
-// ═══════════════════════════════════════════════════════════
-// Feature 3: Final Time Remaining vs Result (inverted x-axis)
-// ═══════════════════════════════════════════════════════════
-
-async function loadTimeRemaining(username, color, op, loadId) {
-    const chartKey = "loadTimeRemaining";
-    try {
-        const data = await fetchJSON(`/api/players/${username}/analytics/time-remaining${colorParams(color, op)}`);
-        if (loadId !== analyticsLoadId) return;
-        if (charts[chartKey]) charts[chartKey].destroy();
-
-        charts[chartKey] = new Chart(document.getElementById("time-remaining-chart").getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: data.map(d => d.bucket),
-                datasets: [
-                    { label: 'Wins', data: data.map(d => d.wins), backgroundColor: 'rgba(34, 197, 94, 0.7)', borderRadius: 4, stack: 'stack' },
-                    { label: 'Losses', data: data.map(d => d.losses), backgroundColor: 'rgba(239, 68, 68, 0.7)', borderRadius: 4, stack: 'stack' },
-                    { label: 'Draws', data: data.map(d => d.draws), backgroundColor: 'rgba(234, 179, 8, 0.7)', borderRadius: 4, stack: 'stack' },
-                    {
-                        label: 'Win Rate (Decisive) %', type: 'line',
-                        data: data.map(d => d.win_rate_no_draws),
-                        borderColor: '#818cf8', backgroundColor: 'transparent',
-                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#818cf8',
-                        yAxisID: 'y2',
-                    },
-                    {
-                        label: 'Draw Rate %', type: 'line',
-                        data: data.map(d => d.draw_rate),
-                        borderColor: '#eab308', backgroundColor: 'transparent',
-                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#eab308',
-                        yAxisID: 'y2',
-                    },
-                ]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
-                    tooltip: {
-                        callbacks: {
-                            afterBody: (items) => {
-                                const d = data[items[0].dataIndex];
-                                return `Win Rate (Decisive): ${d.win_rate_no_draws}%\nDraw Rate: ${d.draw_rate}%\nTotal Games: ${d.total_games}`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: { stacked: true, grid: { display: false }, title: { display: true, text: '← More time remaining    Less time remaining →', color: '#5a6a85', font: { size: 11 } } },
-                    y: { stacked: true, grid: { color: 'rgba(42, 53, 72, 0.5)' }, title: { display: true, text: 'Games', color: '#5a6a85' } },
-                    y2: { position: 'right', min: 0, max: 100, grid: { display: false }, title: { display: true, text: 'Win Rate %', color: '#5a6a85' }, ticks: { callback: v => v + '%' } },
-                }
-            }
-        });
-    } catch (e) { console.error('Time remaining error:', e); }
-}
 
 
 // ═══════════════════════════════════════════════════════════
 // Clock Advantage (with key/legend)
 // ═══════════════════════════════════════════════════════════
 
-async function loadClockAdvantage(username, color, op, loadId) {
-    const chartKey = "loadClockAdvantage";
+async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
+    const chartKey = "loadClockAdvantage" + suffix;
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/clock-advantage${colorParams(color, op)}`);
-        if (loadId !== analyticsLoadId) return;
+        if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
         if (charts[chartKey]) charts[chartKey].destroy();
 
-        // Friendly labels with second thresholds
         const labelMap = {
-            'far_behind': 'Far Behind (< -15s)',
-            'behind': 'Behind (-5s to -15s)',
-            'even': 'Even (±5s)',
-            'ahead': 'Ahead (+5s to +15s)',
-            'far_ahead': 'Far Ahead (> +15s)',
+            'far_behind': 'Far Behind (< -30s)',
+            'behind': 'Behind (-15s to -30s)',
+            'even': 'Even (±15s)',
+            'ahead': 'Ahead (+15s to +30s)',
+            'far_ahead': 'Far Ahead (> +30s)',
         };
 
-        charts[chartKey] = new Chart(document.getElementById("clock-chart").getContext('2d'), {
+        charts[chartKey] = new Chart(document.getElementById("clock-chart" + suffix).getContext('2d'), {
             type: 'bar',
             data: {
                 labels: data.map(d => labelMap[d.clock_bucket] || d.clock_bucket),
@@ -745,6 +742,112 @@ async function loadClockAdvantage(username, color, op, loadId) {
             }
         });
     } catch (e) { console.error('Clock advantage error:', e); }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// Move Time Distribution & Avg Think Time by Move Number
+// ═══════════════════════════════════════════════════════════
+
+async function loadMoveTime(username, color, op, loadId, suffix = '') {
+    const distKey = "loadMoveTimeDist" + suffix;
+    const moveKey = "loadMoveTimeByMove" + suffix;
+    try {
+        const data = await fetchJSON(`/api/players/${username}/analytics/move-time${colorParams(color, op)}`);
+        if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
+
+        if (charts[distKey]) charts[distKey].destroy();
+        if (charts[moveKey]) charts[moveKey].destroy();
+
+        // ── Distribution histogram ──
+        charts[distKey] = new Chart(document.getElementById("move-time-dist-chart" + suffix).getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: data.buckets.map(b => b.label),
+                datasets: [{
+                    label: 'Moves',
+                    data: data.buckets.map(b => b.count),
+                    backgroundColor: 'rgba(129, 140, 248, 0.7)',
+                    borderRadius: 4,
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (item) => {
+                                const b = data.buckets[item.dataIndex];
+                                return `${b.count.toLocaleString()} moves (${b.pct}%)`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: { grid: { color: 'rgba(42, 53, 72, 0.5)' }, title: { display: true, text: 'Moves', color: '#5a6a85' } },
+                }
+            }
+        });
+
+        document.getElementById("move-time-stats" + suffix).innerHTML = `
+            <div class="headline-stat" style="padding: 1rem; border-left-color: #818cf8;">
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Mean</div>
+                <div style="font-size: 1.4rem; font-weight: 700; color: var(--text-primary);">${data.mean}s</div>
+            </div>
+            <div class="headline-stat" style="margin-top: 1rem; padding: 1rem; border-left-color: #475569;">
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Std Dev</div>
+                <div style="font-size: 1.4rem; font-weight: 700; color: var(--text-primary);">±${data.std_dev}s</div>
+            </div>
+            <div class="headline-stat" style="margin-top: 1rem; padding: 1rem; border-left-color: #475569;">
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Median</div>
+                <div style="font-size: 1.4rem; font-weight: 700; color: var(--text-primary);">${data.median}s</div>
+            </div>
+            <div class="headline-stat" style="margin-top: 1rem; padding: 1rem; border-left-color: #334155;">
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Moves Analyzed</div>
+                <div style="font-size: 1.4rem; font-weight: 700; color: var(--text-primary);">${data.total_moves.toLocaleString()}</div>
+            </div>
+        `;
+
+        // ── Avg think time by move number ──
+        const byMove = data.by_move_number;
+        charts[moveKey] = new Chart(document.getElementById("move-time-by-move-chart" + suffix).getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: byMove.map(d => d.move_number),
+                datasets: [{
+                    label: 'Avg seconds',
+                    data: byMove.map(d => d.avg_seconds),
+                    borderColor: '#818cf8',
+                    backgroundColor: 'rgba(129, 140, 248, 0.08)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 3,
+                    borderWidth: 2,
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: (items) => `Move ${items[0].label}`,
+                            label: (item) => {
+                                const d = byMove[item.dataIndex];
+                                return `Avg: ${d.avg_seconds}s  (${d.count} moves)`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: { display: false }, title: { display: true, text: 'Move Number', color: '#5a6a85' } },
+                    y: { grid: { color: 'rgba(42, 53, 72, 0.5)' }, title: { display: true, text: 'Avg seconds', color: '#5a6a85' }, ticks: { callback: v => v + 's' } },
+                }
+            }
+        });
+    } catch (e) { console.error('Move time error:', e); }
 }
 
 
