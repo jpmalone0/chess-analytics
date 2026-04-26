@@ -8,6 +8,8 @@ let currentCompareUsername = '';
 let compareMode = false;
 let currentTimeClass = 'rapid';
 let charts = {};
+let projectionActive = false;
+let currentFitMode = 'log';
 let gamesPage = 0;
 let gamesPageCompare = 0;
 const GAMES_PER_PAGE = 10;
@@ -130,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
         recencyVal.textContent = parseFloat(recencySlider.value).toFixed(1);
     });
     recencySlider.addEventListener('change', () => {
-        if (!currentUsername) return;
+        if (!currentUsername || !projectionActive) return;
         const tasks = [loadProjectedRatingChart(currentUsername)];
         if (compareMode && currentCompareUsername)
             tasks.push(loadProjectedRatingChart(currentCompareUsername, '-compare'));
@@ -323,23 +325,24 @@ async function refreshAll() {
     updateDateRangeLabel();
     gamesPage = 0;
     document.querySelectorAll('.section').forEach(s => s.classList.remove('hidden'));
+    if (!projectionActive) document.getElementById('projected-rating-section').style.display = 'none';
 
     const promises = [
         loadStats(currentUsername),
         loadEloChart(currentUsername),
-        loadProjectedRatingChart(currentUsername),
         loadGames(currentUsername),
         initRepertoireTabs(currentUsername),
     ];
+    if (projectionActive) promises.push(loadProjectedRatingChart(currentUsername));
     if (compareMode && currentCompareUsername) {
         promises.push(loadCompareStats(currentCompareUsername));
         promises.push(loadEloChart(currentCompareUsername, '-compare'));
-        promises.push(loadProjectedRatingChart(currentCompareUsername, '-compare'));
+        if (projectionActive) promises.push(loadProjectedRatingChart(currentCompareUsername, '-compare'));
     }
     await Promise.all(promises);
     if (compareMode && currentCompareUsername) {
         syncEloYAxes();
-        syncProjectedYAxes();
+        if (projectionActive) syncProjectedYAxes();
     }
 }
 
@@ -391,12 +394,11 @@ async function loadComparePlayer() {
     const op = activeSub?.dataset.op || '';
     loadColorAnalytics(currentUsername, color, op);
 
-    await Promise.all([
-        loadEloChart(username, '-compare'),
-        loadProjectedRatingChart(username, '-compare'),
-    ]);
+    const compareTasks = [loadEloChart(username, '-compare')];
+    if (projectionActive) compareTasks.push(loadProjectedRatingChart(username, '-compare'));
+    await Promise.all(compareTasks);
     syncEloYAxes();
-    syncProjectedYAxes();
+    if (projectionActive) syncProjectedYAxes();
     loadGames(username, '-compare');
 }
 
@@ -605,6 +607,72 @@ function evalLogarithmic(fit, ms) {
     return fit.a + fit.b * lt;
 }
 
+function fitLinear(points, lambda = 0) {
+    if (points.length < 2) return null;
+    const xs = points.map(p => p.x);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const range = xMax - xMin || 1;
+    const tNorms = xs.map(x => (x - xMin) / range);
+    const ys = points.map(p => p.y);
+    const ws = tNorms.map(t => Math.exp(-lambda * (1 - t)));
+    const wSum = ws.reduce((a, b) => a + b, 0);
+    const tMean = ws.reduce((s, w, i) => s + w * tNorms[i], 0) / wSum;
+    const yMean = ws.reduce((s, w, i) => s + w * ys[i], 0) / wSum;
+    let num = 0, den = 0;
+    for (let i = 0; i < points.length; i++) {
+        num += ws[i] * (tNorms[i] - tMean) * (ys[i] - yMean);
+        den += ws[i] * (tNorms[i] - tMean) ** 2;
+    }
+    const b = den === 0 ? 0 : num / den;
+    const a = yMean - b * tMean;
+    return { a, b, xMin, range };
+}
+
+function evalLinear(fit, ms) {
+    const t = (ms - fit.xMin) / fit.range;
+    return fit.a + fit.b * t;
+}
+
+function toggleProjection() {
+    projectionActive = !projectionActive;
+    const section = document.getElementById('projected-rating-section');
+    const btn = document.getElementById('projection-toggle-btn');
+    if (projectionActive) {
+        section.style.display = '';
+        section.classList.remove('hidden');
+        btn.textContent = 'Hide Projection';
+        btn.classList.add('active');
+        if (currentUsername) {
+            const tasks = [loadProjectedRatingChart(currentUsername)];
+            if (compareMode && currentCompareUsername)
+                tasks.push(loadProjectedRatingChart(currentCompareUsername, '-compare'));
+            Promise.all(tasks).then(() => {
+                if (compareMode && currentCompareUsername) syncProjectedYAxes();
+            });
+        }
+    } else {
+        section.style.display = 'none';
+        btn.textContent = 'Show Projection';
+        btn.classList.remove('active');
+        ['projected', 'projected-compare'].forEach(k => {
+            if (charts[k]) { charts[k].destroy(); delete charts[k]; }
+        });
+    }
+}
+
+function toggleFitMode() {
+    currentFitMode = currentFitMode === 'log' ? 'linear' : 'log';
+    const btn = document.getElementById('fit-mode-btn');
+    btn.textContent = currentFitMode === 'log' ? 'Switch to Linear' : 'Switch to Log';
+    if (!currentUsername || !projectionActive) return;
+    const tasks = [loadProjectedRatingChart(currentUsername)];
+    if (compareMode && currentCompareUsername)
+        tasks.push(loadProjectedRatingChart(currentCompareUsername, '-compare'));
+    Promise.all(tasks).then(() => {
+        if (compareMode && currentCompareUsername) syncProjectedYAxes();
+    });
+}
+
 function syncProjectedYAxes() {
     const c1 = charts['projected'];
     const c2 = charts['projected-compare'];
@@ -667,9 +735,13 @@ async function loadProjectedRatingChart(username, suffix = '') {
             if (tcXMin < xMinAll) xMinAll = tcXMin;
             if (projMax > xMaxAll) xMaxAll = projMax;
 
-            const fit = fitLogarithmic(points, lambda);
+            const fit = currentFitMode === 'log'
+                ? fitLogarithmic(points, lambda)
+                : fitLinear(points, lambda);
             if (!fit) continue;
 
+            const evalFit = currentFitMode === 'log' ? evalLogarithmic : evalLinear;
+            const fitLabel = currentFitMode === 'log' ? 'log fit' : 'linear fit';
             const baseColor = currentTimeClass ? '#6366f1' : (colorMap[tc] || '#6366f1');
             const label = tc.charAt(0).toUpperCase() + tc.slice(1);
 
@@ -683,10 +755,10 @@ async function loadProjectedRatingChart(username, suffix = '') {
 
             const fitPts = Array.from({ length: STEPS + 1 }, (_, i) => {
                 const ms = tcXMin + range * i / STEPS;
-                return { x: ms, y: evalLogarithmic(fit, ms) };
+                return { x: ms, y: evalFit(fit, ms) };
             });
             datasets.push({
-                label: label + ' log fit',
+                label: `${label} ${fitLabel}`,
                 data: fitPts,
                 borderColor: AMBER,
                 backgroundColor: 'transparent',
@@ -695,7 +767,7 @@ async function loadProjectedRatingChart(username, suffix = '') {
 
             const projPts = Array.from({ length: STEPS + 1 }, (_, i) => {
                 const ms = tcXMax + range * i / STEPS;
-                return { x: ms, y: evalLogarithmic(fit, ms) };
+                return { x: ms, y: evalFit(fit, ms) };
             });
             datasets.push({
                 label: label + ' projection',
