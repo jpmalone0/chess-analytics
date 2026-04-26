@@ -9,6 +9,7 @@ let compareMode = false;
 let currentTimeClass = 'rapid';
 let charts = {};
 let gamesPage = 0;
+let gamesPageCompare = 0;
 const GAMES_PER_PAGE = 10;
 const requestCache = {};
 let analyticsLoadId = 0;
@@ -302,6 +303,12 @@ async function loadComparePlayer() {
     document.getElementById('compare-stat-label').textContent = username;
     document.getElementById('analytics-primary-label').textContent = currentUsername;
     document.getElementById('analytics-compare-label').textContent = username;
+    document.getElementById('elo-primary-label').textContent = currentUsername;
+    document.getElementById('elo-compare-label').textContent = username;
+    document.getElementById('games-primary-label').textContent = currentUsername;
+    document.getElementById('games-compare-label').textContent = username;
+
+    gamesPageCompare = 0;
 
     await ensureSynced(username);
     await loadCompareStats(username);
@@ -312,6 +319,9 @@ async function loadComparePlayer() {
     const activeSub = targetId !== 'global' ? document.querySelector(`#${targetId}-tabs .tab-btn.active`) : null;
     const op = activeSub?.dataset.op || '';
     loadColorAnalytics(currentUsername, color, op);
+
+    loadEloChart(username, '-compare');
+    loadGames(username, '-compare');
 }
 
 function exitCompareMode() {
@@ -323,11 +333,15 @@ function exitCompareMode() {
     document.getElementById('compare-search').value = '';
     document.getElementById('compare-stats-grid').innerHTML = '';
 
-    const compareKeys = ['loadGameLength', 'loadClockAdvantage', 'loadRatingDiff', 'loadMoveTimeDist', 'loadMoveTimeByMove'];
+    const compareKeys = ['loadGameLength', 'loadClockAdvantage', 'loadRatingDiff', 'loadMoveTimeDist', 'loadMoveTimeByMove', 'elo'];
     compareKeys.forEach(k => {
         const key = k + '-compare';
         if (charts[key]) { charts[key].destroy(); delete charts[key]; }
     });
+
+    gamesPageCompare = 0;
+    const compareTbody = document.getElementById('games-tbody-compare');
+    if (compareTbody) compareTbody.innerHTML = '';
 }
 
 async function loadCompareStats(username) {
@@ -394,10 +408,11 @@ async function loadStats(username) {
 // Elo Chart
 // ═══════════════════════════════════════════════════════════
 
-async function loadEloChart(username) {
+async function loadEloChart(username, suffix = '') {
+    const chartKey = 'elo' + suffix;
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/elo-history${buildFilterParams()}`);
-        if (charts.elo) charts.elo.destroy();
+        if (charts[chartKey]) charts[chartKey].destroy();
 
         let datasets = [];
         if (currentTimeClass) {
@@ -418,7 +433,7 @@ async function loadEloChart(username) {
                 byTc[tc].push({ x: d.date, y: d.elo });
             });
             for (const tc in byTc) {
-                if (tc === 'unknown' || tc === 'daily') continue; // only focus on core
+                if (tc === 'unknown' || tc === 'daily') continue;
                 datasets.push({
                     label: tc.charAt(0).toUpperCase() + tc.slice(1),
                     data: byTc[tc],
@@ -430,7 +445,7 @@ async function loadEloChart(username) {
             }
         }
 
-        charts.elo = new Chart(document.getElementById('elo-chart').getContext('2d'), {
+        charts[chartKey] = new Chart(document.getElementById('elo-chart' + suffix).getContext('2d'), {
             type: 'line',
             data: {
                 labels: Array.from(new Set(data.map(d => d.date))),
@@ -855,16 +870,17 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
 // Games List (paginated, 10 per page)
 // ═══════════════════════════════════════════════════════════
 
-async function loadGames(username) {
+async function loadGames(username, suffix = '') {
+    const page = suffix ? gamesPageCompare : gamesPage;
     try {
-        const offset = gamesPage * GAMES_PER_PAGE;
+        const offset = page * GAMES_PER_PAGE;
         const games = await fetchJSON(`/api/players/${username}/games${buildFilterParamsExtra({
             limit: GAMES_PER_PAGE,
             offset: offset,
         })}`);
 
-        const tbody = document.getElementById('games-tbody');
-        if (games.length === 0 && gamesPage === 0) {
+        const tbody = document.getElementById('games-tbody' + suffix);
+        if (games.length === 0 && page === 0) {
             tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:2rem">No games found for this player/filter.</td></tr>';
         } else {
             tbody.innerHTML = games.map(g => {
@@ -884,13 +900,12 @@ async function loadGames(username) {
             }).join('');
         }
 
-        // Update pagination controls
-        const pageInfo = document.getElementById('page-info');
-        const prevBtn = document.getElementById('prev-page-btn');
-        const nextBtn = document.getElementById('next-page-btn');
+        const pageInfo = document.getElementById('page-info' + suffix);
+        const prevBtn = document.getElementById('prev-page-btn' + suffix);
+        const nextBtn = document.getElementById('next-page-btn' + suffix);
 
-        pageInfo.textContent = `Page ${gamesPage + 1}  (${offset + 1}–${offset + games.length})`;
-        prevBtn.disabled = gamesPage === 0;
+        pageInfo.textContent = `Page ${page + 1}  (${offset + 1}–${offset + games.length})`;
+        prevBtn.disabled = page === 0;
         nextBtn.disabled = games.length < GAMES_PER_PAGE;
 
     } catch (e) { console.error('Games list error:', e); }
@@ -905,6 +920,18 @@ function prevPage() {
     if (gamesPage > 0) {
         gamesPage--;
         loadGames(currentUsername);
+    }
+}
+
+function nextPageCompare() {
+    gamesPageCompare++;
+    loadGames(currentCompareUsername, '-compare');
+}
+
+function prevPageCompare() {
+    if (gamesPageCompare > 0) {
+        gamesPageCompare--;
+        loadGames(currentCompareUsername, '-compare');
     }
 }
 

@@ -127,8 +127,17 @@
             <div class="section-header">
                 <h2>Rating History</h2>
             </div>
-            <div class="chart-container">
-                <canvas id="elo-chart"></canvas>
+            <div class="compare-section-labels">
+                <div><span class="compare-user-label" id="elo-primary-label"></span></div>
+                <div><span class="compare-user-label" id="elo-compare-label"></span></div>
+            </div>
+            <div class="compare-wrap">
+                <div class="compare-col">
+                    <div class="chart-container"><canvas id="elo-chart"></canvas></div>
+                </div>
+                <div class="compare-col compare-secondary">
+                    <div class="chart-container"><canvas id="elo-chart-compare"></canvas></div>
+                </div>
             </div>
         </section>
 
@@ -246,28 +255,61 @@
             <div class="section-header">
                 <h2>📋 Recent Games</h2>
             </div>
-            <div class="games-table-wrap">
-                <table class="games-table" id="games-table">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Opponent</th>
-                            <th>Color</th>
-                            <th>Result</th>
-                            <th>Type</th>
-                            <th>Rating</th>
-                            <th>Opening</th>
-                            <th>Moves</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="games-tbody"></tbody>
-                </table>
+            <div class="compare-section-labels">
+                <div><span class="compare-user-label" id="games-primary-label"></span></div>
+                <div><span class="compare-user-label" id="games-compare-label"></span></div>
             </div>
-            <div class="pagination-controls">
-                <button class="btn-sm" id="prev-page-btn" onclick="prevPage()" disabled>← Previous</button>
-                <span class="page-info" id="page-info">Page 1</span>
-                <button class="btn-sm" id="next-page-btn" onclick="nextPage()">Next →</button>
+            <div class="compare-wrap" style="align-items: flex-start;">
+                <div class="compare-col">
+                    <div class="games-table-wrap">
+                        <table class="games-table" id="games-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Opponent</th>
+                                    <th>Color</th>
+                                    <th>Result</th>
+                                    <th>Type</th>
+                                    <th>Rating</th>
+                                    <th>Opening</th>
+                                    <th>Moves</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="games-tbody"></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination-controls">
+                        <button class="btn-sm" id="prev-page-btn" onclick="prevPage()" disabled>← Previous</button>
+                        <span class="page-info" id="page-info">Page 1</span>
+                        <button class="btn-sm" id="next-page-btn" onclick="nextPage()">Next →</button>
+                    </div>
+                </div>
+                <div class="compare-col compare-secondary">
+                    <div class="games-table-wrap">
+                        <table class="games-table" id="games-table-compare">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Opponent</th>
+                                    <th>Color</th>
+                                    <th>Result</th>
+                                    <th>Type</th>
+                                    <th>Rating</th>
+                                    <th>Opening</th>
+                                    <th>Moves</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="games-tbody-compare"></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination-controls">
+                        <button class="btn-sm" id="prev-page-btn-compare" onclick="prevPageCompare()" disabled>← Previous</button>
+                        <span class="page-info" id="page-info-compare">Page 1</span>
+                        <button class="btn-sm" id="next-page-btn-compare" onclick="nextPageCompare()">Next →</button>
+                    </div>
+                </div>
             </div>
         </section>
 

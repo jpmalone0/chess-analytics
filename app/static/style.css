@@ -840,6 +840,7 @@ body.compare-mode .compare-secondary { display: block; }
     align-items: flex-start;
 }
 .compare-wrap > .compare-col { flex: 1; min-width: 0; }
+body.compare-mode .compare-col .two-col { grid-template-columns: 1fr; }
 
 .compare-overview-row { display: flex; gap: 2rem; }
 .compare-overview-col { flex: 1; min-width: 0; }
@@ -870,7 +871,7 @@ body.compare-mode .compare-section-labels { display: flex; }
     display: none;
     margin-bottom: 0.75rem;
 }
-body.compare-mode .primary-col-label { display: block; }
+body.compare-mode .primary-col-label { display: inline-block; }
 
 .compare-btn {
     font-size: 0.85rem;
