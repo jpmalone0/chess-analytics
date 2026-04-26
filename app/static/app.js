@@ -298,7 +298,7 @@ function syncEloYAxes() {
     for (const c of [c1, c2]) {
         c.options.scales.y.min = yMin;
         c.options.scales.y.max = yMax;
-        c.update('none');
+        c.update();
     }
 }
 
@@ -511,7 +511,14 @@ async function loadEloChart(username, suffix = '') {
             data: { datasets },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: !currentTimeClass, position: 'top' } },
+                plugins: {
+                    legend: { display: !currentTimeClass, position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            title: items => items.length ? fmtDate(items[0].parsed.x) : ''
+                        }
+                    }
+                },
                 scales: {
                     x: {
                         type: 'linear',
