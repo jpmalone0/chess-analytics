@@ -170,6 +170,7 @@
                     <div><span class="compare-user-label" id="analytics-compare-label"></span></div>
                 </div>
 
+                <div class="single-pair">
                 <!-- Game Length -->
                 <div class="analytic-row">
                     <h4 class="chart-title">📏 Game Length vs Win Rate</h4>
@@ -195,6 +196,7 @@
                         </div>
                     </div>
                 </div>
+                </div>
 
                 <!-- Rating Diff -->
                 <div class="analytic-row">
@@ -215,21 +217,18 @@
                     </div>
                 </div>
 
+                <div class="single-pair">
                 <!-- Move Time Distribution -->
                 <div class="analytic-row">
                     <h4 class="chart-title">⏱ Time per Move Distribution</h4>
                     <div class="compare-wrap">
                         <div class="compare-col">
-                            <div class="two-col">
-                                <div class="chart-container"><canvas id="move-time-dist-chart"></canvas></div>
-                                <div class="headline-stats" id="move-time-stats"></div>
-                            </div>
+                            <div class="chart-container"><canvas id="move-time-dist-chart"></canvas></div>
+                            <div class="headline-stats" id="move-time-stats"></div>
                         </div>
                         <div class="compare-col compare-secondary">
-                            <div class="two-col">
-                                <div class="chart-container"><canvas id="move-time-dist-chart-compare"></canvas></div>
-                                <div class="headline-stats" id="move-time-stats-compare"></div>
-                            </div>
+                            <div class="chart-container"><canvas id="move-time-dist-chart-compare"></canvas></div>
+                            <div class="headline-stats" id="move-time-stats-compare"></div>
                         </div>
                     </div>
                 </div>
@@ -240,11 +239,14 @@
                     <div class="compare-wrap">
                         <div class="compare-col">
                             <div class="chart-container"><canvas id="move-time-by-move-chart"></canvas></div>
+                            <div id="move-time-by-move-stats"></div>
                         </div>
                         <div class="compare-col compare-secondary">
                             <div class="chart-container"><canvas id="move-time-by-move-chart-compare"></canvas></div>
+                            <div id="move-time-by-move-stats-compare"></div>
                         </div>
                     </div>
+                </div>
                 </div>
 
             </div>

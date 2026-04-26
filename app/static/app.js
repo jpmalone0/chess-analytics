@@ -764,6 +764,42 @@ async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
 // Move Time Distribution & Avg Think Time by Move Number
 // ═══════════════════════════════════════════════════════════
 
+function fitLogNormal(moveNums, avgTimes) {
+    if (avgTimes.reduce((a, b) => a + b, 0) === 0 || moveNums.length < 3) return null;
+    const logNums = moveNums.map(x => Math.log(x));
+    const K = 1 / Math.sqrt(2 * Math.PI);
+
+    let bestRss = Infinity, bestMu = 2.5, bestSigma = 0.6, bestA = 1;
+
+    // Grid search: for each (mu, sigma), solve for optimal A analytically then measure RSS
+    for (let mi = 0; mi <= 59; mi++) {
+        const mu = 1.5 + mi * (3.1 / 59);
+        for (let si = 0; si <= 39; si++) {
+            const sigma = 0.2 + si * (1.3 / 39);
+            const s2 = sigma * sigma;
+            const pdfs = logNums.map((lx, i) => K * Math.exp(-Math.pow(lx - mu, 2) / (2 * s2)) / (moveNums[i] * sigma));
+            const dot_yp = avgTimes.reduce((s, y, i) => s + y * pdfs[i], 0);
+            const dot_pp = pdfs.reduce((s, p) => s + p * p, 0);
+            if (dot_pp === 0) continue;
+            const A = dot_yp / dot_pp;
+            if (A <= 0) continue;
+            const rss = avgTimes.reduce((s, y, i) => s + Math.pow(y - A * pdfs[i], 2), 0);
+            if (rss < bestRss) { bestRss = rss; bestMu = mu; bestSigma = sigma; bestA = A; }
+        }
+    }
+
+    const s2 = bestSigma * bestSigma;
+    return {
+        peakMove: Math.round(Math.exp(bestMu - s2)),
+        meanMove: Math.round(Math.exp(bestMu + s2 / 2)),
+        sigma: bestSigma.toFixed(2),
+        curve: logNums.map((lx, i) => {
+            const v = bestA * K * Math.exp(-Math.pow(lx - bestMu, 2) / (2 * s2)) / (moveNums[i] * bestSigma);
+            return Math.round(v * 100) / 100;
+        }),
+    };
+}
+
 async function loadMoveTime(username, color, op, loadId, suffix = '') {
     const distKey = "loadMoveTimeDist" + suffix;
     const moveKey = "loadMoveTimeByMove" + suffix;
@@ -807,51 +843,73 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         });
 
         document.getElementById("move-time-stats" + suffix).innerHTML = `
-            <div class="headline-stat" style="padding: 1rem; border-left-color: #818cf8;">
-                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Mean</div>
-                <div style="font-size: 1.4rem; font-weight: 700; color: var(--text-primary);">${data.mean}s</div>
+            <div style="display: flex; gap: 0.75rem; padding: 1rem 0 0.5rem;">
+                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Mean</div>
+                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">${data.mean}s</div>
+                </div>
+                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Median</div>
+                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">${data.median}s</div>
+                </div>
             </div>
-            <div class="headline-stat" style="margin-top: 1rem; padding: 1rem; border-left-color: #475569;">
-                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Std Dev</div>
-                <div style="font-size: 1.4rem; font-weight: 700; color: var(--text-primary);">±${data.std_dev}s</div>
-            </div>
-            <div class="headline-stat" style="margin-top: 1rem; padding: 1rem; border-left-color: #475569;">
-                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Median</div>
-                <div style="font-size: 1.4rem; font-weight: 700; color: var(--text-primary);">${data.median}s</div>
-            </div>
-            <div class="headline-stat" style="margin-top: 1rem; padding: 1rem; border-left-color: #334155;">
-                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Moves Analyzed</div>
-                <div style="font-size: 1.4rem; font-weight: 700; color: var(--text-primary);">${data.total_moves.toLocaleString()}</div>
+            <div style="display: flex; gap: 0.75rem; padding: 0.5rem 0 1rem;">
+                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Std Dev</div>
+                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">±${data.std_dev}s</div>
+                </div>
+                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Moves Analyzed</div>
+                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">${data.total_moves.toLocaleString()}</div>
+                </div>
             </div>
         `;
 
         // ── Avg think time by move number ──
         const byMove = data.by_move_number;
+        const fit = fitLogNormal(byMove.map(d => d.move_number), byMove.map(d => d.avg_seconds));
+        const datasets = [{
+            label: 'Avg seconds',
+            data: byMove.map(d => d.avg_seconds),
+            borderColor: '#818cf8',
+            backgroundColor: 'rgba(129, 140, 248, 0.08)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 3,
+            borderWidth: 2,
+        }];
+        if (fit) {
+            datasets.push({
+                label: 'Log-normal fit',
+                data: fit.curve,
+                borderColor: 'rgba(251, 146, 60, 0.8)',
+                backgroundColor: 'transparent',
+                fill: false,
+                tension: 0.4,
+                pointRadius: 0,
+                borderWidth: 2,
+                borderDash: [5, 4],
+            });
+        }
         charts[moveKey] = new Chart(document.getElementById("move-time-by-move-chart" + suffix).getContext('2d'), {
             type: 'line',
             data: {
                 labels: byMove.map(d => d.move_number),
-                datasets: [{
-                    label: 'Avg seconds',
-                    data: byMove.map(d => d.avg_seconds),
-                    borderColor: '#818cf8',
-                    backgroundColor: 'rgba(129, 140, 248, 0.08)',
-                    fill: true,
-                    tension: 0.3,
-                    pointRadius: 3,
-                    borderWidth: 2,
-                }]
+                datasets,
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 plugins: {
-                    legend: { display: false },
+                    legend: { display: !!fit, position: 'top', labels: { boxWidth: 20, font: { size: 11 } } },
                     tooltip: {
                         callbacks: {
                             title: (items) => `Move ${items[0].label}`,
                             label: (item) => {
-                                const d = byMove[item.dataIndex];
-                                return `Avg: ${d.avg_seconds}s  (${d.count} moves)`;
+                                if (item.datasetIndex === 0) {
+                                    const d = byMove[item.dataIndex];
+                                    return `Avg: ${d.avg_seconds}s  (${d.count} moves)`;
+                                }
+                                return `Fitted: ${item.formattedValue}s`;
                             }
                         }
                     }
@@ -862,6 +920,31 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                 }
             }
         });
+
+        const statsEl = document.getElementById("move-time-by-move-stats" + suffix);
+        if (statsEl) {
+            const totalSec = byMove.reduce((s, d) => s + d.avg_seconds, 0);
+            const mins = Math.floor(totalSec / 60);
+            const secs = Math.round(totalSec % 60);
+            const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+            statsEl.innerHTML = `
+                <div style="display: flex; gap: 0.75rem; padding: 0.75rem 0 0.25rem;">
+                    <div style="flex: 1; padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Avg time per game</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${timeStr}</div>
+                    </div>
+                    ${fit ? `
+                    <div style="flex: 1; padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Mean effort move</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">move ${fit.meanMove}</div>
+                    </div>
+                    <div style="flex: 1; padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Peak think move</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">move ${fit.peakMove}</div>
+                    </div>` : ''}
+                </div>
+            `;
+        }
     } catch (e) { console.error('Move time error:', e); }
 }
 

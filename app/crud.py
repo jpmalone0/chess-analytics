@@ -475,7 +475,7 @@ def move_time_stats(
             "count": len(by_move[mn]),
         }
         for mn in sorted(by_move)
-        if mn <= 60
+        if mn <= 100
     ]
 
     return {

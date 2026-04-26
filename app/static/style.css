@@ -834,6 +834,18 @@ body {
 .compare-secondary { display: none; }
 body.compare-mode .compare-secondary { display: block; }
 
+.single-pair {
+    display: flex;
+    gap: 1.5rem;
+}
+.single-pair > .analytic-row {
+    flex: 1;
+    min-width: 0;
+}
+body.compare-mode .single-pair {
+    display: block;
+}
+
 .compare-wrap {
     display: flex;
     gap: 1.5rem;
