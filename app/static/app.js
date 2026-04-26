@@ -124,6 +124,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!e.target.closest('#compare-search-wrap .search-wrap')) hideCompareRecentDropdown();
     });
 
+    const recencySlider = document.getElementById('recency-weight');
+    const recencyVal = document.getElementById('recency-weight-val');
+    recencySlider.addEventListener('input', () => {
+        recencyVal.textContent = parseFloat(recencySlider.value).toFixed(1);
+    });
+    recencySlider.addEventListener('change', () => {
+        if (!currentUsername) return;
+        const tasks = [loadProjectedRatingChart(currentUsername)];
+        if (compareMode && currentCompareUsername)
+            tasks.push(loadProjectedRatingChart(currentCompareUsername, '-compare'));
+        Promise.all(tasks).then(() => {
+            if (compareMode && currentCompareUsername) syncProjectedYAxes();
+        });
+    });
+
     // Register main perspective tab listeners once (static DOM elements)
     document.querySelectorAll('#main-perspective-tabs .tab-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -312,15 +327,20 @@ async function refreshAll() {
     const promises = [
         loadStats(currentUsername),
         loadEloChart(currentUsername),
+        loadProjectedRatingChart(currentUsername),
         loadGames(currentUsername),
         initRepertoireTabs(currentUsername),
     ];
     if (compareMode && currentCompareUsername) {
         promises.push(loadCompareStats(currentCompareUsername));
         promises.push(loadEloChart(currentCompareUsername, '-compare'));
+        promises.push(loadProjectedRatingChart(currentCompareUsername, '-compare'));
     }
     await Promise.all(promises);
-    if (compareMode && currentCompareUsername) syncEloYAxes();
+    if (compareMode && currentCompareUsername) {
+        syncEloYAxes();
+        syncProjectedYAxes();
+    }
 }
 
 
@@ -354,6 +374,8 @@ async function loadComparePlayer() {
     document.getElementById('analytics-compare-label').textContent = username;
     document.getElementById('elo-primary-label').textContent = currentUsername;
     document.getElementById('elo-compare-label').textContent = username;
+    document.getElementById('projected-primary-label').textContent = currentUsername;
+    document.getElementById('projected-compare-label').textContent = username;
     document.getElementById('games-primary-label').textContent = currentUsername;
     document.getElementById('games-compare-label').textContent = username;
 
@@ -369,8 +391,12 @@ async function loadComparePlayer() {
     const op = activeSub?.dataset.op || '';
     loadColorAnalytics(currentUsername, color, op);
 
-    await loadEloChart(username, '-compare');
+    await Promise.all([
+        loadEloChart(username, '-compare'),
+        loadProjectedRatingChart(username, '-compare'),
+    ]);
     syncEloYAxes();
+    syncProjectedYAxes();
     loadGames(username, '-compare');
 }
 
@@ -383,7 +409,7 @@ function exitCompareMode() {
     document.getElementById('compare-search').value = '';
     document.getElementById('compare-stats-grid').innerHTML = '';
 
-    const compareKeys = ['loadGameLength', 'loadClockAdvantage', 'loadRatingDiff', 'loadMoveTimeDist', 'loadMoveTimeByMove', 'elo'];
+    const compareKeys = ['loadGameLength', 'loadClockAdvantage', 'loadRatingDiff', 'loadMoveTimeDist', 'loadMoveTimeByMove', 'elo', 'projected'];
     compareKeys.forEach(k => {
         const key = k + '-compare';
         if (charts[key]) { charts[key].destroy(); delete charts[key]; }
@@ -537,6 +563,204 @@ async function loadEloChart(username, suffix = '') {
     } catch (e) { console.error('Elo chart error:', e); }
 }
 
+
+// ═══════════════════════════════════════════════════════════
+// Projected Rating Chart
+// ═══════════════════════════════════════════════════════════
+
+function hexToRgba(hex, a) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+function fitLogarithmic(points, lambda = 0) {
+    // Weighted least squares: y = a + b * ln(t), t normalized to [1, 2]
+    // w_i = exp(-lambda * (1 - t_norm_i)) so recent points weigh more at higher lambda
+    if (points.length < 2) return null;
+    const xs = points.map(p => p.x);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const range = xMax - xMin || 1;
+    const tNorms = xs.map(x => (x - xMin) / range);          // [0, 1]
+    const lts = tNorms.map(t => Math.log(1 + t));             // ln([1, 2])
+    const ys = points.map(p => p.y);
+    const ws = tNorms.map(t => Math.exp(-lambda * (1 - t)));  // 1 at recent end
+    const n = xs.length;
+    const wSum = ws.reduce((a, b) => a + b, 0);
+    const ltMean = ws.reduce((s, w, i) => s + w * lts[i], 0) / wSum;
+    const yMean  = ws.reduce((s, w, i) => s + w * ys[i],  0) / wSum;
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) {
+        num += ws[i] * (lts[i] - ltMean) * (ys[i] - yMean);
+        den += ws[i] * (lts[i] - ltMean) ** 2;
+    }
+    const b = den === 0 ? 0 : num / den;
+    const a = yMean - b * ltMean;
+    return { a, b, xMin, range };
+}
+
+function evalLogarithmic(fit, ms) {
+    const lt = Math.log(1 + (ms - fit.xMin) / fit.range);
+    return fit.a + fit.b * lt;
+}
+
+function syncProjectedYAxes() {
+    const c1 = charts['projected'];
+    const c2 = charts['projected-compare'];
+    if (!c1 || !c2) return;
+    const allY = [
+        ...c1.data.datasets.flatMap(ds => ds.data.map(p => p.y)),
+        ...c2.data.datasets.flatMap(ds => ds.data.map(p => p.y))
+    ].filter(v => v != null && isFinite(v));
+    if (!allY.length) return;
+    const yMin = Math.floor(Math.min(...allY) / 20) * 20;
+    const yMax = Math.ceil(Math.max(...allY) / 20) * 20;
+    for (const c of [c1, c2]) {
+        c.options.scales.y.min = yMin;
+        c.options.scales.y.max = yMax;
+        c.update();
+    }
+}
+
+function getRecencyLambda() {
+    return parseFloat(document.getElementById('recency-weight').value);
+}
+
+async function loadProjectedRatingChart(username, suffix = '') {
+    const chartKey = 'projected' + suffix;
+    try {
+        const raw = await fetchJSON(`/api/players/${username}/analytics/elo-history${buildFilterParams()}`);
+        const lambda = getRecencyLambda();
+        if (charts[chartKey]) charts[chartKey].destroy();
+
+        const toMs = s => Date.parse(s);
+        const fmtDate = ms => new Date(ms).toISOString().slice(0, 10);
+        const colorMap = { bullet: '#ef4444', blitz: '#eab308', rapid: '#22c55e' };
+        const AMBER = '#f59e0b';
+        const STEPS = 80;
+
+        const groups = {};
+        if (currentTimeClass) {
+            groups[currentTimeClass] = raw.map(d => ({ x: toMs(d.date), y: d.elo }));
+        } else {
+            raw.forEach(d => {
+                const tc = d.time_class;
+                if (!tc || tc === 'unknown' || tc === 'daily') return;
+                if (!groups[tc]) groups[tc] = [];
+                groups[tc].push({ x: toMs(d.date), y: d.elo });
+            });
+        }
+
+        const datasets = [];
+        let actualXMax = 0;
+        let xMinAll = Infinity, xMaxAll = -Infinity;
+
+        for (const [tc, points] of Object.entries(groups)) {
+            if (points.length < 2) continue;
+            const xs = points.map(p => p.x);
+            const tcXMin = Math.min(...xs), tcXMax = Math.max(...xs);
+            const range = tcXMax - tcXMin || 1;
+            const projMax = tcXMax + range;
+
+            if (tcXMax > actualXMax) actualXMax = tcXMax;
+            if (tcXMin < xMinAll) xMinAll = tcXMin;
+            if (projMax > xMaxAll) xMaxAll = projMax;
+
+            const fit = fitLogarithmic(points, lambda);
+            if (!fit) continue;
+
+            const baseColor = currentTimeClass ? '#6366f1' : (colorMap[tc] || '#6366f1');
+            const label = tc.charAt(0).toUpperCase() + tc.slice(1);
+
+            datasets.push({
+                label,
+                data: points,
+                borderColor: baseColor,
+                backgroundColor: hexToRgba(baseColor, 0.08),
+                fill: true, tension: 0, pointRadius: 0, pointHitRadius: 6, borderWidth: 2, spanGaps: true
+            });
+
+            const fitPts = Array.from({ length: STEPS + 1 }, (_, i) => {
+                const ms = tcXMin + range * i / STEPS;
+                return { x: ms, y: evalLogarithmic(fit, ms) };
+            });
+            datasets.push({
+                label: label + ' log fit',
+                data: fitPts,
+                borderColor: AMBER,
+                backgroundColor: 'transparent',
+                fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5, spanGaps: true
+            });
+
+            const projPts = Array.from({ length: STEPS + 1 }, (_, i) => {
+                const ms = tcXMax + range * i / STEPS;
+                return { x: ms, y: evalLogarithmic(fit, ms) };
+            });
+            datasets.push({
+                label: label + ' projection',
+                data: projPts,
+                borderColor: AMBER,
+                backgroundColor: hexToRgba(AMBER, 0.06),
+                fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
+                borderDash: [6, 4], spanGaps: true
+            });
+        }
+
+        if (!datasets.length) return;
+
+        const capturedActualXMax = actualXMax;
+        const todayLinePlugin = {
+            id: 'todayLine',
+            afterDraw(chart) {
+                const ctx = chart.ctx;
+                const xScale = chart.scales.x;
+                const x = xScale.getPixelForValue(capturedActualXMax);
+                if (x < chart.chartArea.left || x > chart.chartArea.right) return;
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(x, chart.chartArea.top);
+                ctx.lineTo(x, chart.chartArea.bottom);
+                ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([4, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+        };
+
+        charts[chartKey] = new Chart(
+            document.getElementById('projected-chart' + suffix).getContext('2d'),
+            {
+                type: 'line',
+                data: { datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, position: 'top' },
+                        tooltip: {
+                            callbacks: {
+                                title: items => items.length ? fmtDate(items[0].parsed.x) : ''
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            min: xMinAll,
+                            max: xMaxAll,
+                            ticks: { maxTicksLimit: 10, maxRotation: 0, callback: v => fmtDate(v) },
+                            grid: { display: false }
+                        },
+                        y: { grid: { color: 'rgba(42, 53, 72, 0.5)' } }
+                    }
+                },
+                plugins: [todayLinePlugin]
+            }
+        );
+    } catch (e) { console.error('Projected rating chart error:', e); }
+}
 
 
 async function initRepertoireTabs(username) {
