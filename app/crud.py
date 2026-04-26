@@ -434,8 +434,8 @@ def move_time_stats(
             Move.time_spent_seconds.isnot(None),
             Move.time_spent_seconds >= 0,
         ).all():
-            all_times.append(m.time_spent_seconds)
-            by_move.setdefault(m.move_number, []).append(m.time_spent_seconds)
+            all_times.append(float(m.time_spent_seconds))
+            by_move.setdefault(int(m.move_number), []).append(float(m.time_spent_seconds))
 
     if not all_times:
         return {"buckets": [], "mean": 0, "std_dev": 0, "median": 0, "total_moves": 0, "by_move_number": []}
