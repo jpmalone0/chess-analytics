@@ -6,7 +6,7 @@ import statistics as _stats
 from datetime import date
 from typing import Any, Optional
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Game, Move, Player
@@ -117,6 +117,26 @@ def get_player_stats(
 
     total = len(games)
     wins = losses = draws = 0
+
+    game_ids = [g.game_id for g in games]
+    move_counts: dict[int, int] = {}
+    if game_ids:
+        rows = (
+            db.query(Move.game_id, func.count(Move.move_id))
+            .join(Game, Move.game_id == Game.game_id)
+            .filter(
+                Move.game_id.in_(game_ids),
+                or_(
+                    and_(Game.white_player_id == player_id, Move.color == "white"),
+                    and_(Game.black_player_id == player_id, Move.color == "black"),
+                ),
+            )
+            .group_by(Move.game_id)
+            .all()
+        )
+        move_counts = {gid: cnt for gid, cnt in rows}
+
+    by_tc: dict[str, Any] = {}
     for g in games:
         outcome = _game_outcome(g, player_id)
         if outcome == "win":
@@ -125,14 +145,11 @@ def get_player_stats(
             losses += 1
         else:
             draws += 1
-
-    by_tc = {}
-    for g in games:
         tc = g.time_class or "unknown"
         if tc not in by_tc:
-            by_tc[tc] = {"total": 0, "wins": 0, "losses": 0, "draws": 0}
+            by_tc[tc] = {"total": 0, "wins": 0, "losses": 0, "draws": 0, "total_moves": 0}
         by_tc[tc]["total"] += 1
-        outcome = _game_outcome(g, player_id)
+        by_tc[tc]["total_moves"] += move_counts.get(g.game_id, 0)
         if outcome == "win":
             by_tc[tc]["wins"] += 1
         elif outcome == "loss":
@@ -143,6 +160,7 @@ def get_player_stats(
     decisive = wins + losses
     return {
         "total_games": total,
+        "total_moves": sum(move_counts.values()),
         "wins": wins,
         "losses": losses,
         "draws": draws,
@@ -499,20 +517,45 @@ def elo_history(
 ):
     """Get the player's Elo rating over time."""
     q = _player_games_query(db, player_id, time_class, start_date, end_date)
-    games = q.order_by(Game.date_played.asc()).all()
 
-    points = []
-    for g in games:
+    raw: list[dict[str, Any]] = []
+    for g in q.order_by(Game.date_played.asc(), Game.game_id.asc()).all():
         is_white = g.white_player_id == player_id
         elo = g.white_elo if is_white else g.black_elo
         if elo and g.date_played:
-            points.append({
+            raw.append({
                 "date": g.date_played.isoformat(),
                 "elo": elo,
                 "time_class": g.time_class,
             })
 
-    return points
+    # IQR outlier filter
+    if len(raw) >= 5:
+        elos = sorted(p["elo"] for p in raw)
+        n = len(elos)
+        q1 = elos[n // 4]
+        q3 = elos[3 * n // 4]
+        iqr = q3 - q1
+        if iqr > 0:
+            lo, hi = q1 - 2.0 * iqr, q3 + 2.0 * iqr
+            raw = [p for p in raw if lo <= p["elo"] <= hi]
+
+    # Spread same-day games equally across the day so they don't stack vertically
+    day_counts: dict[str, int] = {}
+    for p in raw:
+        day_counts[p["date"]] = day_counts.get(p["date"], 0) + 1
+
+    day_seen: dict[str, int] = {}
+    for p in raw:
+        d = p["date"]
+        n = day_counts[d]
+        i = day_seen.get(d, 0)
+        day_seen[d] = i + 1
+        hours = (i / n) * 24
+        h, m = int(hours), int((hours % 1) * 60)
+        p["date"] = f"{d}T{h:02d}:{m:02d}:00"
+
+    return raw
 
 
 # ── Top Openings ─────────────────────────────────────────

@@ -33,6 +33,7 @@
                 <div class="compare-search-wrap hidden" id="compare-search-wrap">
                     <div class="search-wrap">
                         <input type="text" id="compare-search" placeholder="Compare with..." autocomplete="off">
+                        <ul id="recent-searches-compare" class="recent-dropdown hidden"></ul>
                     </div>
                     <button class="compare-btn active" onclick="loadComparePlayer()">Load</button>
                     <button class="compare-exit-btn" onclick="exitCompareMode()" title="Exit compare">✕</button>
@@ -93,17 +94,13 @@
                             <div class="stat-label">Wins</div>
                             <div class="stat-value" id="val-wins">—</div>
                         </div>
-                        <div class="stat-card loss" id="stat-losses">
-                            <div class="stat-label">Losses</div>
-                            <div class="stat-value" id="val-losses">—</div>
-                        </div>
                         <div class="stat-card draw" id="stat-draws">
                             <div class="stat-label">Draws</div>
                             <div class="stat-value" id="val-draws">—</div>
                         </div>
-                        <div class="stat-card accent" id="stat-winrate">
-                            <div class="stat-label">Win Rate</div>
-                            <div class="stat-value" id="val-winrate">—</div>
+                        <div class="stat-card loss" id="stat-losses">
+                            <div class="stat-label">Losses</div>
+                            <div class="stat-value" id="val-losses">—</div>
                         </div>
                         <div class="stat-card accent" id="stat-decisive">
                             <div class="stat-label">Decisive Win Rate</div>
@@ -112,6 +109,14 @@
                         <div class="stat-card draw" id="stat-drawrate">
                             <div class="stat-label">Draw Rate</div>
                             <div class="stat-value" id="val-drawrate">—</div>
+                        </div>
+                        <div class="stat-card accent" id="stat-winrate">
+                            <div class="stat-label">Win Rate</div>
+                            <div class="stat-value" id="val-winrate">—</div>
+                        </div>
+                        <div class="stat-card" id="stat-total-moves">
+                            <div class="stat-label">Total Moves</div>
+                            <div class="stat-value" id="val-total-moves">—</div>
                         </div>
                     </div>
                 </div>
@@ -249,6 +254,7 @@
                 </div>
                 </div>
 
+
             </div>
         </section>
 
@@ -331,7 +337,7 @@
         <p>D532 Final Project — Chess Analytics Dashboard</p>
     </footer>
 
-    <script src="/static/app.js?v=7"></script>
+    <script src="/static/app.js?v=9"></script>
 </body>
 
 </html>

@@ -114,8 +114,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const compareInput = document.getElementById('compare-search');
     compareInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter') loadComparePlayer();
-        if (e.key === 'Escape') exitCompareMode();
+        if (e.key === 'Enter') { hideCompareRecentDropdown(); loadComparePlayer(); }
+        if (e.key === 'Escape') hideCompareRecentDropdown();
+    });
+    compareInput.addEventListener('focus', () => renderCompareRecentDropdown());
+    compareInput.addEventListener('input', () => renderCompareRecentDropdown());
+
+    document.addEventListener('click', e => {
+        if (!e.target.closest('#compare-search-wrap .search-wrap')) hideCompareRecentDropdown();
     });
 
     // Register main perspective tab listeners once (static DOM elements)
@@ -176,6 +182,27 @@ function renderRecentDropdown() {
 
 function hideRecentDropdown() {
     document.getElementById('recent-searches').classList.add('hidden');
+}
+
+function renderCompareRecentDropdown() {
+    const input = document.getElementById('compare-search');
+    const dropdown = document.getElementById('recent-searches-compare');
+    const query = input.value.trim().toLowerCase();
+    const recent = getRecentSearches().filter(u => !query || u.includes(query));
+    if (recent.length === 0) { hideCompareRecentDropdown(); return; }
+    dropdown.innerHTML = recent.map(u => `<li>${u}</li>`).join('');
+    dropdown.querySelectorAll('li').forEach(li => {
+        li.addEventListener('click', () => {
+            input.value = li.textContent;
+            hideCompareRecentDropdown();
+            loadComparePlayer();
+        });
+    });
+    dropdown.classList.remove('hidden');
+}
+
+function hideCompareRecentDropdown() {
+    document.getElementById('recent-searches-compare').classList.add('hidden');
 }
 
 
@@ -298,6 +325,8 @@ async function loadComparePlayer() {
     currentCompareUsername = username;
     compareMode = true;
     document.body.classList.add('compare-mode');
+    saveRecentSearch(username);
+    hideCompareRecentDropdown();
 
     document.getElementById('primary-stat-label').textContent = currentUsername;
     document.getElementById('compare-stat-label').textContent = username;
@@ -354,6 +383,7 @@ async function loadCompareStats(username) {
             const decisive = tc.wins + tc.losses;
             stats = {
                 total_games: tc.total, wins: tc.wins, losses: tc.losses, draws: tc.draws,
+                total_moves: tc.total_moves || 0,
                 win_rate: tc.total ? (tc.wins / tc.total * 100) : 0,
                 decisive_win_rate: decisive ? (tc.wins / decisive * 100) : 0,
                 draw_rate: tc.total ? (tc.draws / tc.total * 100) : 0,
@@ -363,11 +393,12 @@ async function loadCompareStats(username) {
         document.getElementById('compare-stats-grid').innerHTML = `
             <div class="stat-card"><div class="stat-label">Total Games</div><div class="stat-value">${stats.total_games.toLocaleString()}</div></div>
             <div class="stat-card win"><div class="stat-label">Wins</div><div class="stat-value">${stats.wins.toLocaleString()}</div></div>
-            <div class="stat-card loss"><div class="stat-label">Losses</div><div class="stat-value">${stats.losses.toLocaleString()}</div></div>
             <div class="stat-card draw"><div class="stat-label">Draws</div><div class="stat-value">${stats.draws.toLocaleString()}</div></div>
-            <div class="stat-card accent"><div class="stat-label">Win Rate</div><div class="stat-value">${stats.win_rate.toFixed(1)}%</div></div>
+            <div class="stat-card loss"><div class="stat-label">Losses</div><div class="stat-value">${stats.losses.toLocaleString()}</div></div>
+            <div class="stat-card"><div class="stat-label">Total Moves</div><div class="stat-value">${(stats.total_moves || 0).toLocaleString()}</div></div>
             <div class="stat-card accent"><div class="stat-label">Decisive Win Rate</div><div class="stat-value">${(stats.decisive_win_rate ?? 0).toFixed(1)}%</div></div>
             <div class="stat-card draw"><div class="stat-label">Draw Rate</div><div class="stat-value">${(stats.draw_rate ?? 0).toFixed(1)}%</div></div>
+            <div class="stat-card accent"><div class="stat-label">Win Rate</div><div class="stat-value">${stats.win_rate.toFixed(1)}%</div></div>
         `;
     } catch (e) { console.error('Compare stats error:', e.message, e); }
 }
@@ -387,6 +418,7 @@ async function loadStats(username) {
             const decisive = tc.wins + tc.losses;
             stats = {
                 total_games: tc.total, wins: tc.wins, losses: tc.losses, draws: tc.draws,
+                total_moves: tc.total_moves || 0,
                 win_rate: tc.total ? (tc.wins / tc.total * 100) : 0,
                 decisive_win_rate: decisive ? (tc.wins / decisive * 100) : 0,
                 draw_rate: tc.total ? (tc.draws / tc.total * 100) : 0,
@@ -394,6 +426,7 @@ async function loadStats(username) {
         }
 
         document.getElementById('val-total').textContent = stats.total_games.toLocaleString();
+        document.getElementById('val-total-moves').textContent = (stats.total_moves || 0).toLocaleString();
         document.getElementById('val-wins').textContent = stats.wins.toLocaleString();
         document.getElementById('val-losses').textContent = stats.losses.toLocaleString();
         document.getElementById('val-draws').textContent = stats.draws.toLocaleString();
@@ -414,14 +447,17 @@ async function loadEloChart(username, suffix = '') {
         const data = await fetchJSON(`/api/players/${username}/analytics/elo-history${buildFilterParams()}`);
         if (charts[chartKey]) charts[chartKey].destroy();
 
+        const toMs = s => Date.parse(s);
+        const fmtDate = ms => new Date(ms).toISOString().slice(0, 10);
+
         let datasets = [];
         if (currentTimeClass) {
             datasets = [{
                 label: currentTimeClass.charAt(0).toUpperCase() + currentTimeClass.slice(1),
-                data: data.map(d => ({ x: d.date, y: d.elo })),
+                data: data.map(d => ({ x: toMs(d.date), y: d.elo })),
                 borderColor: '#6366f1',
                 backgroundColor: 'rgba(99, 102, 241, 0.08)',
-                fill: true, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2,
+                fill: true, tension: 0, pointRadius: 0, pointHitRadius: 6, borderWidth: 2,
                 spanGaps: true
             }];
         } else {
@@ -430,7 +466,7 @@ async function loadEloChart(username, suffix = '') {
             data.forEach(d => {
                 const tc = d.time_class || 'unknown';
                 if (!byTc[tc]) byTc[tc] = [];
-                byTc[tc].push({ x: d.date, y: d.elo });
+                byTc[tc].push({ x: toMs(d.date), y: d.elo });
             });
             for (const tc in byTc) {
                 if (tc === 'unknown' || tc === 'daily') continue;
@@ -439,23 +475,33 @@ async function loadEloChart(username, suffix = '') {
                     data: byTc[tc],
                     borderColor: colorMap[tc] || '#6366f1',
                     backgroundColor: 'transparent',
-                    fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 6, borderWidth: 2,
+                    fill: false, tension: 0, pointRadius: 0, pointHitRadius: 6, borderWidth: 2,
                     spanGaps: true
                 });
             }
         }
 
+        const allMs = datasets.flatMap(ds => ds.data.map(p => p.x));
+        const xMin = Math.min(...allMs);
+        const xMax = Math.max(...allMs);
+
         charts[chartKey] = new Chart(document.getElementById('elo-chart' + suffix).getContext('2d'), {
             type: 'line',
-            data: {
-                labels: Array.from(new Set(data.map(d => d.date))),
-                datasets: datasets
-            },
+            data: { datasets },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 plugins: { legend: { display: !currentTimeClass, position: 'top' } },
                 scales: {
-                    x: { ticks: { maxTicksLimit: 10, maxRotation: 0 }, grid: { display: false } },
+                    x: {
+                        type: 'linear',
+                        min: xMin,
+                        max: xMax,
+                        ticks: {
+                            maxTicksLimit: 10, maxRotation: 0,
+                            callback: v => fmtDate(v)
+                        },
+                        grid: { display: false }
+                    },
                     y: { grid: { color: 'rgba(42, 53, 72, 0.5)' } },
                 }
             }
@@ -590,34 +636,22 @@ async function loadRatingDiff(username, color, op, loadId, suffix = '') {
         });
 
         document.getElementById("rating-diff-headlines" + suffix).innerHTML = `
-            <div class="headline-stat" style="padding: 1rem; border-left-color: #475569;">
+            <div class="headline-stat green" style="padding: 1rem;">
                 <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
-                    Overall Decisive Win Rate: 
-                    <strong style="color: #cbd5e1; font-size: 1.1rem;">${data.overall_decisive_win_rate ?? 0}%</strong>
-                </div>
-            </div>
-            <div class="headline-stat" style="margin-top: 1rem; padding: 1rem; border-left-color: #475569;">
-                <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
-                    Overall Draw Rate: 
-                    <strong style="color: #cbd5e1; font-size: 1.1rem;">${data.overall_draw_rate ?? 0}%</strong>
-                </div>
-            </div>
-            <div class="headline-stat accent" style="margin-top: 1rem; padding: 1rem;">
-                <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
-                    Upset Rate (win % when >10 elo lower rated than your opponent): 
-                    <strong style="color: var(--accent); font-size: 1.1rem;">${data.upset_rate}%</strong>
+                    Hold Rate (win % when >10 elo higher rated than your opponent):
+                    <strong style="color: var(--green); font-size: 1.1rem;">${data.hold_rate}%</strong>
                 </div>
             </div>
             <div class="headline-stat" style="margin-top: 1rem; padding: 1rem; border-left-color: #94a3b8;">
                 <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
-                    Even Match Rate (win % when evenly rated with your opponent): 
+                    Even Match Rate (win % when evenly rated with your opponent):
                     <strong style="color: #cbd5e1; font-size: 1.1rem;">${data.even_rate}%</strong>
                 </div>
             </div>
-            <div class="headline-stat green" style="margin-top: 1rem; padding: 1rem;">
+            <div class="headline-stat accent" style="margin-top: 1rem; padding: 1rem;">
                 <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
-                    Hold Rate (win % when >10 elo higher rated than your opponent): 
-                    <strong style="color: var(--green); font-size: 1.1rem;">${data.hold_rate}%</strong>
+                    Upset Rate (win % when >10 elo lower rated than your opponent):
+                    <strong style="color: var(--accent); font-size: 1.1rem;">${data.upset_rate}%</strong>
                 </div>
             </div>
         `;
@@ -843,7 +877,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         });
 
         document.getElementById("move-time-stats" + suffix).innerHTML = `
-            <div style="display: flex; gap: 0.75rem; padding: 1rem 0 0.5rem;">
+            <div style="display: flex; gap: 0.75rem; padding: 1rem 0;">
                 <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Mean</div>
                     <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">${data.mean}s</div>
@@ -852,18 +886,13 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Median</div>
                     <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">${data.median}s</div>
                 </div>
-            </div>
-            <div style="display: flex; gap: 0.75rem; padding: 0.5rem 0 1rem;">
                 <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Std Dev</div>
                     <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">±${data.std_dev}s</div>
                 </div>
-                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Moves Analyzed</div>
-                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">${data.total_moves.toLocaleString()}</div>
-                </div>
             </div>
         `;
+
 
         // ── Avg think time by move number ──
         const byMove = data.by_move_number;

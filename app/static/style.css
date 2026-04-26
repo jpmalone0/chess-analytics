@@ -884,6 +884,10 @@ body.compare-mode .compare-section-labels { display: flex; }
     margin-bottom: 0.75rem;
 }
 body.compare-mode .primary-col-label { display: inline-block; }
+body.compare-mode #stat-total-moves { order: 5; }
+body.compare-mode #stat-decisive    { order: 6; }
+body.compare-mode #stat-drawrate    { order: 7; }
+body.compare-mode #stat-winrate     { order: 8; }
 
 .compare-btn {
     font-size: 0.85rem;
