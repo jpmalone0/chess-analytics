@@ -23,6 +23,13 @@ Chart.defaults.borderColor = '#2a3548';
 Chart.defaults.font.family = "'Inter', sans-serif";
 Chart.defaults.font.size = 12;
 
+const toMs = s => Date.parse(s);
+const fmtDate = ms => new Date(ms).toISOString().slice(0, 10);
+const TIME_CLASS_COLORS = { bullet: '#ef4444', blitz: '#eab308', rapid: '#22c55e' };
+const DEFAULT_COLOR = '#6366f1';
+const Y_AXIS_STEP = 20;
+const PROJECTION_STEPS = 80;
+
 
 // ═══════════════════════════════════════════════════════════
 // Filter Helpers
@@ -128,18 +135,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const recencySlider = document.getElementById('recency-weight');
     const recencyVal = document.getElementById('recency-weight-val');
+    recencyVal.textContent = parseFloat(recencySlider.value).toFixed(1);
     recencySlider.addEventListener('input', () => {
         recencyVal.textContent = parseFloat(recencySlider.value).toFixed(1);
     });
-    recencySlider.addEventListener('change', () => {
-        if (!currentUsername || !projectionActive) return;
-        const tasks = [loadProjectedRatingChart(currentUsername)];
-        if (compareMode && currentCompareUsername)
-            tasks.push(loadProjectedRatingChart(currentCompareUsername, '-compare'));
-        Promise.all(tasks).then(() => {
-            if (compareMode && currentCompareUsername) syncProjectedYAxes();
-        });
-    });
+    recencySlider.addEventListener('change', reloadProjections);
 
     // Register main perspective tab listeners once (static DOM elements)
     document.querySelectorAll('#main-perspective-tabs .tab-btn').forEach(btn => {
@@ -301,17 +301,24 @@ async function syncPlayerFromChessCom(username) {
 }
 
 
-function syncEloYAxes() {
-    const c1 = charts['elo'];
-    const c2 = charts['elo-compare'];
+function syncYAxes(keyA, keyB) {
+    const c1 = charts[keyA];
+    const c2 = charts[keyB];
     if (!c1 || !c2) return;
-    const allY = [
-        ...c1.data.datasets.flatMap(ds => ds.data.map(p => p.y)),
-        ...c2.data.datasets.flatMap(ds => ds.data.map(p => p.y))
-    ].filter(v => v != null);
-    if (!allY.length) return;
-    const yMin = Math.floor(Math.min(...allY) / 20) * 20;
-    const yMax = Math.ceil(Math.max(...allY) / 20) * 20;
+    let lo = Infinity, hi = -Infinity;
+    for (const c of [c1, c2]) {
+        for (const ds of c.data.datasets) {
+            for (const p of ds.data) {
+                if (p.y != null && isFinite(p.y)) {
+                    if (p.y < lo) lo = p.y;
+                    if (p.y > hi) hi = p.y;
+                }
+            }
+        }
+    }
+    if (!isFinite(lo)) return;
+    const yMin = Math.floor(lo / Y_AXIS_STEP) * Y_AXIS_STEP;
+    const yMax = Math.ceil(hi / Y_AXIS_STEP) * Y_AXIS_STEP;
     for (const c of [c1, c2]) {
         c.options.scales.y.min = yMin;
         c.options.scales.y.max = yMax;
@@ -325,7 +332,7 @@ async function refreshAll() {
     updateDateRangeLabel();
     gamesPage = 0;
     document.querySelectorAll('.section').forEach(s => s.classList.remove('hidden'));
-    if (!projectionActive) document.getElementById('projected-rating-section').style.display = 'none';
+    if (!projectionActive) document.getElementById('projected-rating-section').classList.add('hidden');
 
     const promises = [
         loadStats(currentUsername),
@@ -341,8 +348,8 @@ async function refreshAll() {
     }
     await Promise.all(promises);
     if (compareMode && currentCompareUsername) {
-        syncEloYAxes();
-        if (projectionActive) syncProjectedYAxes();
+        syncYAxes('elo', 'elo-compare');
+        if (projectionActive) syncYAxes('projected', 'projected-compare');
     }
 }
 
@@ -385,7 +392,6 @@ async function loadComparePlayer() {
     gamesPageCompare = 0;
 
     await ensureSynced(username);
-    await loadCompareStats(username);
 
     const activeTab = document.querySelector('#main-perspective-tabs .tab-btn.active');
     const targetId = activeTab?.dataset.target || 'global';
@@ -394,11 +400,14 @@ async function loadComparePlayer() {
     const op = activeSub?.dataset.op || '';
     loadColorAnalytics(currentUsername, color, op);
 
-    const compareTasks = [loadEloChart(username, '-compare')];
+    const compareTasks = [
+        loadCompareStats(username),
+        loadEloChart(username, '-compare'),
+    ];
     if (projectionActive) compareTasks.push(loadProjectedRatingChart(username, '-compare'));
     await Promise.all(compareTasks);
-    syncEloYAxes();
-    if (projectionActive) syncProjectedYAxes();
+    syncYAxes('elo', 'elo-compare');
+    if (projectionActive) syncYAxes('projected', 'projected-compare');
     loadGames(username, '-compare');
 }
 
@@ -496,21 +505,17 @@ async function loadEloChart(username, suffix = '') {
         const data = await fetchJSON(`/api/players/${username}/analytics/elo-history${buildFilterParams()}`);
         if (charts[chartKey]) charts[chartKey].destroy();
 
-        const toMs = s => Date.parse(s);
-        const fmtDate = ms => new Date(ms).toISOString().slice(0, 10);
-
         let datasets = [];
         if (currentTimeClass) {
             datasets = [{
                 label: currentTimeClass.charAt(0).toUpperCase() + currentTimeClass.slice(1),
                 data: data.map(d => ({ x: toMs(d.date), y: d.elo })),
-                borderColor: '#6366f1',
-                backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                borderColor: DEFAULT_COLOR,
+                backgroundColor: hexToRgba(DEFAULT_COLOR, 0.08),
                 fill: true, tension: 0, pointRadius: 0, pointHitRadius: 6, borderWidth: 2,
                 spanGaps: true
             }];
         } else {
-            const colorMap = { bullet: '#ef4444', blitz: '#eab308', rapid: '#22c55e' };
             const byTc = {};
             data.forEach(d => {
                 const tc = d.time_class || 'unknown';
@@ -522,7 +527,7 @@ async function loadEloChart(username, suffix = '') {
                 datasets.push({
                     label: tc.charAt(0).toUpperCase() + tc.slice(1),
                     data: byTc[tc],
-                    borderColor: colorMap[tc] || '#6366f1',
+                    borderColor: TIME_CLASS_COLORS[tc] || DEFAULT_COLOR,
                     backgroundColor: 'transparent',
                     fill: false, tension: 0, pointRadius: 0, pointHitRadius: 6, borderWidth: 2,
                     spanGaps: true
@@ -577,81 +582,47 @@ function hexToRgba(hex, a) {
     return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
-function fitLogarithmic(points, lambda = 0) {
-    // Weighted least squares: y = a + b * ln(t), t normalized to [1, 2]
-    // w_i = exp(-lambda * (1 - t_norm_i)) so recent points weigh more at higher lambda
+// Weighted least-squares: w_i = exp(-lambda * (1 - t_norm)) weights recent points higher
+function weightedLS(points, lambda, transform) {
     if (points.length < 2) return null;
     const xs = points.map(p => p.x);
-    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    let xMin = xs[0], xMax = xs[0];
+    for (const x of xs) { if (x < xMin) xMin = x; if (x > xMax) xMax = x; }
     const range = xMax - xMin || 1;
-    const tNorms = xs.map(x => (x - xMin) / range);          // [0, 1]
-    const lts = tNorms.map(t => Math.log(1 + t));             // ln([1, 2])
+    const ts = xs.map(x => (x - xMin) / range);
+    const zs = ts.map(transform);
     const ys = points.map(p => p.y);
-    const ws = tNorms.map(t => Math.exp(-lambda * (1 - t)));  // 1 at recent end
-    const n = xs.length;
+    const ws = ts.map(t => Math.exp(-lambda * (1 - t)));
     const wSum = ws.reduce((a, b) => a + b, 0);
-    const ltMean = ws.reduce((s, w, i) => s + w * lts[i], 0) / wSum;
-    const yMean  = ws.reduce((s, w, i) => s + w * ys[i],  0) / wSum;
-    let num = 0, den = 0;
-    for (let i = 0; i < n; i++) {
-        num += ws[i] * (lts[i] - ltMean) * (ys[i] - yMean);
-        den += ws[i] * (lts[i] - ltMean) ** 2;
-    }
-    const b = den === 0 ? 0 : num / den;
-    const a = yMean - b * ltMean;
-    return { a, b, xMin, range };
-}
-
-function evalLogarithmic(fit, ms) {
-    const lt = Math.log(1 + (ms - fit.xMin) / fit.range);
-    return fit.a + fit.b * lt;
-}
-
-function fitLinear(points, lambda = 0) {
-    if (points.length < 2) return null;
-    const xs = points.map(p => p.x);
-    const xMin = Math.min(...xs), xMax = Math.max(...xs);
-    const range = xMax - xMin || 1;
-    const tNorms = xs.map(x => (x - xMin) / range);
-    const ys = points.map(p => p.y);
-    const ws = tNorms.map(t => Math.exp(-lambda * (1 - t)));
-    const wSum = ws.reduce((a, b) => a + b, 0);
-    const tMean = ws.reduce((s, w, i) => s + w * tNorms[i], 0) / wSum;
+    const zMean = ws.reduce((s, w, i) => s + w * zs[i], 0) / wSum;
     const yMean = ws.reduce((s, w, i) => s + w * ys[i], 0) / wSum;
     let num = 0, den = 0;
     for (let i = 0; i < points.length; i++) {
-        num += ws[i] * (tNorms[i] - tMean) * (ys[i] - yMean);
-        den += ws[i] * (tNorms[i] - tMean) ** 2;
+        num += ws[i] * (zs[i] - zMean) * (ys[i] - yMean);
+        den += ws[i] * (zs[i] - zMean) ** 2;
     }
     const b = den === 0 ? 0 : num / den;
-    const a = yMean - b * tMean;
-    return { a, b, xMin, range };
+    return { a: yMean - b * zMean, b, xMin, range, transform };
 }
 
-function evalLinear(fit, ms) {
-    const t = (ms - fit.xMin) / fit.range;
-    return fit.a + fit.b * t;
+function evalFit(fit, ms) {
+    return fit.a + fit.b * fit.transform((ms - fit.xMin) / fit.range);
 }
+
+const fitLogarithmic = (points, lambda = 0) => weightedLS(points, lambda, t => Math.log(1 + t));
+const fitLinear      = (points, lambda = 0) => weightedLS(points, lambda, t => t);
 
 function toggleProjection() {
     projectionActive = !projectionActive;
     const section = document.getElementById('projected-rating-section');
     const btn = document.getElementById('projection-toggle-btn');
     if (projectionActive) {
-        section.style.display = '';
         section.classList.remove('hidden');
         btn.textContent = 'Hide Projection';
         btn.classList.add('active');
-        if (currentUsername) {
-            const tasks = [loadProjectedRatingChart(currentUsername)];
-            if (compareMode && currentCompareUsername)
-                tasks.push(loadProjectedRatingChart(currentCompareUsername, '-compare'));
-            Promise.all(tasks).then(() => {
-                if (compareMode && currentCompareUsername) syncProjectedYAxes();
-            });
-        }
+        reloadProjections();
     } else {
-        section.style.display = 'none';
+        section.classList.add('hidden');
         btn.textContent = 'Show Projection';
         btn.classList.remove('active');
         ['projected', 'projected-compare'].forEach(k => {
@@ -662,37 +633,23 @@ function toggleProjection() {
 
 function toggleFitMode() {
     currentFitMode = currentFitMode === 'log' ? 'linear' : 'log';
-    const btn = document.getElementById('fit-mode-btn');
-    btn.textContent = currentFitMode === 'log' ? 'Switch to Linear' : 'Switch to Log';
+    document.getElementById('fit-mode-btn').textContent =
+        currentFitMode === 'log' ? 'Switch to Linear' : 'Switch to Log';
+    reloadProjections();
+}
+
+function getRecencyLambda() {
+    return parseFloat(document.getElementById('recency-weight').value);
+}
+
+function reloadProjections() {
     if (!currentUsername || !projectionActive) return;
     const tasks = [loadProjectedRatingChart(currentUsername)];
     if (compareMode && currentCompareUsername)
         tasks.push(loadProjectedRatingChart(currentCompareUsername, '-compare'));
     Promise.all(tasks).then(() => {
-        if (compareMode && currentCompareUsername) syncProjectedYAxes();
+        if (compareMode && currentCompareUsername) syncYAxes('projected', 'projected-compare');
     });
-}
-
-function syncProjectedYAxes() {
-    const c1 = charts['projected'];
-    const c2 = charts['projected-compare'];
-    if (!c1 || !c2) return;
-    const allY = [
-        ...c1.data.datasets.flatMap(ds => ds.data.map(p => p.y)),
-        ...c2.data.datasets.flatMap(ds => ds.data.map(p => p.y))
-    ].filter(v => v != null && isFinite(v));
-    if (!allY.length) return;
-    const yMin = Math.floor(Math.min(...allY) / 20) * 20;
-    const yMax = Math.ceil(Math.max(...allY) / 20) * 20;
-    for (const c of [c1, c2]) {
-        c.options.scales.y.min = yMin;
-        c.options.scales.y.max = yMax;
-        c.update();
-    }
-}
-
-function getRecencyLambda() {
-    return parseFloat(document.getElementById('recency-weight').value);
 }
 
 async function loadProjectedRatingChart(username, suffix = '') {
@@ -702,11 +659,7 @@ async function loadProjectedRatingChart(username, suffix = '') {
         const lambda = getRecencyLambda();
         if (charts[chartKey]) charts[chartKey].destroy();
 
-        const toMs = s => Date.parse(s);
-        const fmtDate = ms => new Date(ms).toISOString().slice(0, 10);
-        const colorMap = { bullet: '#ef4444', blitz: '#eab308', rapid: '#22c55e' };
         const AMBER = '#f59e0b';
-        const STEPS = 80;
 
         const groups = {};
         if (currentTimeClass) {
@@ -727,7 +680,8 @@ async function loadProjectedRatingChart(username, suffix = '') {
         for (const [tc, points] of Object.entries(groups)) {
             if (points.length < 2) continue;
             const xs = points.map(p => p.x);
-            const tcXMin = Math.min(...xs), tcXMax = Math.max(...xs);
+            let tcXMin = xs[0], tcXMax = xs[0];
+            for (const x of xs) { if (x < tcXMin) tcXMin = x; if (x > tcXMax) tcXMax = x; }
             const range = tcXMax - tcXMin || 1;
             const projMax = tcXMax + range;
 
@@ -740,9 +694,8 @@ async function loadProjectedRatingChart(username, suffix = '') {
                 : fitLinear(points, lambda);
             if (!fit) continue;
 
-            const evalFit = currentFitMode === 'log' ? evalLogarithmic : evalLinear;
             const fitLabel = currentFitMode === 'log' ? 'log fit' : 'linear fit';
-            const baseColor = currentTimeClass ? '#6366f1' : (colorMap[tc] || '#6366f1');
+            const baseColor = currentTimeClass ? DEFAULT_COLOR : (TIME_CLASS_COLORS[tc] || DEFAULT_COLOR);
             const label = tc.charAt(0).toUpperCase() + tc.slice(1);
 
             datasets.push({
@@ -753,8 +706,8 @@ async function loadProjectedRatingChart(username, suffix = '') {
                 fill: true, tension: 0, pointRadius: 0, pointHitRadius: 6, borderWidth: 2, spanGaps: true
             });
 
-            const fitPts = Array.from({ length: STEPS + 1 }, (_, i) => {
-                const ms = tcXMin + range * i / STEPS;
+            const fitPts = Array.from({ length: PROJECTION_STEPS + 1 }, (_, i) => {
+                const ms = tcXMin + range * i / PROJECTION_STEPS;
                 return { x: ms, y: evalFit(fit, ms) };
             });
             datasets.push({
@@ -765,8 +718,8 @@ async function loadProjectedRatingChart(username, suffix = '') {
                 fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5, spanGaps: true
             });
 
-            const projPts = Array.from({ length: STEPS + 1 }, (_, i) => {
-                const ms = tcXMax + range * i / STEPS;
+            const projPts = Array.from({ length: PROJECTION_STEPS + 1 }, (_, i) => {
+                const ms = tcXMax + range * i / PROJECTION_STEPS;
                 return { x: ms, y: evalFit(fit, ms) };
             });
             datasets.push({
@@ -1431,11 +1384,12 @@ async function fetchJSON(url, opts = {}) {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
         return resp.json();
     }
-    if (requestCache[url]) return requestCache[url];
-    const resp = await fetch(API + url, opts);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
-    const data = await resp.json();
-    requestCache[url] = data;
-    return data;
+    if (!requestCache[url]) {
+        requestCache[url] = fetch(API + url).then(async resp => {
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+            return resp.json();
+        });
+    }
+    return requestCache[url];
 }
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }

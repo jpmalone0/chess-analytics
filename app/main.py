@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session  # noqa: F401 — used via Depends(get_db)
 
 from app import crud, schemas
 from app.database import get_db, init_db
@@ -45,7 +45,7 @@ def serve_index():
 @app.get("/api/players")
 def list_players(search: Optional[str] = None, db: Session = Depends(get_db)):
     players = crud.get_players(db, search=search)
-    return [schemas.PlayerOut.model_validate(p) for p in players]
+    return [schemas.PlayerOut.model_validate(dict(p)) for p in players]
 
 
 @app.get("/api/players/{username}")
@@ -53,7 +53,7 @@ def get_player(username: str, db: Session = Depends(get_db)):
     player = crud.get_player(db, username)
     if not player:
         raise HTTPException(404, f"Player '{username}' not found")
-    return schemas.PlayerOut.model_validate(player)
+    return schemas.PlayerOut.model_validate(dict(player))
 
 
 @app.get("/api/players/{username}/stats")
@@ -123,18 +123,18 @@ def list_games(
 
     result = []
     for g in games:
-        is_white = g.white_player_id == player.player_id
+        is_white = bool(g["is_white"])
         result.append(schemas.GameBrief(
-            game_id=g.game_id,
-            opponent=g.black_player.username if is_white else g.white_player.username,
+            game_id=g["game_id"],
+            opponent=g["black_username"] if is_white else g["white_username"],
             player_color="white" if is_white else "black",
-            result=g.result,
-            date_played=g.date_played,
-            time_class=g.time_class,
-            player_elo=g.white_elo if is_white else g.black_elo,
-            opponent_elo=g.black_elo if is_white else g.white_elo,
-            total_moves=g.total_moves,
-            opening_name=g.opening_name,
+            result=g["result"],
+            date_played=g["date_played"],
+            time_class=g["time_class"],
+            player_elo=g["white_elo"] if is_white else g["black_elo"],
+            opponent_elo=g["black_elo"] if is_white else g["white_elo"],
+            total_moves=g["total_moves"],
+            opening_name=g["opening_name"],
         ))
 
     return result
@@ -145,30 +145,13 @@ def get_game(game_id: int, db: Session = Depends(get_db)):
     game = crud.get_game(db, game_id)
     if not game:
         raise HTTPException(404, "Game not found")
-    return schemas.GameOut(
-        game_id=game.game_id,
-        white_username=game.white_player.username,
-        black_username=game.black_player.username,
-        result=game.result,
-        date_played=game.date_played,
-        time_control=game.time_control,
-        time_class=game.time_class,
-        white_elo=game.white_elo,
-        black_elo=game.black_elo,
-        white_accuracy=game.white_accuracy,
-        black_accuracy=game.black_accuracy,
-        eco=game.eco,
-        opening_name=game.opening_name,
-        termination=game.termination,
-        chess_com_url=game.chess_com_url,
-        total_moves=game.total_moves,
-    )
+    return schemas.GameOut(**dict(game))
 
 
 @app.get("/api/games/{game_id}/moves")
 def get_moves(game_id: int, db: Session = Depends(get_db)):
     moves = crud.get_game_moves(db, game_id)
-    return [schemas.MoveOut.model_validate(m) for m in moves]
+    return [schemas.MoveOut.model_validate(dict(m)) for m in moves]
 
 
 @app.delete("/api/games/{game_id}")

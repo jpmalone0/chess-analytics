@@ -853,10 +853,29 @@ body.compare-mode .single-pair {
 }
 .compare-wrap > .compare-col { flex: 1; min-width: 0; }
 body.compare-mode .compare-col .two-col { grid-template-columns: 1fr; }
-body.compare-mode #elo-section .chart-container {
+body.compare-mode #elo-section .chart-container,
+body.compare-mode #projected-rating-section .chart-container {
     height: 350px;
     max-height: none;
     aspect-ratio: unset;
+}
+
+.section-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.recency-label {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.recency-slider {
+    width: 120px;
+    accent-color: #f59e0b;
+    cursor: pointer;
 }
 
 .compare-overview-row { display: flex; gap: 2rem; }
