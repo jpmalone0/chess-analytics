@@ -9,7 +9,6 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-
 # ═══════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════
@@ -160,7 +159,7 @@ def delete_game(db: Session, game_id: int) -> bool:
         {"game_id": game_id},
     )
     db.commit()
-    return result.rowcount > 0
+    return result.rowcount > 0  # type: ignore[attr-defined]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -217,6 +216,7 @@ def get_player_stats(
         LEFT JOIN move_counts mc ON o.game_id = mc.game_id
     """)
     row = db.execute(sql, params).mappings().first()
+    assert row is not None  # COUNT(*) always returns a row
 
     total    = row["total_games"] or 0
     wins     = row["wins"]        or 0
