@@ -268,7 +268,7 @@ In my opinion, the most valuable insight is the clock advantage feature. Chess.c
 
 ### 2.2 App Functionalities
 
-The dashboard provides the a slew of features that draw on clock times, game lengths, win rates, openings, and ratings to generate useful visualizations. 
+The dashboard provides a slew of features that draw on clock times, game lengths, win rates, openings, and ratings to generate useful visualizations. 
 
 The first feature is rating history, which simply displays a user's elo over a specified date range. I also added a feature to project their rating into the future to estimate how it may change over time. 
 
