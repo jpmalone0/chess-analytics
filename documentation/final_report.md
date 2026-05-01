@@ -1,7 +1,7 @@
 # D532 Final Project Report
 **Joseph Malone** 
 ---
-
+**GitHub Link:** https://github.com/jpmalone0/chess-analytics
 ## Part 1: Application Content
 
 ### 1.1 Raw Content
