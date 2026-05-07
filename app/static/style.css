@@ -152,7 +152,9 @@ body {
 }
 
 .recent-dropdown li {
-    padding: 0.45rem 1rem;
+    display: flex;
+    align-items: center;
+    padding: 0.45rem 0.75rem 0.45rem 1rem;
     font-family: var(--font-mono);
     font-size: 0.88rem;
     color: var(--text-secondary);
@@ -162,6 +164,36 @@ body {
 
 .recent-dropdown li:hover {
     background: var(--bg-card-hover);
+    color: var(--text-primary);
+}
+
+.recent-dropdown .recent-name {
+    flex: 1;
+}
+
+.recent-dropdown .recent-remove {
+    flex-shrink: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    background: none;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    border-radius: 0;
+    color: var(--text-muted);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 0.25rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+}
+
+.recent-dropdown li:hover .recent-remove {
+    opacity: 1;
+}
+
+.recent-dropdown .recent-remove:hover {
     color: var(--text-primary);
 }
 

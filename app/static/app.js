@@ -180,18 +180,36 @@ function saveRecentSearch(username) {
     localStorage.setItem(RECENT_KEY, JSON.stringify(recent.slice(0, RECENT_MAX)));
 }
 
+function removeRecentSearch(username) {
+    const recent = getRecentSearches().filter(u => u !== username);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
+}
+
+function buildRecentItems(recent) {
+    return recent.map(u => `
+        <li data-username="${u}">
+            <span class="recent-name">${u}</span>
+            <button class="recent-remove" title="Remove" aria-label="Remove ${u}">×</button>
+        </li>`).join('');
+}
+
 function renderRecentDropdown() {
     const input = document.getElementById('player-search');
     const dropdown = document.getElementById('recent-searches');
     const query = input.value.trim().toLowerCase();
     const recent = getRecentSearches().filter(u => !query || u.includes(query));
     if (recent.length === 0) { hideRecentDropdown(); return; }
-    dropdown.innerHTML = recent.map(u => `<li>${u}</li>`).join('');
+    dropdown.innerHTML = buildRecentItems(recent);
     dropdown.querySelectorAll('li').forEach(li => {
-        li.addEventListener('click', () => {
-            input.value = li.textContent;
+        li.querySelector('.recent-name').addEventListener('click', () => {
+            input.value = li.dataset.username;
             hideRecentDropdown();
             loadPlayer();
+        });
+        li.querySelector('.recent-remove').addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeRecentSearch(li.dataset.username);
+            renderRecentDropdown();
         });
     });
     dropdown.classList.remove('hidden');
@@ -207,12 +225,17 @@ function renderCompareRecentDropdown() {
     const query = input.value.trim().toLowerCase();
     const recent = getRecentSearches().filter(u => !query || u.includes(query));
     if (recent.length === 0) { hideCompareRecentDropdown(); return; }
-    dropdown.innerHTML = recent.map(u => `<li>${u}</li>`).join('');
+    dropdown.innerHTML = buildRecentItems(recent);
     dropdown.querySelectorAll('li').forEach(li => {
-        li.addEventListener('click', () => {
-            input.value = li.textContent;
+        li.querySelector('.recent-name').addEventListener('click', () => {
+            input.value = li.dataset.username;
             hideCompareRecentDropdown();
             loadComparePlayer();
+        });
+        li.querySelector('.recent-remove').addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeRecentSearch(li.dataset.username);
+            renderCompareRecentDropdown();
         });
     });
     dropdown.classList.remove('hidden');
