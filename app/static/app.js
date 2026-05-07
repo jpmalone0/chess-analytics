@@ -1006,67 +1006,6 @@ async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
 // Move Time Distribution & Avg Think Time by Move Number
 // ═══════════════════════════════════════════════════════════
 
-function erf(x) {
-    const sign = x < 0 ? -1 : 1;
-    x = Math.abs(x);
-    const t = 1 / (1 + 0.3275911 * x);
-    const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
-    return sign * y;
-}
-
-function normalCDF(x) { return 0.5 * (1 + erf(x / Math.SQRT2)); }
-
-function lognormalBinProb(lo, hi, mu, sigma) {
-    const cdfLo = lo <= 0   ? 0 : normalCDF((Math.log(lo) - mu) / sigma);
-    const cdfHi = hi >= 999 ? 1 : normalCDF((Math.log(hi) - mu) / sigma);
-    return Math.max(0, cdfHi - cdfLo);
-}
-
-function fitMixtureDist(buckets) {
-    const binEdges = [[0,1],[1,3],[3,5],[5,10],[10,20],[20,30],[30,60],[60,999]];
-    const counts   = buckets.map(b => b.count);
-
-    let bestRss = Infinity, bestParams = null;
-
-    // Grid over (mu1,sigma1) for the fast component and (mu2,sigma2) for the think component
-    const STEPS = 20;
-    for (let a = 0; a < STEPS; a++) {
-        const mu1 = -0.2 + a * (1.5 / (STEPS - 1));
-        for (let b = 0; b < STEPS; b++) {
-            const sigma1 = 0.1 + b * (0.8 / (STEPS - 1));
-            const P1 = binEdges.map(([lo, hi]) => lognormalBinProb(lo, hi, mu1, sigma1));
-            for (let c = 0; c < STEPS; c++) {
-                const mu2 = 1.2 + c * (1.8 / (STEPS - 1));
-                for (let d = 0; d < STEPS; d++) {
-                    const sigma2 = 0.3 + d * (1.2 / (STEPS - 1));
-                    const P2 = binEdges.map(([lo, hi]) => lognormalBinProb(lo, hi, mu2, sigma2));
-
-                    // 2×2 normal equations: y = A1·P1 + A2·P2
-                    const s11 = P1.reduce((s,p)=>s+p*p,0);
-                    const s22 = P2.reduce((s,p)=>s+p*p,0);
-                    const s12 = P1.reduce((s,p,i)=>s+p*P2[i],0);
-                    const s1y = P1.reduce((s,p,i)=>s+p*counts[i],0);
-                    const s2y = P2.reduce((s,p,i)=>s+p*counts[i],0);
-                    const det = s11*s22 - s12*s12;
-                    if (Math.abs(det) < 1e-12) continue;
-                    const A1 = (s1y*s22 - s2y*s12) / det;
-                    const A2 = (s2y*s11 - s1y*s12) / det;
-                    if (A1 <= 0 || A2 <= 0) continue;
-
-                    const rss = counts.reduce((s,y,i)=>s+Math.pow(y-A1*P1[i]-A2*P2[i],2),0);
-                    if (rss < bestRss) { bestRss = rss; bestParams = {mu1,sigma1,mu2,sigma2,A1,A2}; }
-                }
-            }
-        }
-    }
-
-    if (!bestParams) return null;
-    const {mu1, sigma1, mu2, sigma2, A1, A2} = bestParams;
-    return {
-        comp1: binEdges.map(([lo,hi]) => Math.round(A1 * lognormalBinProb(lo,hi,mu1,sigma1))),
-        comp2: binEdges.map(([lo,hi]) => Math.round(A2 * lognormalBinProb(lo,hi,mu2,sigma2))),
-    };
-}
 
 function fitLogNormal(moveNums, avgTimes) {
     if (avgTimes.reduce((a, b) => a + b, 0) === 0 || moveNums.length < 3) return null;
@@ -1122,40 +1061,12 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         if (charts[moveKey]) charts[moveKey].destroy();
 
         // ── Distribution histogram ──
-        const mixture = fitMixtureDist(data.buckets);
         const distDatasets = [{
-            type: 'bar',
             label: 'Moves',
             data: data.buckets.map(b => b.count),
             backgroundColor: 'rgba(129, 140, 248, 0.7)',
             borderRadius: 4,
-            order: 3,
         }];
-        if (mixture) {
-            distDatasets.push({
-                type: 'line',
-                label: 'Quick moves',
-                data: mixture.comp1,
-                borderColor: 'rgba(251, 146, 60, 0.85)',
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                borderDash: [5, 4],
-                pointRadius: 0,
-                tension: 0.4,
-                order: 1,
-            }, {
-                type: 'line',
-                label: 'Think moves',
-                data: mixture.comp2,
-                borderColor: 'rgba(52, 211, 153, 0.85)',
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                borderDash: [5, 4],
-                pointRadius: 0,
-                tension: 0.4,
-                order: 2,
-            });
-        }
         charts[distKey] = new Chart(document.getElementById("move-time-dist-chart" + suffix).getContext('2d'), {
             type: 'bar',
             data: {
@@ -1165,7 +1076,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
             options: {
                 responsive: true, maintainAspectRatio: false,
                 plugins: {
-                    legend: { display: !!mixture, position: 'top', labels: { boxWidth: 20, font: { size: 11 } } },
+                    legend: { display: false },
                     tooltip: {
                         callbacks: {
                             label: (item) => {
