@@ -531,7 +531,7 @@ async function loadEloChart(username, suffix = '', animate = true) {
 
         const datasets = [];
         for (const [tc, points] of Object.entries(groups)) {
-            const color = currentTimeClass ? DEFAULT_COLOR : (TIME_CLASS_COLORS[tc] || DEFAULT_COLOR);
+            const color = TIME_CLASS_COLORS[tc] || DEFAULT_COLOR;
             const label = tc.charAt(0).toUpperCase() + tc.slice(1);
             const lastPt = points[points.length - 1];
             // Extend flat to actualXMax so all lines share the same "today" endpoint
@@ -576,28 +576,27 @@ async function loadEloChart(username, suffix = '', animate = true) {
                     sseparts.push(`${label}  log ${fitLog.rmse.toFixed(1)}  lin ${fitLin.rmse.toFixed(1)} Elo`);
                 }
 
-                const fitLabel = currentFitMode === 'log' ? 'log fit' : 'linear fit';
-                const label = tc.charAt(0).toUpperCase() + tc.slice(1);
-                const fitColor = currentTimeClass ? '#f59e0b' : hexToRgba(TIME_CLASS_COLORS[tc] || DEFAULT_COLOR, 0.9);
+                const fitColor = hexToRgba(TIME_CLASS_COLORS[tc] || DEFAULT_COLOR, 0.9);
 
                 datasets.push({
-                    label: `${label} ${fitLabel}`,
+                    label: `${tc} fit`,
                     data: Array.from({ length: PROJECTION_STEPS + 1 }, (_, i) => {
                         const ms = tcXMin + (actualXMax - tcXMin) * i / PROJECTION_STEPS;
                         return { x: ms, y: fit.predict(ms) };
                     }),
                     borderColor: fitColor, backgroundColor: 'transparent',
-                    fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5, spanGaps: true
+                    fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
+                    borderDash: [6, 4], spanGaps: true, hidden: false,
                 });
                 datasets.push({
-                    label: `${label} projection`,
+                    label: `${tc} projection`,
                     data: Array.from({ length: PROJECTION_STEPS + 1 }, (_, i) => {
                         const ms = actualXMax + (globalProjEnd - actualXMax) * i / PROJECTION_STEPS;
                         return { x: ms, y: fit.predict(ms) };
                     }),
                     borderColor: fitColor, backgroundColor: 'transparent',
                     fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
-                    borderDash: [6, 4], spanGaps: true
+                    borderDash: [6, 4], spanGaps: true,
                 });
             }
 
@@ -633,7 +632,11 @@ async function loadEloChart(username, suffix = '', animate = true) {
                 responsive: true, maintainAspectRatio: false,
                 animation: animate ? {} : false,
                 plugins: {
-                    legend: { display: !currentTimeClass || projectionActive, position: 'top' },
+                    legend: {
+                        display: !currentTimeClass || projectionActive,
+                        position: 'top',
+                        labels: { filter: item => !item.text.endsWith(' fit') && !item.text.endsWith(' projection') }
+                    },
                     tooltip: {
                         callbacks: {
                             title: items => items.length ? fmtDate(items[0].parsed.x) : ''
