@@ -332,7 +332,6 @@ async function refreshAll() {
     updateDateRangeLabel();
     gamesPage = 0;
     document.querySelectorAll('.section').forEach(s => s.classList.remove('hidden'));
-    if (!projectionActive) document.getElementById('projected-rating-section').classList.add('hidden');
 
     const promises = [
         loadStats(currentUsername),
@@ -340,17 +339,12 @@ async function refreshAll() {
         loadGames(currentUsername),
         initRepertoireTabs(currentUsername),
     ];
-    if (projectionActive) promises.push(loadProjectedRatingChart(currentUsername));
     if (compareMode && currentCompareUsername) {
         promises.push(loadCompareStats(currentCompareUsername));
         promises.push(loadEloChart(currentCompareUsername, '-compare'));
-        if (projectionActive) promises.push(loadProjectedRatingChart(currentCompareUsername, '-compare'));
     }
     await Promise.all(promises);
-    if (compareMode && currentCompareUsername) {
-        syncYAxes('elo', 'elo-compare');
-        if (projectionActive) syncYAxes('projected', 'projected-compare');
-    }
+    if (compareMode && currentCompareUsername) syncYAxes('elo', 'elo-compare');
 }
 
 
@@ -384,8 +378,6 @@ async function loadComparePlayer() {
     document.getElementById('analytics-compare-label').textContent = username;
     document.getElementById('elo-primary-label').textContent = currentUsername;
     document.getElementById('elo-compare-label').textContent = username;
-    document.getElementById('projected-primary-label').textContent = currentUsername;
-    document.getElementById('projected-compare-label').textContent = username;
     document.getElementById('games-primary-label').textContent = currentUsername;
     document.getElementById('games-compare-label').textContent = username;
 
@@ -404,10 +396,8 @@ async function loadComparePlayer() {
         loadCompareStats(username),
         loadEloChart(username, '-compare'),
     ];
-    if (projectionActive) compareTasks.push(loadProjectedRatingChart(username, '-compare'));
     await Promise.all(compareTasks);
     syncYAxes('elo', 'elo-compare');
-    if (projectionActive) syncYAxes('projected', 'projected-compare');
     loadGames(username, '-compare');
 }
 
@@ -420,7 +410,7 @@ function exitCompareMode() {
     document.getElementById('compare-search').value = '';
     document.getElementById('compare-stats-grid').innerHTML = '';
 
-    const compareKeys = ['loadGameLength', 'loadClockAdvantage', 'loadRatingDiff', 'loadMoveTimeDist', 'loadMoveTimeByMove', 'elo', 'projected'];
+    const compareKeys = ['loadGameLength', 'loadClockAdvantage', 'loadRatingDiff', 'loadMoveTimeDist', 'loadMoveTimeByMove', 'elo'];
     compareKeys.forEach(k => {
         const key = k + '-compare';
         if (charts[key]) { charts[key].destroy(); delete charts[key]; }
@@ -499,53 +489,113 @@ async function loadStats(username) {
 // Elo Chart
 // ═══════════════════════════════════════════════════════════
 
-async function loadEloChart(username, suffix = '') {
+async function loadEloChart(username, suffix = '', animate = true) {
     const chartKey = 'elo' + suffix;
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/elo-history${buildFilterParams()}`);
         if (charts[chartKey]) charts[chartKey].destroy();
 
-        let datasets = [];
+        // Build per-time-class point groups
+        const groups = {};
         if (currentTimeClass) {
-            datasets = [{
-                label: currentTimeClass.charAt(0).toUpperCase() + currentTimeClass.slice(1),
-                data: data.map(d => ({ x: toMs(d.date), y: d.elo })),
-                borderColor: DEFAULT_COLOR,
-                backgroundColor: hexToRgba(DEFAULT_COLOR, 0.08),
-                fill: true, tension: 0, pointRadius: 0, pointHitRadius: 6, borderWidth: 2,
-                spanGaps: true
-            }];
+            groups[currentTimeClass] = data.map(d => ({ x: toMs(d.date), y: d.elo }));
         } else {
-            const byTc = {};
             data.forEach(d => {
                 const tc = d.time_class || 'unknown';
-                if (!byTc[tc]) byTc[tc] = [];
-                byTc[tc].push({ x: toMs(d.date), y: d.elo });
+                if (tc === 'unknown' || tc === 'daily') return;
+                if (!groups[tc]) groups[tc] = [];
+                groups[tc].push({ x: toMs(d.date), y: d.elo });
             });
-            for (const tc in byTc) {
-                if (tc === 'unknown' || tc === 'daily') continue;
-                datasets.push({
-                    label: tc.charAt(0).toUpperCase() + tc.slice(1),
-                    data: byTc[tc],
-                    borderColor: TIME_CLASS_COLORS[tc] || DEFAULT_COLOR,
-                    backgroundColor: 'transparent',
-                    fill: false, tension: 0, pointRadius: 0, pointHitRadius: 6, borderWidth: 2,
-                    spanGaps: true
-                });
-            }
+        }
+
+        const datasets = [];
+        for (const [tc, points] of Object.entries(groups)) {
+            const color = currentTimeClass ? DEFAULT_COLOR : (TIME_CLASS_COLORS[tc] || DEFAULT_COLOR);
+            const label = tc.charAt(0).toUpperCase() + tc.slice(1);
+            datasets.push({
+                label,
+                data: points,
+                borderColor: color,
+                backgroundColor: hexToRgba(color, currentTimeClass ? 0.08 : 0),
+                fill: !!currentTimeClass, tension: 0, pointRadius: 0, pointHitRadius: 6, borderWidth: 2,
+                spanGaps: true
+            });
         }
 
         const allMs = datasets.flatMap(ds => ds.data.map(p => p.x));
         const xMin = Math.min(...allMs);
-        const xMax = Math.max(...allMs);
+        const actualXMax = Math.max(...allMs);
+        let xMax = actualXMax;
+
+        const chartPlugins = [];
+        if (projectionActive) {
+            const AMBER = '#f59e0b';
+            const lambda = getRecencyLambda();
+            for (const [tc, points] of Object.entries(groups)) {
+                if (points.length < 2) continue;
+                const xs = points.map(p => p.x);
+                const tcXMin = Math.min(...xs), tcXMax = Math.max(...xs);
+                const range = tcXMax - tcXMin || 1;
+                const projMax = tcXMax + range;
+                if (projMax > xMax) xMax = projMax;
+
+                const fit = currentFitMode === 'log' ? fitLogarithmic(points, lambda) : fitLinear(points, lambda);
+                if (!fit) continue;
+
+                const label = tc.charAt(0).toUpperCase() + tc.slice(1);
+                const fitLabel = currentFitMode === 'log' ? 'log fit' : 'linear fit';
+
+                datasets.push({
+                    label: `${label} ${fitLabel}`,
+                    data: Array.from({ length: PROJECTION_STEPS + 1 }, (_, i) => {
+                        const ms = tcXMin + range * i / PROJECTION_STEPS;
+                        return { x: ms, y: evalFit(fit, ms) };
+                    }),
+                    borderColor: AMBER, backgroundColor: 'transparent',
+                    fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5, spanGaps: true
+                });
+                datasets.push({
+                    label: `${label} projection`,
+                    data: Array.from({ length: PROJECTION_STEPS + 1 }, (_, i) => {
+                        const ms = tcXMax + range * i / PROJECTION_STEPS;
+                        return { x: ms, y: evalFit(fit, ms) };
+                    }),
+                    borderColor: AMBER, backgroundColor: hexToRgba(AMBER, 0.06),
+                    fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
+                    borderDash: [6, 4], spanGaps: true
+                });
+            }
+
+            const capturedActualXMax = actualXMax;
+            chartPlugins.push({
+                id: 'todayLine',
+                afterDraw(chart) {
+                    const xScale = chart.scales.x;
+                    const x = xScale.getPixelForValue(capturedActualXMax);
+                    if (x < chart.chartArea.left || x > chart.chartArea.right) return;
+                    const ctx = chart.ctx;
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(x, chart.chartArea.top);
+                    ctx.lineTo(x, chart.chartArea.bottom);
+                    ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([4, 4]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.restore();
+                }
+            });
+        }
 
         charts[chartKey] = new Chart(document.getElementById('elo-chart' + suffix).getContext('2d'), {
             type: 'line',
             data: { datasets },
             options: {
                 responsive: true, maintainAspectRatio: false,
+                animation: animate ? {} : false,
                 plugins: {
-                    legend: { display: !currentTimeClass, position: 'top' },
+                    legend: { display: !currentTimeClass || projectionActive, position: 'top' },
                     tooltip: {
                         callbacks: {
                             title: items => items.length ? fmtDate(items[0].parsed.x) : ''
@@ -554,18 +604,14 @@ async function loadEloChart(username, suffix = '') {
                 },
                 scales: {
                     x: {
-                        type: 'linear',
-                        min: xMin,
-                        max: xMax,
-                        ticks: {
-                            maxTicksLimit: 10, maxRotation: 0,
-                            callback: v => fmtDate(v)
-                        },
+                        type: 'linear', min: xMin, max: xMax,
+                        ticks: { maxTicksLimit: 10, maxRotation: 0, callback: v => fmtDate(v) },
                         grid: { display: false }
                     },
                     y: { grid: { color: 'rgba(42, 53, 72, 0.5)' } },
                 }
-            }
+            },
+            plugins: chartPlugins,
         });
     } catch (e) { console.error('Elo chart error:', e); }
 }
@@ -614,21 +660,18 @@ const fitLinear      = (points, lambda = 0) => weightedLS(points, lambda, t => t
 
 function toggleProjection() {
     projectionActive = !projectionActive;
-    const section = document.getElementById('projected-rating-section');
     const btn = document.getElementById('projection-toggle-btn');
+    const controls = document.getElementById('projection-controls');
     if (projectionActive) {
-        section.classList.remove('hidden');
         btn.textContent = 'Hide Projection';
         btn.classList.add('active');
-        reloadProjections();
+        controls.classList.remove('hidden');
     } else {
-        section.classList.add('hidden');
         btn.textContent = 'Show Projection';
         btn.classList.remove('active');
-        ['projected', 'projected-compare'].forEach(k => {
-            if (charts[k]) { charts[k].destroy(); delete charts[k]; }
-        });
+        controls.classList.add('hidden');
     }
+    reloadProjections();
 }
 
 function toggleFitMode() {
@@ -643,148 +686,13 @@ function getRecencyLambda() {
 }
 
 function reloadProjections() {
-    if (!currentUsername || !projectionActive) return;
-    const tasks = [loadProjectedRatingChart(currentUsername)];
+    if (!currentUsername) return;
+    const tasks = [loadEloChart(currentUsername, '', false)];
     if (compareMode && currentCompareUsername)
-        tasks.push(loadProjectedRatingChart(currentCompareUsername, '-compare'));
+        tasks.push(loadEloChart(currentCompareUsername, '-compare', false));
     Promise.all(tasks).then(() => {
-        if (compareMode && currentCompareUsername) syncYAxes('projected', 'projected-compare');
+        if (compareMode && currentCompareUsername) syncYAxes('elo', 'elo-compare');
     });
-}
-
-async function loadProjectedRatingChart(username, suffix = '') {
-    const chartKey = 'projected' + suffix;
-    try {
-        const raw = await fetchJSON(`/api/players/${username}/analytics/elo-history${buildFilterParams()}`);
-        const lambda = getRecencyLambda();
-        if (charts[chartKey]) charts[chartKey].destroy();
-
-        const AMBER = '#f59e0b';
-
-        const groups = {};
-        if (currentTimeClass) {
-            groups[currentTimeClass] = raw.map(d => ({ x: toMs(d.date), y: d.elo }));
-        } else {
-            raw.forEach(d => {
-                const tc = d.time_class;
-                if (!tc || tc === 'unknown' || tc === 'daily') return;
-                if (!groups[tc]) groups[tc] = [];
-                groups[tc].push({ x: toMs(d.date), y: d.elo });
-            });
-        }
-
-        const datasets = [];
-        let actualXMax = 0;
-        let xMinAll = Infinity, xMaxAll = -Infinity;
-
-        for (const [tc, points] of Object.entries(groups)) {
-            if (points.length < 2) continue;
-            const xs = points.map(p => p.x);
-            let tcXMin = xs[0], tcXMax = xs[0];
-            for (const x of xs) { if (x < tcXMin) tcXMin = x; if (x > tcXMax) tcXMax = x; }
-            const range = tcXMax - tcXMin || 1;
-            const projMax = tcXMax + range;
-
-            if (tcXMax > actualXMax) actualXMax = tcXMax;
-            if (tcXMin < xMinAll) xMinAll = tcXMin;
-            if (projMax > xMaxAll) xMaxAll = projMax;
-
-            const fit = currentFitMode === 'log'
-                ? fitLogarithmic(points, lambda)
-                : fitLinear(points, lambda);
-            if (!fit) continue;
-
-            const fitLabel = currentFitMode === 'log' ? 'log fit' : 'linear fit';
-            const baseColor = currentTimeClass ? DEFAULT_COLOR : (TIME_CLASS_COLORS[tc] || DEFAULT_COLOR);
-            const label = tc.charAt(0).toUpperCase() + tc.slice(1);
-
-            datasets.push({
-                label,
-                data: points,
-                borderColor: baseColor,
-                backgroundColor: hexToRgba(baseColor, 0.08),
-                fill: true, tension: 0, pointRadius: 0, pointHitRadius: 6, borderWidth: 2, spanGaps: true
-            });
-
-            const fitPts = Array.from({ length: PROJECTION_STEPS + 1 }, (_, i) => {
-                const ms = tcXMin + range * i / PROJECTION_STEPS;
-                return { x: ms, y: evalFit(fit, ms) };
-            });
-            datasets.push({
-                label: `${label} ${fitLabel}`,
-                data: fitPts,
-                borderColor: AMBER,
-                backgroundColor: 'transparent',
-                fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5, spanGaps: true
-            });
-
-            const projPts = Array.from({ length: PROJECTION_STEPS + 1 }, (_, i) => {
-                const ms = tcXMax + range * i / PROJECTION_STEPS;
-                return { x: ms, y: evalFit(fit, ms) };
-            });
-            datasets.push({
-                label: label + ' projection',
-                data: projPts,
-                borderColor: AMBER,
-                backgroundColor: hexToRgba(AMBER, 0.06),
-                fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
-                borderDash: [6, 4], spanGaps: true
-            });
-        }
-
-        if (!datasets.length) return;
-
-        const capturedActualXMax = actualXMax;
-        const todayLinePlugin = {
-            id: 'todayLine',
-            afterDraw(chart) {
-                const ctx = chart.ctx;
-                const xScale = chart.scales.x;
-                const x = xScale.getPixelForValue(capturedActualXMax);
-                if (x < chart.chartArea.left || x > chart.chartArea.right) return;
-                ctx.save();
-                ctx.beginPath();
-                ctx.moveTo(x, chart.chartArea.top);
-                ctx.lineTo(x, chart.chartArea.bottom);
-                ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
-                ctx.lineWidth = 1;
-                ctx.setLineDash([4, 4]);
-                ctx.stroke();
-                ctx.setLineDash([]);
-                ctx.restore();
-            }
-        };
-
-        charts[chartKey] = new Chart(
-            document.getElementById('projected-chart' + suffix).getContext('2d'),
-            {
-                type: 'line',
-                data: { datasets },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: true, position: 'top' },
-                        tooltip: {
-                            callbacks: {
-                                title: items => items.length ? fmtDate(items[0].parsed.x) : ''
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            type: 'linear',
-                            min: xMinAll,
-                            max: xMaxAll,
-                            ticks: { maxTicksLimit: 10, maxRotation: 0, callback: v => fmtDate(v) },
-                            grid: { display: false }
-                        },
-                        y: { grid: { color: 'rgba(42, 53, 72, 0.5)' } }
-                    }
-                },
-                plugins: [todayLinePlugin]
-            }
-        );
-    } catch (e) { console.error('Projected rating chart error:', e); }
 }
 
 
@@ -1075,6 +983,68 @@ async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
 // Move Time Distribution & Avg Think Time by Move Number
 // ═══════════════════════════════════════════════════════════
 
+function erf(x) {
+    const sign = x < 0 ? -1 : 1;
+    x = Math.abs(x);
+    const t = 1 / (1 + 0.3275911 * x);
+    const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+    return sign * y;
+}
+
+function normalCDF(x) { return 0.5 * (1 + erf(x / Math.SQRT2)); }
+
+function lognormalBinProb(lo, hi, mu, sigma) {
+    const cdfLo = lo <= 0   ? 0 : normalCDF((Math.log(lo) - mu) / sigma);
+    const cdfHi = hi >= 999 ? 1 : normalCDF((Math.log(hi) - mu) / sigma);
+    return Math.max(0, cdfHi - cdfLo);
+}
+
+function fitMixtureDist(buckets) {
+    const binEdges = [[0,1],[1,3],[3,5],[5,10],[10,20],[20,30],[30,60],[60,999]];
+    const counts   = buckets.map(b => b.count);
+
+    let bestRss = Infinity, bestParams = null;
+
+    // Grid over (mu1,sigma1) for the fast component and (mu2,sigma2) for the think component
+    const STEPS = 20;
+    for (let a = 0; a < STEPS; a++) {
+        const mu1 = -0.2 + a * (1.5 / (STEPS - 1));
+        for (let b = 0; b < STEPS; b++) {
+            const sigma1 = 0.1 + b * (0.8 / (STEPS - 1));
+            const P1 = binEdges.map(([lo, hi]) => lognormalBinProb(lo, hi, mu1, sigma1));
+            for (let c = 0; c < STEPS; c++) {
+                const mu2 = 1.2 + c * (1.8 / (STEPS - 1));
+                for (let d = 0; d < STEPS; d++) {
+                    const sigma2 = 0.3 + d * (1.2 / (STEPS - 1));
+                    const P2 = binEdges.map(([lo, hi]) => lognormalBinProb(lo, hi, mu2, sigma2));
+
+                    // 2×2 normal equations: y = A1·P1 + A2·P2
+                    const s11 = P1.reduce((s,p)=>s+p*p,0);
+                    const s22 = P2.reduce((s,p)=>s+p*p,0);
+                    const s12 = P1.reduce((s,p,i)=>s+p*P2[i],0);
+                    const s1y = P1.reduce((s,p,i)=>s+p*counts[i],0);
+                    const s2y = P2.reduce((s,p,i)=>s+p*counts[i],0);
+                    const det = s11*s22 - s12*s12;
+                    if (Math.abs(det) < 1e-12) continue;
+                    const A1 = (s1y*s22 - s2y*s12) / det;
+                    const A2 = (s2y*s11 - s1y*s12) / det;
+                    if (A1 <= 0 || A2 <= 0) continue;
+
+                    const rss = counts.reduce((s,y,i)=>s+Math.pow(y-A1*P1[i]-A2*P2[i],2),0);
+                    if (rss < bestRss) { bestRss = rss; bestParams = {mu1,sigma1,mu2,sigma2,A1,A2}; }
+                }
+            }
+        }
+    }
+
+    if (!bestParams) return null;
+    const {mu1, sigma1, mu2, sigma2, A1, A2} = bestParams;
+    return {
+        comp1: binEdges.map(([lo,hi]) => Math.round(A1 * lognormalBinProb(lo,hi,mu1,sigma1))),
+        comp2: binEdges.map(([lo,hi]) => Math.round(A2 * lognormalBinProb(lo,hi,mu2,sigma2))),
+    };
+}
+
 function fitLogNormal(moveNums, avgTimes) {
     if (avgTimes.reduce((a, b) => a + b, 0) === 0 || moveNums.length < 3) return null;
     const logNums = moveNums.map(x => Math.log(x));
@@ -1082,20 +1052,27 @@ function fitLogNormal(moveNums, avgTimes) {
 
     let bestRss = Infinity, bestMu = 2.5, bestSigma = 0.6, bestA = 1;
 
-    // Grid search: for each (mu, sigma), solve for optimal A analytically then measure RSS
+    // Grid search: for each (mu, sigma), solve for optimal A and b (intercept) analytically
+    // Model: y = A·pdf(x) + b  →  2×2 normal equations
+    const n = avgTimes.length;
+    let bestB = 0;
     for (let mi = 0; mi <= 59; mi++) {
         const mu = 1.5 + mi * (3.1 / 59);
         for (let si = 0; si <= 39; si++) {
             const sigma = 0.2 + si * (1.3 / 39);
             const s2 = sigma * sigma;
             const pdfs = logNums.map((lx, i) => K * Math.exp(-Math.pow(lx - mu, 2) / (2 * s2)) / (moveNums[i] * sigma));
-            const dot_yp = avgTimes.reduce((s, y, i) => s + y * pdfs[i], 0);
-            const dot_pp = pdfs.reduce((s, p) => s + p * p, 0);
-            if (dot_pp === 0) continue;
-            const A = dot_yp / dot_pp;
+            const sum_p  = pdfs.reduce((s, p) => s + p, 0);
+            const sum_p2 = pdfs.reduce((s, p) => s + p * p, 0);
+            const sum_y  = avgTimes.reduce((s, y) => s + y, 0);
+            const sum_py = avgTimes.reduce((s, y, i) => s + y * pdfs[i], 0);
+            const det = n * sum_p2 - sum_p * sum_p;
+            if (det === 0) continue;
+            const A = (n * sum_py - sum_p * sum_y) / det;
+            const b = (sum_p2 * sum_y - sum_p * sum_py) / det;
             if (A <= 0) continue;
-            const rss = avgTimes.reduce((s, y, i) => s + Math.pow(y - A * pdfs[i], 2), 0);
-            if (rss < bestRss) { bestRss = rss; bestMu = mu; bestSigma = sigma; bestA = A; }
+            const rss = avgTimes.reduce((s, y, i) => s + Math.pow(y - A * pdfs[i] - b, 2), 0);
+            if (rss < bestRss) { bestRss = rss; bestMu = mu; bestSigma = sigma; bestA = A; bestB = b; }
         }
     }
 
@@ -1105,8 +1082,8 @@ function fitLogNormal(moveNums, avgTimes) {
         meanMove: Math.round(Math.exp(bestMu + s2 / 2)),
         sigma: bestSigma.toFixed(2),
         curve: logNums.map((lx, i) => {
-            const v = bestA * K * Math.exp(-Math.pow(lx - bestMu, 2) / (2 * s2)) / (moveNums[i] * bestSigma);
-            return Math.round(v * 100) / 100;
+            const v = bestA * K * Math.exp(-Math.pow(lx - bestMu, 2) / (2 * s2)) / (moveNums[i] * bestSigma) + bestB;
+            return Math.round(Math.max(0, v) * 100) / 100;
         }),
     };
 }
@@ -1122,26 +1099,58 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         if (charts[moveKey]) charts[moveKey].destroy();
 
         // ── Distribution histogram ──
+        const mixture = fitMixtureDist(data.buckets);
+        const distDatasets = [{
+            type: 'bar',
+            label: 'Moves',
+            data: data.buckets.map(b => b.count),
+            backgroundColor: 'rgba(129, 140, 248, 0.7)',
+            borderRadius: 4,
+            order: 3,
+        }];
+        if (mixture) {
+            distDatasets.push({
+                type: 'line',
+                label: 'Quick moves',
+                data: mixture.comp1,
+                borderColor: 'rgba(251, 146, 60, 0.85)',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                borderDash: [5, 4],
+                pointRadius: 0,
+                tension: 0.4,
+                order: 1,
+            }, {
+                type: 'line',
+                label: 'Think moves',
+                data: mixture.comp2,
+                borderColor: 'rgba(52, 211, 153, 0.85)',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                borderDash: [5, 4],
+                pointRadius: 0,
+                tension: 0.4,
+                order: 2,
+            });
+        }
         charts[distKey] = new Chart(document.getElementById("move-time-dist-chart" + suffix).getContext('2d'), {
             type: 'bar',
             data: {
                 labels: data.buckets.map(b => b.label),
-                datasets: [{
-                    label: 'Moves',
-                    data: data.buckets.map(b => b.count),
-                    backgroundColor: 'rgba(129, 140, 248, 0.7)',
-                    borderRadius: 4,
-                }]
+                datasets: distDatasets,
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 plugins: {
-                    legend: { display: false },
+                    legend: { display: !!mixture, position: 'top', labels: { boxWidth: 20, font: { size: 11 } } },
                     tooltip: {
                         callbacks: {
                             label: (item) => {
-                                const b = data.buckets[item.dataIndex];
-                                return `${b.count.toLocaleString()} moves (${b.pct}%)`;
+                                if (item.datasetIndex === 0) {
+                                    const b = data.buckets[item.dataIndex];
+                                    return `${b.count.toLocaleString()} moves (${b.pct}%)`;
+                                }
+                                return `${item.dataset.label}: ${item.formattedValue}`;
                             }
                         }
                     }

@@ -131,7 +131,14 @@
         <section id="elo-section" class="section hidden">
             <div class="section-header">
                 <h2>Rating History</h2>
-                <button id="projection-toggle-btn" class="btn-sm" onclick="toggleProjection()">Show Projection</button>
+                <div class="section-controls">
+                    <button id="projection-toggle-btn" class="btn-sm" onclick="toggleProjection()">Show Projection</button>
+                    <div id="projection-controls" class="hidden" style="display:contents">
+                        <button id="fit-mode-btn" class="btn-sm" onclick="toggleFitMode()">Switch to Linear</button>
+                        <label for="recency-weight" class="recency-label">Recency weight: <span id="recency-weight-val"></span></label>
+                        <input type="range" id="recency-weight" min="0" max="5" step="0.1" value="2.0" class="recency-slider">
+                    </div>
+                </div>
             </div>
             <div class="compare-section-labels">
                 <div><span class="compare-user-label" id="elo-primary-label"></span></div>
@@ -143,30 +150,6 @@
                 </div>
                 <div class="compare-col compare-secondary">
                     <div class="chart-container"><canvas id="elo-chart-compare"></canvas></div>
-                </div>
-            </div>
-        </section>
-
-        <!-- ═══ Projected Rating ═══ -->
-        <section id="projected-rating-section" class="section hidden">
-            <div class="section-header">
-                <h2>Projected Rating</h2>
-                <div class="section-controls">
-                    <button id="fit-mode-btn" class="btn-sm" onclick="toggleFitMode()">Switch to Linear</button>
-                    <label for="recency-weight" class="recency-label">Recency weight: <span id="recency-weight-val"></span></label>
-                    <input type="range" id="recency-weight" min="0" max="5" step="0.1" value="2.0" class="recency-slider">
-                </div>
-            </div>
-            <div class="compare-section-labels">
-                <div><span class="compare-user-label" id="projected-primary-label"></span></div>
-                <div><span class="compare-user-label" id="projected-compare-label"></span></div>
-            </div>
-            <div class="compare-wrap">
-                <div class="compare-col">
-                    <div class="chart-container"><canvas id="projected-chart"></canvas></div>
-                </div>
-                <div class="compare-col compare-secondary">
-                    <div class="chart-container"><canvas id="projected-chart-compare"></canvas></div>
                 </div>
             </div>
         </section>
