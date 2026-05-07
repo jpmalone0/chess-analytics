@@ -1017,23 +1017,21 @@ async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
 // ═══════════════════════════════════════════════════════════
 
 
-function fitLogNormal(moveNums, avgTimes) {
+function fitLogLogistic(moveNums, avgTimes) {
     if (avgTimes.reduce((a, b) => a + b, 0) === 0 || moveNums.length < 3) return null;
-    const logNums = moveNums.map(x => Math.log(x));
-    const K = 1 / Math.sqrt(2 * Math.PI);
-
-    let bestRss = Infinity, bestMu = 2.5, bestSigma = 0.6, bestA = 1;
-
-    // Grid search: for each (mu, sigma), solve for optimal A and b (intercept) analytically
-    // Model: y = A·pdf(x) + b  →  2×2 normal equations
     const n = avgTimes.length;
-    let bestB = 0;
-    for (let mi = 0; mi <= 59; mi++) {
-        const mu = 1.5 + mi * (3.1 / 59);
-        for (let si = 0; si <= 39; si++) {
-            const sigma = 0.2 + si * (1.3 / 39);
-            const s2 = sigma * sigma;
-            const pdfs = logNums.map((lx, i) => K * Math.exp(-Math.pow(lx - mu, 2) / (2 * s2)) / (moveNums[i] * sigma));
+    let bestRss = Infinity, bestAlpha = 3, bestBeta = 20, bestA = 1, bestB = 0;
+
+    // Grid search over (alpha, beta); for each pair solve for (A, b) analytically.
+    // Model: y = A·pdf(x; α, β) + b  →  2×2 normal equations
+    for (let ai = 0; ai <= 59; ai++) {
+        const alpha = 1.5 + ai * (6.5 / 59);   // 1.5 – 8
+        for (let bi = 0; bi <= 59; bi++) {
+            const beta = 8 + bi * (52 / 59);    // 8 – 60
+            const pdfs = moveNums.map(x => {
+                const r = x / beta;
+                return (alpha / beta) * Math.pow(r, alpha - 1) / Math.pow(1 + Math.pow(r, alpha), 2);
+            });
             const sum_p  = pdfs.reduce((s, p) => s + p, 0);
             const sum_p2 = pdfs.reduce((s, p) => s + p * p, 0);
             const sum_y  = avgTimes.reduce((s, y) => s + y, 0);
@@ -1044,17 +1042,25 @@ function fitLogNormal(moveNums, avgTimes) {
             const b = (sum_p2 * sum_y - sum_p * sum_py) / det;
             if (A <= 0) continue;
             const rss = avgTimes.reduce((s, y, i) => s + Math.pow(y - A * pdfs[i] - b, 2), 0);
-            if (rss < bestRss) { bestRss = rss; bestMu = mu; bestSigma = sigma; bestA = A; bestB = b; }
+            if (rss < bestRss) { bestRss = rss; bestAlpha = alpha; bestBeta = beta; bestA = A; bestB = b; }
         }
     }
 
-    const s2 = bestSigma * bestSigma;
+    // Mode (peak): β·((α−1)/(α+1))^(1/α)  for α > 1
+    const peakMove = bestAlpha > 1
+        ? Math.round(bestBeta * Math.pow((bestAlpha - 1) / (bestAlpha + 1), 1 / bestAlpha))
+        : 1;
+    // Mean: β·π/α / sin(π/α)  for α > 1
+    const meanMove = Math.round(bestBeta * Math.PI / bestAlpha / Math.sin(Math.PI / bestAlpha));
+    const rmse = Math.sqrt(bestRss / n);
+
     return {
-        peakMove: Math.round(Math.exp(bestMu - s2)),
-        meanMove: Math.round(Math.exp(bestMu + s2 / 2)),
-        sigma: bestSigma.toFixed(2),
-        curve: logNums.map((lx, i) => {
-            const v = bestA * K * Math.exp(-Math.pow(lx - bestMu, 2) / (2 * s2)) / (moveNums[i] * bestSigma) + bestB;
+        peakMove,
+        meanMove,
+        rmse,
+        curve: moveNums.map(x => {
+            const r = x / bestBeta;
+            const v = bestA * (bestAlpha / bestBeta) * Math.pow(r, bestAlpha - 1) / Math.pow(1 + Math.pow(r, bestAlpha), 2) + bestB;
             return Math.round(Math.max(0, v) * 100) / 100;
         }),
     };
@@ -1126,7 +1132,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
 
         // ── Avg think time by move number ──
         const byMove = data.by_move_number;
-        const fit = fitLogNormal(byMove.map(d => d.move_number), byMove.map(d => d.avg_seconds));
+        const fit = fitLogLogistic(byMove.map(d => d.move_number), byMove.map(d => d.avg_seconds));
         const datasets = [{
             label: 'Avg seconds',
             data: byMove.map(d => d.avg_seconds),
@@ -1139,7 +1145,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         }];
         if (fit) {
             datasets.push({
-                label: 'Log-normal fit',
+                label: 'Log-logistic fit',
                 data: fit.curve,
                 borderColor: 'rgba(251, 146, 60, 0.8)',
                 backgroundColor: 'transparent',
@@ -1179,6 +1185,9 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                 }
             }
         });
+
+        const rmseEl = document.getElementById("move-time-rmse" + suffix);
+        if (rmseEl) rmseEl.textContent = fit ? `RMSE ${fit.rmse.toFixed(2)}s` : '';
 
         const statsEl = document.getElementById("move-time-by-move-stats" + suffix);
         if (statsEl) {

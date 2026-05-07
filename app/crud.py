@@ -605,15 +605,26 @@ def move_time_stats(
         all_times.append(t)
         by_move.setdefault(mn, []).append(t)
 
-    bucket_defs = [
-        ("0–5s",   0,   5),
-        ("5–10s",  5,  10),
-        ("10–15s", 10, 15),
-        ("15–20s", 15, 20),
-        ("20–25s", 20, 25),
-        ("25–30s", 25, 30),
-        ("30s+",   30, 9999),
-    ]
+    bucket_defs: list[tuple[str, float, float]]
+    if time_class == "bullet":
+        bucket_defs = [
+            ("0–0.5s", 0,   0.5), ("0.5–1s", 0.5, 1),
+            ("1–1.5s", 1,   1.5), ("1.5–2s", 1.5, 2),
+            ("2–2.5s", 2,   2.5), ("2.5–3s", 2.5, 3),
+            ("3s+",    3, 9999),
+        ]
+    elif time_class == "blitz":
+        bucket_defs = [
+            ("0–2s",  0,  2), ("2–4s",  2,  4), ("4–6s",  4,  6),
+            ("6–8s",  6,  8), ("8–10s", 8, 10), ("10–12s", 10, 12),
+            ("12s+",  12, 9999),
+        ]
+    else:
+        bucket_defs = [
+            ("0–5s",   0,   5), ("5–10s",  5,  10), ("10–15s", 10, 15),
+            ("15–20s", 15, 20), ("20–25s", 20, 25), ("25–30s", 25, 30),
+            ("30s+",   30, 9999),
+        ]
     counts = {label: 0 for label, _, _ in bucket_defs}
     for t in all_times:
         for label, lo, hi in bucket_defs:
