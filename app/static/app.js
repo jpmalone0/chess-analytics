@@ -525,9 +525,13 @@ async function loadEloChart(username, suffix = '', animate = true) {
         }
 
         const allMs = Object.values(groups).flatMap(pts => pts.map(p => p.x));
-        const xMin = Math.min(...allMs);
+        const dataXMin = Math.min(...allMs);
         const actualXMax = Math.max(...allMs);
         let xMax = actualXMax;
+
+        // Honor the selected start date so the axis begins there even if data starts later
+        const selectedStart = getStartDate() ? Date.parse(getStartDate()) : null;
+        const xMin = (selectedStart && selectedStart < dataXMin) ? selectedStart : dataXMin;
 
         const datasets = [];
         for (const [tc, points] of Object.entries(groups)) {
@@ -581,12 +585,16 @@ async function loadEloChart(username, suffix = '', animate = true) {
 
                 const fitColor = hexToRgba(TIME_CLASS_COLORS[tc] || DEFAULT_COLOR, 0.9);
 
+                const fitFirstY = fit.predict(tcXMin);
+                const fitData = Array.from({ length: PROJECTION_STEPS + 1 }, (_, i) => {
+                    const ms = tcXMin + (actualXMax - tcXMin) * i / PROJECTION_STEPS;
+                    return { x: ms, y: fit.predict(ms) };
+                });
+                if (tcXMin > xMin) fitData.unshift({ x: xMin, y: fitFirstY });
+
                 datasets.push({
                     label: `${tc} fit`,
-                    data: Array.from({ length: PROJECTION_STEPS + 1 }, (_, i) => {
-                        const ms = tcXMin + (actualXMax - tcXMin) * i / PROJECTION_STEPS;
-                        return { x: ms, y: fit.predict(ms) };
-                    }),
+                    data: fitData,
                     borderColor: fitColor, backgroundColor: 'transparent',
                     fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 20, borderWidth: 1.5,
                     borderDash: [6, 4], spanGaps: true, hidden: false,

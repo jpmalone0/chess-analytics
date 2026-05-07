@@ -132,7 +132,6 @@
             <div class="section-header">
                 <h2>Rating History</h2>
                 <div class="section-controls">
-                    <button id="projection-toggle-btn" class="btn-sm" onclick="toggleProjection()">Show Projection</button>
                     <div id="projection-controls" class="hidden" style="display:contents">
                         <button id="fit-mode-btn" class="btn-sm" onclick="toggleFitMode()">Switch to Linear</button>
                         <details id="projection-sse-details" style="position:relative; font-size:0.8rem; color:var(--text-muted); font-family:var(--font-mono);">
@@ -140,6 +139,7 @@
                             <div id="projection-sse" style="position:absolute; right:0; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); padding:0.5rem 0.75rem; margin-top:0.25rem; white-space:pre; z-index:10; box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
                         </details>
                     </div>
+                    <button id="projection-toggle-btn" class="btn-sm" onclick="toggleProjection()">Show Projection</button>
                 </div>
             </div>
             <div class="compare-section-labels">
