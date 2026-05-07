@@ -690,17 +690,6 @@ def elo_history(
         for r in rows
     ]
 
-    # IQR outlier filter — removes cross-time-class spikes from inactivity periods
-    if len(raw) >= 5:
-        elos = sorted(p["elo"] for p in raw)
-        n  = len(elos)
-        q1 = elos[n // 4]
-        q3 = elos[3 * n // 4]
-        iqr = q3 - q1
-        if iqr > 0:
-            lo, hi = q1 - 2.0 * iqr, q3 + 2.0 * iqr
-            raw = [p for p in raw if lo <= p["elo"] <= hi]
-
     # Spread same-day games evenly across the day so they don't stack on the chart
     day_counts: dict[str, int] = {}
     for p in raw:

@@ -533,11 +533,14 @@ async function loadEloChart(username, suffix = '', animate = true) {
         for (const [tc, points] of Object.entries(groups)) {
             const color = TIME_CLASS_COLORS[tc] || DEFAULT_COLOR;
             const label = tc.charAt(0).toUpperCase() + tc.slice(1);
+            const firstPt = points[0];
             const lastPt = points[points.length - 1];
-            // Extend flat to actualXMax so all lines share the same "today" endpoint
-            const displayPts = lastPt.x < actualXMax
-                ? [...points, { x: actualXMax, y: lastPt.y }]
-                : points;
+            // Extend flat to shared x bounds so all lines span the full date range
+            const displayPts = [
+                ...(firstPt.x > xMin ? [{ x: xMin, y: firstPt.y }] : []),
+                ...points,
+                ...(lastPt.x < actualXMax ? [{ x: actualXMax, y: lastPt.y }] : []),
+            ];
             datasets.push({
                 label,
                 data: displayPts,
@@ -585,7 +588,7 @@ async function loadEloChart(username, suffix = '', animate = true) {
                         return { x: ms, y: fit.predict(ms) };
                     }),
                     borderColor: fitColor, backgroundColor: 'transparent',
-                    fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
+                    fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 20, borderWidth: 1.5,
                     borderDash: [6, 4], spanGaps: true, hidden: false,
                 });
                 datasets.push({
@@ -595,7 +598,7 @@ async function loadEloChart(username, suffix = '', animate = true) {
                         return { x: ms, y: fit.predict(ms) };
                     }),
                     borderColor: fitColor, backgroundColor: 'transparent',
-                    fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
+                    fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 20, borderWidth: 1.5,
                     borderDash: [6, 4], spanGaps: true,
                 });
             }
