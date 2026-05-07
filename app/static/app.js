@@ -543,7 +543,7 @@ async function loadEloChart(username, suffix = '', animate = true) {
                 data: displayPts,
                 borderColor: color,
                 backgroundColor: hexToRgba(color, currentTimeClass ? 0.08 : 0),
-                fill: !!currentTimeClass, tension: 0, pointRadius: 0, pointHitRadius: 6, borderWidth: 2,
+                fill: !!currentTimeClass, tension: 0, pointRadius: 0, pointHitRadius: 20, borderWidth: 2,
                 spanGaps: true
             });
         }
@@ -823,14 +823,14 @@ async function loadRatingDiff(username, color, op, loadId, suffix = '') {
                         label: 'Win Rate (Decisive) %', type: 'line',
                         data: buckets.map(b => b.win_rate_no_draws),
                         borderColor: '#818cf8', backgroundColor: 'transparent',
-                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#818cf8',
+                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#818cf8', pointHitRadius: 24,
                         yAxisID: 'y2',
                     },
                     {
                         label: 'Draw Rate %', type: 'line',
                         data: buckets.map(b => b.draw_rate),
                         borderColor: '#eab308', backgroundColor: 'transparent',
-                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#eab308',
+                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#eab308', pointHitRadius: 24,
                         yAxisID: 'y2',
                     },
                 ]
@@ -903,14 +903,14 @@ async function loadGameLength(username, color, op, loadId, suffix = '') {
                         label: 'Win Rate (Decisive) %', type: 'line',
                         data: data.map(d => d.win_rate_no_draws),
                         borderColor: '#818cf8', backgroundColor: 'transparent',
-                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#818cf8',
+                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#818cf8', pointHitRadius: 24,
                         yAxisID: 'y2',
                     },
                     {
                         label: 'Draw Rate %', type: 'line',
                         data: data.map(d => d.draw_rate),
                         borderColor: '#eab308', backgroundColor: 'transparent',
-                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#eab308',
+                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#eab308', pointHitRadius: 24,
                         yAxisID: 'y2',
                     },
                 ]
@@ -972,14 +972,14 @@ async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
                         label: 'Win Rate (Decisive) %', type: 'line',
                         data: data.map(d => d.win_rate_no_draws),
                         borderColor: '#818cf8', backgroundColor: 'transparent',
-                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#818cf8',
+                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#818cf8', pointHitRadius: 24,
                         yAxisID: 'y2',
                     },
                     {
                         label: 'Draw Rate %', type: 'line',
                         data: data.map(d => d.draw_rate),
                         borderColor: '#eab308', backgroundColor: 'transparent',
-                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#eab308',
+                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#eab308', pointHitRadius: 24,
                         yAxisID: 'y2',
                     },
                 ]
@@ -1144,6 +1144,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
             fill: true,
             tension: 0.3,
             pointRadius: 3,
+            pointHitRadius: 20,
             borderWidth: 2,
         }];
         if (fit) {
@@ -1155,6 +1156,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                 fill: false,
                 tension: 0.4,
                 pointRadius: 0,
+                pointHitRadius: 20,
                 borderWidth: 2,
                 borderDash: [5, 4],
             });
