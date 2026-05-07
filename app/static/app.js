@@ -133,13 +133,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!e.target.closest('#compare-search-wrap .search-wrap')) hideCompareRecentDropdown();
     });
 
-    const recencySlider = document.getElementById('recency-weight');
-    const recencyVal = document.getElementById('recency-weight-val');
-    recencyVal.textContent = parseFloat(recencySlider.value).toFixed(1);
-    recencySlider.addEventListener('input', () => {
-        recencyVal.textContent = parseFloat(recencySlider.value).toFixed(1);
-    });
-    recencySlider.addEventListener('change', reloadProjections);
 
     // Register main perspective tab listeners once (static DOM elements)
     document.querySelectorAll('#main-perspective-tabs .tab-btn').forEach(btn => {
@@ -531,13 +524,23 @@ async function loadEloChart(username, suffix = '', animate = true) {
             });
         }
 
+        const allMs = Object.values(groups).flatMap(pts => pts.map(p => p.x));
+        const xMin = Math.min(...allMs);
+        const actualXMax = Math.max(...allMs);
+        let xMax = actualXMax;
+
         const datasets = [];
         for (const [tc, points] of Object.entries(groups)) {
             const color = currentTimeClass ? DEFAULT_COLOR : (TIME_CLASS_COLORS[tc] || DEFAULT_COLOR);
             const label = tc.charAt(0).toUpperCase() + tc.slice(1);
+            const lastPt = points[points.length - 1];
+            // Extend flat to actualXMax so all lines share the same "today" endpoint
+            const displayPts = lastPt.x < actualXMax
+                ? [...points, { x: actualXMax, y: lastPt.y }]
+                : points;
             datasets.push({
                 label,
-                data: points,
+                data: displayPts,
                 borderColor: color,
                 backgroundColor: hexToRgba(color, currentTimeClass ? 0.08 : 0),
                 fill: !!currentTimeClass, tension: 0, pointRadius: 0, pointHitRadius: 6, borderWidth: 2,
@@ -545,49 +548,61 @@ async function loadEloChart(username, suffix = '', animate = true) {
             });
         }
 
-        const allMs = datasets.flatMap(ds => ds.data.map(p => p.x));
-        const xMin = Math.min(...allMs);
-        const actualXMax = Math.max(...allMs);
-        let xMax = actualXMax;
-
         const chartPlugins = [];
         if (projectionActive) {
-            const AMBER = '#f59e0b';
-            const lambda = getRecencyLambda();
+            // All projections start from actualXMax and extend by the longest tc history
+            for (const [, points] of Object.entries(groups)) {
+                if (points.length < 2) continue;
+                const xs = points.map(p => p.x);
+                const span = Math.max(...xs) - Math.min(...xs) || 1;
+                if (actualXMax + span > xMax) xMax = actualXMax + span;
+            }
+            const globalProjEnd = xMax;
+
+            const sseparts = [];
             for (const [tc, points] of Object.entries(groups)) {
                 if (points.length < 2) continue;
                 const xs = points.map(p => p.x);
-                const tcXMin = Math.min(...xs), tcXMax = Math.max(...xs);
-                const range = tcXMax - tcXMin || 1;
-                const projMax = tcXMax + range;
-                if (projMax > xMax) xMax = projMax;
+                const tcXMin = Math.min(...xs);
+                const range = actualXMax - tcXMin || 1;
 
-                const fit = currentFitMode === 'log' ? fitLogarithmic(points, lambda) : fitLinear(points, lambda);
+                const fitLog = fitLogarithmic(points);
+                const fitLin = fitLinear(points);
+                const fit = currentFitMode === 'log' ? fitLog : fitLin;
                 if (!fit) continue;
 
-                const label = tc.charAt(0).toUpperCase() + tc.slice(1);
+                if (!suffix && fitLog && fitLin) {
+                    const label = tc.charAt(0).toUpperCase() + tc.slice(1);
+                    sseparts.push(`${label}  log ${fitLog.rmse.toFixed(1)}  lin ${fitLin.rmse.toFixed(1)} Elo`);
+                }
+
                 const fitLabel = currentFitMode === 'log' ? 'log fit' : 'linear fit';
+                const label = tc.charAt(0).toUpperCase() + tc.slice(1);
+                const fitColor = currentTimeClass ? '#f59e0b' : hexToRgba(TIME_CLASS_COLORS[tc] || DEFAULT_COLOR, 0.9);
 
                 datasets.push({
                     label: `${label} ${fitLabel}`,
                     data: Array.from({ length: PROJECTION_STEPS + 1 }, (_, i) => {
-                        const ms = tcXMin + range * i / PROJECTION_STEPS;
-                        return { x: ms, y: evalFit(fit, ms) };
+                        const ms = tcXMin + (actualXMax - tcXMin) * i / PROJECTION_STEPS;
+                        return { x: ms, y: fit.predict(ms) };
                     }),
-                    borderColor: AMBER, backgroundColor: 'transparent',
+                    borderColor: fitColor, backgroundColor: 'transparent',
                     fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5, spanGaps: true
                 });
                 datasets.push({
                     label: `${label} projection`,
                     data: Array.from({ length: PROJECTION_STEPS + 1 }, (_, i) => {
-                        const ms = tcXMax + range * i / PROJECTION_STEPS;
-                        return { x: ms, y: evalFit(fit, ms) };
+                        const ms = actualXMax + (globalProjEnd - actualXMax) * i / PROJECTION_STEPS;
+                        return { x: ms, y: fit.predict(ms) };
                     }),
-                    borderColor: AMBER, backgroundColor: hexToRgba(AMBER, 0.06),
-                    fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
+                    borderColor: fitColor, backgroundColor: 'transparent',
+                    fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
                     borderDash: [6, 4], spanGaps: true
                 });
             }
+
+            const sseEl = document.getElementById('projection-sse');
+            if (sseEl) sseEl.textContent = sseparts.join('\n');
 
             const capturedActualXMax = actualXMax;
             chartPlugins.push({
@@ -651,35 +666,31 @@ function hexToRgba(hex, a) {
     return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
-// Weighted least-squares: w_i = exp(-lambda * (1 - t_norm)) weights recent points higher
-function weightedLS(points, lambda, transform) {
+function ols(points, transform) {
     if (points.length < 2) return null;
     const xs = points.map(p => p.x);
-    let xMin = xs[0], xMax = xs[0];
-    for (const x of xs) { if (x < xMin) xMin = x; if (x > xMax) xMax = x; }
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
     const range = xMax - xMin || 1;
     const ts = xs.map(x => (x - xMin) / range);
     const zs = ts.map(transform);
     const ys = points.map(p => p.y);
-    const ws = ts.map(t => Math.exp(-lambda * (1 - t)));
-    const wSum = ws.reduce((a, b) => a + b, 0);
-    const zMean = ws.reduce((s, w, i) => s + w * zs[i], 0) / wSum;
-    const yMean = ws.reduce((s, w, i) => s + w * ys[i], 0) / wSum;
+    const n = points.length;
+    const zMean = zs.reduce((a, b) => a + b, 0) / n;
+    const yMean = ys.reduce((a, b) => a + b, 0) / n;
     let num = 0, den = 0;
-    for (let i = 0; i < points.length; i++) {
-        num += ws[i] * (zs[i] - zMean) * (ys[i] - yMean);
-        den += ws[i] * (zs[i] - zMean) ** 2;
+    for (let i = 0; i < n; i++) {
+        num += (zs[i] - zMean) * (ys[i] - yMean);
+        den += (zs[i] - zMean) ** 2;
     }
-    const b = den === 0 ? 0 : num / den;
-    return { a: yMean - b * zMean, b, xMin, range, transform };
+    const slope = den === 0 ? 0 : num / den;
+    const intercept = yMean - slope * zMean;
+    const predict = ms => intercept + slope * transform((ms - xMin) / range);
+    const rmse = Math.sqrt(ys.reduce((s, y, i) => s + (y - predict(xs[i])) ** 2, 0) / n);
+    return { predict, rmse, xMin, range };
 }
 
-function evalFit(fit, ms) {
-    return fit.a + fit.b * fit.transform((ms - fit.xMin) / fit.range);
-}
-
-const fitLogarithmic = (points, lambda = 0) => weightedLS(points, lambda, t => Math.log(1 + t));
-const fitLinear      = (points, lambda = 0) => weightedLS(points, lambda, t => t);
+const fitLogarithmic = points => ols(points, t => Math.log(1 + t));
+const fitLinear      = points => ols(points, t => t);
 
 function toggleProjection() {
     projectionActive = !projectionActive;
@@ -689,6 +700,8 @@ function toggleProjection() {
         btn.textContent = 'Hide Projection';
         btn.classList.add('active');
         controls.classList.remove('hidden');
+        document.getElementById('fit-mode-btn').textContent =
+            currentFitMode === 'log' ? 'Switch to Linear' : 'Switch to Log';
     } else {
         btn.textContent = 'Show Projection';
         btn.classList.remove('active');
@@ -704,9 +717,6 @@ function toggleFitMode() {
     reloadProjections();
 }
 
-function getRecencyLambda() {
-    return parseFloat(document.getElementById('recency-weight').value);
-}
 
 function reloadProjections() {
     if (!currentUsername) return;

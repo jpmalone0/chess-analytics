@@ -135,8 +135,10 @@
                     <button id="projection-toggle-btn" class="btn-sm" onclick="toggleProjection()">Show Projection</button>
                     <div id="projection-controls" class="hidden" style="display:contents">
                         <button id="fit-mode-btn" class="btn-sm" onclick="toggleFitMode()">Switch to Linear</button>
-                        <label for="recency-weight" class="recency-label">Recency weight: <span id="recency-weight-val"></span></label>
-                        <input type="range" id="recency-weight" min="0" max="5" step="0.1" value="2.0" class="recency-slider">
+                        <details id="projection-sse-details" style="font-size:0.8rem; color:var(--text-muted); font-family:var(--font-mono);">
+                            <summary style="cursor:pointer; list-style:none;">RMSE ▾</summary>
+                            <div id="projection-sse" style="position:absolute; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); padding:0.5rem 0.75rem; margin-top:0.25rem; white-space:pre; z-index:10; box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
+                        </details>
                     </div>
                 </div>
             </div>
