@@ -3,6 +3,7 @@ Database query functions — all queries written as explicit SQL using sqlalchem
 """
 
 import statistics as _stats
+from collections import defaultdict
 from datetime import date
 from typing import Any, Optional
 
@@ -12,6 +13,21 @@ from sqlalchemy.orm import Session
 # ═══════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════
+
+_FAMILY_TERMINALS = frozenset({
+    'Defense', 'Opening', 'Game', 'Gambit', 'Attack',
+    'System', 'Formation', 'Variation', 'Stonewall',
+})
+
+def _opening_family(name: str) -> str:
+    """Truncate an opening name at its first terminal keyword to get the family."""
+    if not name:
+        return name
+    words = name.split()
+    for i, w in enumerate(words):
+        if w in _FAMILY_TERMINALS:
+            return ' '.join(words[:i + 1])
+    return ' '.join(words[:2])
 
 def _build_game_filters(
     player_id: int,
@@ -47,10 +63,10 @@ def _build_game_filters(
     if opening_names:
         ops = [o.strip() for o in opening_names.split("|") if o.strip()]
         if ops:
-            placeholders = ", ".join(f":op_{i}" for i in range(len(ops)))
-            clauses.append(f"g.opening_name IN ({placeholders})")
+            like_clauses = [f"g.opening_name LIKE :op_{i}" for i in range(len(ops))]
+            clauses.append(f"({' OR '.join(like_clauses)})")
             for i, op in enumerate(ops):
-                params[f"op_{i}"] = op
+                params[f"op_{i}"] = op + '%'
 
     return " AND ".join(clauses), params
 
@@ -717,7 +733,7 @@ def get_top_openings(
     end_date: Optional[date] = None,
     limit: int = 5,
 ):
-    """Top N opening names for the player, split by color."""
+    """Top N opening families for the player, split by color."""
     result: dict[str, list[str]] = {"white": [], "black": []}
 
     for color in ["white", "black"]:
@@ -726,7 +742,7 @@ def get_top_openings(
             "opening_name IS NOT NULL",
             "opening_name != ''",
         ]
-        params: dict[str, Any] = {"player_id": player_id, "limit": limit}
+        params: dict[str, Any] = {"player_id": player_id}
 
         if time_class:
             clauses.append("time_class = :time_class")
@@ -740,16 +756,19 @@ def get_top_openings(
 
         where = " AND ".join(clauses)
         sql = text(f"""
-            SELECT   opening_name
-            FROM     games
-            WHERE    {where}
+            SELECT opening_name, COUNT(*) AS cnt
+            FROM   games
+            WHERE  {where}
             GROUP BY opening_name
-            ORDER BY COUNT(*) DESC
-            LIMIT    :limit
         """)
+        rows = db.execute(sql, params).mappings().all()
+
+        family_counts: dict[str, int] = defaultdict(int)
+        for r in rows:
+            family_counts[_opening_family(r["opening_name"])] += r["cnt"]
+
         result[color] = [
-            r["opening_name"]
-            for r in db.execute(sql, params).mappings().all()
+            fam for fam, _ in sorted(family_counts.items(), key=lambda x: -x[1])[:limit]
         ]
 
     return result
