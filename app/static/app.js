@@ -1239,7 +1239,8 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
 
         const statsEl = document.getElementById("move-time-by-move-stats" + suffix);
         if (statsEl) {
-            const totalSec = byMove.reduce((s, d) => s + d.avg_seconds, 0);
+            const gamesCount = byMove[0]?.count || 1;
+            const totalSec = byMove.reduce((s, d) => s + d.avg_seconds * d.count, 0) / gamesCount;
             const mins = Math.floor(totalSec / 60);
             const secs = Math.round(totalSec % 60);
             const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
