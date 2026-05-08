@@ -104,8 +104,9 @@ def get_games_for_player(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     limit: int = 50, offset: int = 0,
+    opening_names: Optional[str] = None,
 ):
-    where, params = _build_game_filters(player_id, time_class, start_date, end_date)
+    where, params = _build_game_filters(player_id, time_class, start_date, end_date, opening_names=opening_names)
     params["limit"]  = limit
     params["offset"] = offset
     sql = text(f"""
@@ -733,10 +734,13 @@ def get_top_openings(
     end_date: Optional[date] = None,
     limit: int = 8,
 ):
-    """Top N opening families for the player, split by color."""
-    result: dict[str, list[str]] = {"white": [], "black": []}
+    """Top N opening families for the player, split by color, with win/draw/loss stats."""
+    result: dict[str, list[dict]] = {"white": [], "black": []}
 
     for color in ["white", "black"]:
+        win_case  = "result = '1-0'" if color == "white" else "result = '0-1'"
+        loss_case = "result = '0-1'" if color == "white" else "result = '1-0'"
+
         clauses = [
             f"{color}_player_id = :player_id",
             "opening_name IS NOT NULL",
@@ -756,19 +760,44 @@ def get_top_openings(
 
         where = " AND ".join(clauses)
         sql = text(f"""
-            SELECT opening_name, COUNT(*) AS cnt
+            SELECT
+                opening_name,
+                COUNT(*) AS cnt,
+                SUM(CASE WHEN {win_case}          THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN result = '1/2-1/2'  THEN 1 ELSE 0 END) AS draws,
+                SUM(CASE WHEN {loss_case}          THEN 1 ELSE 0 END) AS losses
             FROM   games
             WHERE  {where}
             GROUP BY opening_name
         """)
         rows = db.execute(sql, params).mappings().all()
 
-        family_counts: dict[str, int] = defaultdict(int)
+        family_data: dict[str, dict] = defaultdict(lambda: {"games": 0, "wins": 0, "draws": 0, "losses": 0})
         for r in rows:
-            family_counts[_opening_family(r["opening_name"])] += r["cnt"]
+            fam = _opening_family(r["opening_name"])
+            family_data[fam]["games"]  += r["cnt"]
+            family_data[fam]["wins"]   += r["wins"]
+            family_data[fam]["draws"]  += r["draws"]
+            family_data[fam]["losses"] += r["losses"]
 
-        result[color] = [
-            fam for fam, _ in sorted(family_counts.items(), key=lambda x: -x[1])[:limit]
-        ]
+        top_families = sorted(family_data.items(), key=lambda x: -x[1]["games"])[:limit]
+
+        entries = []
+        for fam, d in top_families:
+            g        = d["games"]
+            w        = d["wins"]
+            dr       = d["draws"]
+            decisive = w + d["losses"]
+            entries.append({
+                "name":              fam,
+                "games":             g,
+                "wins":              w,
+                "draws":             dr,
+                "losses":            d["losses"],
+                "win_rate":          round(w / g * 100, 1) if g else 0.0,
+                "draw_rate":         round(dr / g * 100, 1) if g else 0.0,
+                "decisive_win_rate": round(w / decisive * 100, 1) if decisive else 0.0,
+            })
+        result[color] = entries
 
     return result

@@ -109,6 +109,7 @@ def list_games(
     end_date: Optional[date] = None,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    opening_names: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     player = crud.get_player(db, username)
@@ -119,6 +120,7 @@ def list_games(
         db, player.player_id, time_class=time_class,
         start_date=start_date, end_date=end_date,
         limit=limit, offset=offset,
+        opening_names=opening_names,
     )
 
     result = []

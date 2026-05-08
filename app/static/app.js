@@ -16,6 +16,7 @@ const GAMES_PER_PAGE = 10;
 const requestCache = {};
 let analyticsLoadId = 0;
 let compareLoadId = 0;
+let currentOpeningFilter = '';
 
 // Chart.js defaults
 Chart.defaults.color = '#8b9ab8';
@@ -146,10 +147,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById(targetId + '-tabs-container').classList.remove('hidden');
                 const activeSub = document.querySelector(`#${targetId}-tabs .tab-btn.active`);
                 const op = activeSub ? activeSub.dataset.op : "";
+                currentOpeningFilter = op;
                 loadColorAnalytics(currentUsername, targetId, op);
             } else {
+                currentOpeningFilter = '';
                 loadColorAnalytics(currentUsername, 'global', "");
             }
+            gamesPage = 0;
+            loadGames(currentUsername);
+            if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
         });
     });
 });
@@ -283,6 +289,7 @@ async function loadPlayer() {
     currentUsername = username;
     currentTimeClass = 'rapid';
     gamesPage = 0;
+    currentOpeningFilter = '';
     document.querySelectorAll('.tc-btn').forEach(b => b.classList.remove('active'));
     document.querySelector('.tc-btn[data-tc="rapid"]').classList.add('active');
 
@@ -766,25 +773,58 @@ async function initRepertoireTabs(username) {
         }
 
         const topOpenings = await fetchJSON(`/api/players/${username}/analytics/top-openings${buildFilterParams()}`);
-        
+
         for (const color of ['white', 'black']) {
             const tabsContainer = document.getElementById(`${color}-tabs`);
             const openings = topOpenings[color] || [];
-            
-            const top5Str = openings.join('|');
-            
+
+            const top8Str = openings.map(o => o.name).join('|');
+
             tabsContainer.innerHTML = `
                 <button class="tab-btn active" data-color="${color}" data-op="">Overall</button>
-                <button class="tab-btn" data-color="${color}" data-op="${top5Str}">Top 8 Aggregated</button>
-                ${openings.map((op, i) => `<button class="tab-btn" data-color="${color}" data-op="${op}">#${i+1} ${op}</button>`).join('')}
+                <button class="tab-btn" data-color="${color}" data-op="${top8Str}">Top 8 Aggregated</button>
+                ${openings.map((o, i) => `<button class="tab-btn" data-color="${color}" data-op="${o.name}">#${i+1} ${o.name}</button>`).join('')}
             `;
-            
+
+            // Populate opening overview table for this color
+            const tableEl = document.getElementById(`opening-stats-table-${color}`);
+            if (tableEl && openings.length > 0) {
+                tableEl.innerHTML = `
+                    <table class="opening-stats-table">
+                        <thead>
+                            <tr>
+                                <th>Opening</th>
+                                <th>Games</th>
+                                <th>Win%</th>
+                                <th>Draw%</th>
+                                <th>Decisive%</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${openings.map(o => `
+                                <tr>
+                                    <td>${o.name}</td>
+                                    <td>${o.games}</td>
+                                    <td class="wr-win">${o.win_rate}%</td>
+                                    <td class="wr-draw">${o.draw_rate}%</td>
+                                    <td class="wr-dec">${o.decisive_win_rate}%</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            }
+
             tabsContainer.querySelectorAll('.tab-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     tabsContainer.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
                     e.target.classList.add('active');
                     const op = e.target.dataset.op;
+                    currentOpeningFilter = op;
+                    gamesPage = 0;
                     loadColorAnalytics(currentUsername, color, op);
+                    loadGames(currentUsername);
+                    if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
                 });
             });
         }
@@ -792,6 +832,17 @@ async function initRepertoireTabs(username) {
 }
 
 function loadColorAnalytics(username, color, op) {
+    const overview = document.getElementById('opening-stats-overview');
+    if (overview) {
+        if (color !== 'global') {
+            overview.classList.remove('hidden');
+            document.getElementById('opening-stats-table-white').classList.toggle('hidden', color !== 'white');
+            document.getElementById('opening-stats-table-black').classList.toggle('hidden', color !== 'black');
+        } else {
+            overview.classList.add('hidden');
+        }
+    }
+
     const loadId = ++analyticsLoadId;
     loadRatingDiff(username, color, op, loadId);
     loadGameLength(username, color, op, loadId);
@@ -1241,6 +1292,15 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         if (statsEl) {
             const gamesCount = byMove[0]?.count || 1;
             const totalSec = byMove.reduce((s, d) => s + d.avg_seconds * d.count, 0) / gamesCount;
+
+            // Move at which 50% of total thinking time has been cumulatively spent
+            const totalWeighted = byMove.reduce((s, d) => s + d.avg_seconds * d.count, 0);
+            let cumulative = 0;
+            let medianEffortMove = byMove[0]?.move_number ?? 1;
+            for (const d of byMove) {
+                cumulative += d.avg_seconds * d.count;
+                if (cumulative >= totalWeighted * 0.5) { medianEffortMove = d.move_number; break; }
+            }
             const mins = Math.floor(totalSec / 60);
             const secs = Math.round(totalSec % 60);
             const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
@@ -1253,7 +1313,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                     ${fit ? `
                     <div style="flex: 1; padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                         <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Mean effort move</div>
-                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">move ${fit.meanMove}</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">move ${medianEffortMove}</div>
                     </div>
                     <div style="flex: 1; padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                         <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Peak think move</div>
@@ -1274,10 +1334,9 @@ async function loadGames(username, suffix = '') {
     const page = suffix ? gamesPageCompare : gamesPage;
     try {
         const offset = page * GAMES_PER_PAGE;
-        const games = await fetchJSON(`/api/players/${username}/games${buildFilterParamsExtra({
-            limit: GAMES_PER_PAGE,
-            offset: offset,
-        })}`);
+        const extras = { limit: GAMES_PER_PAGE, offset };
+        if (currentOpeningFilter) extras.opening_names = currentOpeningFilter;
+        const games = await fetchJSON(`/api/players/${username}/games${buildFilterParamsExtra(extras)}`);
 
         const tbody = document.getElementById('games-tbody' + suffix);
         if (games.length === 0 && page === 0) {

@@ -570,6 +570,55 @@ body {
     background: #1a1a2e;
 }
 
+/* ── Opening Stats Table ─────────────────────────────────── */
+
+.opening-stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.opening-stats-table th {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+}
+
+.opening-stats-table th:not(:first-child) {
+    text-align: right;
+}
+
+.opening-stats-table td {
+    padding: 0.45rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    transition: background 0.15s;
+}
+
+.opening-stats-table td:not(:first-child) {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+}
+
+.opening-stats-table tbody tr:hover td {
+    background: var(--bg-card-hover);
+}
+
+.opening-stats-table td:first-child {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.opening-stats-table .wr-win   { color: var(--green); font-weight: 600; }
+.opening-stats-table .wr-draw  { color: var(--yellow); }
+.opening-stats-table .wr-dec   { color: var(--accent-light); font-weight: 600; }
+
 /* ── Pagination ─────────────────────────────────────────── */
 
 .pagination-controls {
