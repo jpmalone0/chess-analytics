@@ -769,7 +769,7 @@ async function initRepertoireTabs(username) {
             
             tabsContainer.innerHTML = `
                 <button class="tab-btn active" data-color="${color}" data-op="">Overall</button>
-                <button class="tab-btn" data-color="${color}" data-op="${top5Str}">Top 5 Aggregated</button>
+                <button class="tab-btn" data-color="${color}" data-op="${top5Str}">Top 8 Aggregated</button>
                 ${openings.map((op, i) => `<button class="tab-btn" data-color="${color}" data-op="${op}">#${i+1} ${op}</button>`).join('')}
             `;
             
@@ -867,7 +867,33 @@ async function loadRatingDiff(username, color, op, loadId, suffix = '') {
             }
         });
 
+        const totalGames = buckets.reduce((s, b) => s + b.total_games, 0);
+        const totalWins  = buckets.reduce((s, b) => s + b.wins, 0);
+        const totalDraws = buckets.reduce((s, b) => s + b.draws, 0);
+        const totalLosses = buckets.reduce((s, b) => s + b.losses, 0);
+        const overallWinRate      = totalGames ? Math.round(totalWins / totalGames * 100) : 0;
+        const overallDrawRate     = totalGames ? Math.round(totalDraws / totalGames * 100) : 0;
+        const overallDecisiveRate = (totalWins + totalLosses) ? Math.round(totalWins / (totalWins + totalLosses) * 100) : 0;
+
         document.getElementById("rating-diff-headlines" + suffix).innerHTML = `
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:1rem;">
+                <div class="stat-card" style="padding:0.6rem 0.75rem;">
+                    <div class="stat-label">Games</div>
+                    <div class="stat-value" style="font-size:1.3rem;">${totalGames}</div>
+                </div>
+                <div class="stat-card win" style="padding:0.6rem 0.75rem;">
+                    <div class="stat-label">Win Rate</div>
+                    <div class="stat-value" style="font-size:1.3rem;">${overallWinRate}%</div>
+                </div>
+                <div class="stat-card draw" style="padding:0.6rem 0.75rem;">
+                    <div class="stat-label">Draw Rate</div>
+                    <div class="stat-value" style="font-size:1.3rem;">${overallDrawRate}%</div>
+                </div>
+                <div class="stat-card accent" style="padding:0.6rem 0.75rem;">
+                    <div class="stat-label">Decisive Win Rate</div>
+                    <div class="stat-value" style="font-size:1.3rem;">${overallDecisiveRate}%</div>
+                </div>
+            </div>
             <div class="headline-stat green" style="padding: 1rem;">
                 <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
                     Hold Rate (win % when >10 elo higher rated than your opponent):

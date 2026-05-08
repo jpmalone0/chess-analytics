@@ -731,7 +731,7 @@ def get_top_openings(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    limit: int = 5,
+    limit: int = 8,
 ):
     """Top N opening families for the player, split by color."""
     result: dict[str, list[str]] = {"white": [], "black": []}
