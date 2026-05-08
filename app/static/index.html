@@ -12,7 +12,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/static/style.css?v=7">
+    <link rel="stylesheet" href="/static/style.css?v=8">
 </head>
 
 <body>
@@ -127,45 +127,61 @@
             </div>
         </section>
 
-        <!-- ═══ Elo Chart ═══ -->
-        <section id="elo-section" class="section hidden">
-            <div class="section-header">
-                <h2>Rating History</h2>
-                <div class="section-controls">
-                    <div id="projection-controls" class="hidden" style="display:contents">
-                        <button id="fit-mode-btn" class="btn-sm" onclick="toggleFitMode()">Switch to Linear</button>
+        <!-- ═══ Layer 1: Rating History + Opening Overview ═══ -->
+        <div id="layer-1" class="hidden">
+            <div id="layer-1-left">
+                <section id="elo-section" class="section">
+                    <div class="section-header">
+                        <h2>Rating History</h2>
+                        <div class="section-controls">
+                            <div id="projection-controls" class="hidden" style="display:contents">
+                                <button id="fit-mode-btn" class="btn-sm" onclick="toggleFitMode()">Switch to Linear</button>
+                            </div>
+                            <button id="projection-toggle-btn" class="btn-sm" onclick="toggleProjection()">Show Projection</button>
+                        </div>
                     </div>
-                    <button id="projection-toggle-btn" class="btn-sm" onclick="toggleProjection()">Show Projection</button>
+                    <div class="compare-section-labels">
+                        <div><span class="compare-user-label" id="elo-primary-label"></span></div>
+                        <div><span class="compare-user-label" id="elo-compare-label"></span></div>
+                    </div>
+                    <div class="compare-wrap">
+                        <div class="compare-col">
+                            <div class="chart-container">
+                                <canvas id="elo-chart"></canvas>
+                                <details id="projection-sse-details" class="hidden" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);z-index:5;">
+                                    <summary style="cursor:pointer;list-style:none;">RMSE ▾</summary>
+                                    <div id="projection-sse" style="position:absolute;right:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);padding:0.5rem 0.75rem;margin-top:0.25rem;white-space:pre;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
+                                </details>
+                            </div>
+                        </div>
+                        <div class="compare-col compare-secondary">
+                            <div class="chart-container">
+                                <canvas id="elo-chart-compare"></canvas>
+                                <details id="projection-sse-details-compare" class="hidden" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);z-index:5;">
+                                    <summary style="cursor:pointer;list-style:none;">RMSE ▾</summary>
+                                    <div id="projection-sse-compare" style="position:absolute;right:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);padding:0.5rem 0.75rem;margin-top:0.25rem;white-space:pre;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
+                                </details>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div id="layer-1-right">
+                <div id="opening-stats-overview" class="section hidden">
+                    <div class="section-header">
+                        <h2>Opening Overview</h2>
+                    </div>
+                    <div class="games-table-wrap">
+                        <div id="opening-stats-table-global" class="hidden"></div>
+                        <div id="opening-stats-table-white" class="hidden"></div>
+                        <div id="opening-stats-table-black" class="hidden"></div>
+                    </div>
                 </div>
             </div>
-            <div class="compare-section-labels">
-                <div><span class="compare-user-label" id="elo-primary-label"></span></div>
-                <div><span class="compare-user-label" id="elo-compare-label"></span></div>
-            </div>
-            <div class="compare-wrap">
-                <div class="compare-col">
-                    <div class="chart-container">
-                        <canvas id="elo-chart"></canvas>
-                        <details id="projection-sse-details" class="hidden" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);z-index:5;">
-                            <summary style="cursor:pointer;list-style:none;">RMSE ▾</summary>
-                            <div id="projection-sse" style="position:absolute;right:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);padding:0.5rem 0.75rem;margin-top:0.25rem;white-space:pre;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
-                        </details>
-                    </div>
-                </div>
-                <div class="compare-col compare-secondary">
-                    <div class="chart-container">
-                        <canvas id="elo-chart-compare"></canvas>
-                        <details id="projection-sse-details-compare" class="hidden" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);z-index:5;">
-                            <summary style="cursor:pointer;list-style:none;">RMSE ▾</summary>
-                            <div id="projection-sse-compare" style="position:absolute;right:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);padding:0.5rem 0.75rem;margin-top:0.25rem;white-space:pre;z-index:10;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
-                        </details>
-                    </div>
-                </div>
-            </div>
-        </section>
+        </div>
 
         <!-- ═══ Main Perspectives ═══ -->
-        <section id="main-perspective-section" class="section hidden" style="margin-top: 3rem;">
+        <section id="main-perspective-section" class="section hidden">
 
             <div class="repertoire-tabs" id="main-perspective-tabs"
                 style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.5rem; margin-bottom: 1.5rem;">
@@ -184,110 +200,107 @@
                     style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.5rem;"></div>
             </div>
 
-            <!-- ═══ Opening Stats Overview ═══ -->
-            <div id="opening-stats-overview" class="hidden" style="margin-bottom: 1.5rem;">
-                <h4 class="chart-title" style="margin-bottom: 0.75rem;">📖 Opening Overview</h4>
-                <div class="games-table-wrap">
-                    <div id="opening-stats-table-global" class="hidden"></div>
-                    <div id="opening-stats-table-white" class="hidden"></div>
-                    <div id="opening-stats-table-black" class="hidden"></div>
-                </div>
-            </div>
-
-            <!-- ═══ Consolidated Analytics ═══ -->
+            <!-- ═══ Analytics ═══ -->
             <div id="analytics-section" class="perspective-section">
 
-                <!-- Column labels (only visible in compare mode) -->
+                <!-- Column labels (compare mode only) -->
                 <div class="compare-section-labels">
                     <div><span class="compare-user-label" id="analytics-primary-label"></span></div>
                     <div><span class="compare-user-label" id="analytics-compare-label"></span></div>
                 </div>
 
-                <div class="single-pair">
-                <!-- Game Length -->
-                <div class="analytic-row">
-                    <h4 class="chart-title">📏 Game Length vs Win Rate</h4>
-                    <div class="compare-wrap">
-                        <div class="compare-col">
-                            <div class="chart-container"><canvas id="game-length-chart"></canvas></div>
-                        </div>
-                        <div class="compare-col compare-secondary">
-                            <div class="chart-container"><canvas id="game-length-chart-compare"></canvas></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Clock Advantage -->
-                <div class="analytic-row">
-                    <h4 class="chart-title">⏰ Clock Advantage</h4>
-                    <div class="compare-wrap">
-                        <div class="compare-col">
-                            <div class="chart-container"><canvas id="clock-chart"></canvas></div>
-                        </div>
-                        <div class="compare-col compare-secondary">
-                            <div class="chart-container"><canvas id="clock-chart-compare"></canvas></div>
+                <!-- Layer 2: Three combo charts -->
+                <div class="triple-pair">
+                    <!-- Game Length -->
+                    <div class="analytic-row">
+                        <h4 class="chart-title">📏 Game Length vs Win Rate</h4>
+                        <div class="compare-wrap">
+                            <div class="compare-col">
+                                <div class="chart-container"><canvas id="game-length-chart"></canvas></div>
+                            </div>
+                            <div class="compare-col compare-secondary">
+                                <div class="chart-container"><canvas id="game-length-chart-compare"></canvas></div>
+                            </div>
                         </div>
                     </div>
-                </div>
-                </div>
 
-                <!-- Rating Diff -->
-                <div class="analytic-row">
-                    <h4 class="chart-title">📊 Win Rate vs Opponent Rating</h4>
-                    <div class="compare-wrap">
-                        <div class="compare-col">
-                            <div class="two-col">
+                    <!-- Clock Advantage -->
+                    <div class="analytic-row">
+                        <h4 class="chart-title">⏰ Clock Advantage</h4>
+                        <div class="compare-wrap">
+                            <div class="compare-col">
+                                <div class="chart-container"><canvas id="clock-chart"></canvas></div>
+                            </div>
+                            <div class="compare-col compare-secondary">
+                                <div class="chart-container"><canvas id="clock-chart-compare"></canvas></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Rating Diff (chart only) -->
+                    <div class="analytic-row">
+                        <h4 class="chart-title">📊 Win Rate vs Opponent Rating</h4>
+                        <div class="compare-wrap">
+                            <div class="compare-col">
                                 <div class="chart-container"><canvas id="rating-diff-chart"></canvas></div>
-                                <div class="headline-stats" id="rating-diff-headlines"></div>
                             </div>
-                        </div>
-                        <div class="compare-col compare-secondary">
-                            <div class="two-col">
+                            <div class="compare-col compare-secondary">
                                 <div class="chart-container"><canvas id="rating-diff-chart-compare"></canvas></div>
-                                <div class="headline-stats" id="rating-diff-headlines-compare"></div>
                             </div>
                         </div>
                     </div>
                 </div>
 
+                <!-- Rating diff stats (below the three charts) -->
+                <div class="rating-diff-stats-row">
+                    <div class="compare-wrap">
+                        <div class="compare-col">
+                            <div class="headline-stats" id="rating-diff-headlines"></div>
+                        </div>
+                        <div class="compare-col compare-secondary">
+                            <div class="headline-stats" id="rating-diff-headlines-compare"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Layer 3: Time charts -->
                 <div class="single-pair">
-                <!-- Move Time Distribution -->
-                <div class="analytic-row">
-                    <h4 class="chart-title">⏱ Time per Move Distribution</h4>
-                    <div class="compare-wrap">
-                        <div class="compare-col">
-                            <div class="chart-container"><canvas id="move-time-dist-chart"></canvas></div>
-                            <div class="headline-stats" id="move-time-stats"></div>
+                    <!-- Move Time Distribution -->
+                    <div class="analytic-row">
+                        <h4 class="chart-title">⏱ Time per Move Distribution</h4>
+                        <div class="compare-wrap">
+                            <div class="compare-col">
+                                <div class="chart-container"><canvas id="move-time-dist-chart"></canvas></div>
+                                <div class="headline-stats" id="move-time-stats"></div>
+                            </div>
+                            <div class="compare-col compare-secondary">
+                                <div class="chart-container"><canvas id="move-time-dist-chart-compare"></canvas></div>
+                                <div class="headline-stats" id="move-time-stats-compare"></div>
+                            </div>
                         </div>
-                        <div class="compare-col compare-secondary">
-                            <div class="chart-container"><canvas id="move-time-dist-chart-compare"></canvas></div>
-                            <div class="headline-stats" id="move-time-stats-compare"></div>
+                    </div>
+
+                    <!-- Avg Time by Move Number -->
+                    <div class="analytic-row">
+                        <h4 class="chart-title">📈 Avg Think Time by Move Number</h4>
+                        <div class="compare-wrap">
+                            <div class="compare-col">
+                                <div class="chart-container">
+                                    <canvas id="move-time-by-move-chart"></canvas>
+                                    <span id="move-time-rmse" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);pointer-events:none;"></span>
+                                </div>
+                                <div id="move-time-by-move-stats"></div>
+                            </div>
+                            <div class="compare-col compare-secondary">
+                                <div class="chart-container">
+                                    <canvas id="move-time-by-move-chart-compare"></canvas>
+                                    <span id="move-time-rmse-compare" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);pointer-events:none;"></span>
+                                </div>
+                                <div id="move-time-by-move-stats-compare"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
-
-                <!-- Avg Time by Move Number -->
-                <div class="analytic-row">
-                    <h4 class="chart-title">📈 Avg Think Time by Move Number</h4>
-                    <div class="compare-wrap">
-                        <div class="compare-col">
-                            <div class="chart-container">
-                                <canvas id="move-time-by-move-chart"></canvas>
-                                <span id="move-time-rmse" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);pointer-events:none;"></span>
-                            </div>
-                            <div id="move-time-by-move-stats"></div>
-                        </div>
-                        <div class="compare-col compare-secondary">
-                            <div class="chart-container">
-                                <canvas id="move-time-by-move-chart-compare"></canvas>
-                                <span id="move-time-rmse-compare" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);pointer-events:none;"></span>
-                            </div>
-                            <div id="move-time-by-move-stats-compare"></div>
-                        </div>
-                    </div>
-                </div>
-                </div>
-
 
             </div>
         </section>
@@ -372,7 +385,7 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=19"></script>
+    <script src="/static/app.js?v=20"></script>
 </body>
 
 </html>

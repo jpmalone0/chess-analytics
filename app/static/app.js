@@ -354,6 +354,7 @@ async function refreshAll() {
 
     updateDateRangeLabel();
     gamesPage = 0;
+    document.getElementById('layer-1').classList.remove('hidden');
     document.querySelectorAll('.section').forEach(s => s.classList.remove('hidden'));
 
     const promises = [

@@ -954,6 +954,37 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   Layer 1: Rating History + Opening Overview
+   ═══════════════════════════════════════════════════════════ */
+
+#layer-1 {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 2rem;
+    align-items: start;
+}
+
+#layer-1-left,
+#layer-1-right {
+    min-width: 0;
+}
+
+#layer-1-left .section,
+#layer-1-right .section {
+    margin-bottom: 0;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+body.compare-mode #layer-1 {
+    display: block;
+}
+
+body.compare-mode #layer-1-right {
+    display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════
    Analytics
    ═══════════════════════════════════════════════════════════ */
 
@@ -964,6 +995,33 @@ body {
 .chart-title {
     margin-bottom: 1rem;
     color: var(--text-primary);
+}
+
+/* ── Triple Pair (3 combo charts) ────────────────────────── */
+
+.triple-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 0;
+}
+
+.triple-pair > .analytic-row {
+    margin-bottom: 0;
+    min-width: 0;
+}
+
+body.compare-mode .triple-pair {
+    display: block;
+}
+
+body.compare-mode .triple-pair > .analytic-row {
+    margin-bottom: 3rem;
+}
+
+.rating-diff-stats-row {
+    margin-top: 1.5rem;
+    margin-bottom: 3rem;
 }
 
 /* ── Compare Mode ─────────────────────────────────────────── */
