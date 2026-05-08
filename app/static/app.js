@@ -578,7 +578,7 @@ async function loadEloChart(username, suffix = '', animate = true) {
                 const fit = currentFitMode === 'log' ? fitLog : fitLin;
                 if (!fit) continue;
 
-                if (!suffix && fitLog && fitLin) {
+                if (fitLog && fitLin) {
                     const label = tc.charAt(0).toUpperCase() + tc.slice(1);
                     sseparts.push(`${label}  log ${fitLog.rmse.toFixed(1)}  lin ${fitLin.rmse.toFixed(1)} Elo`);
                 }
@@ -611,8 +611,10 @@ async function loadEloChart(username, suffix = '', animate = true) {
                 });
             }
 
-            const sseEl = document.getElementById('projection-sse');
+            const sseEl = document.getElementById('projection-sse' + suffix);
             if (sseEl) sseEl.textContent = sseparts.join('\n');
+            const sseDetails = document.getElementById('projection-sse-details' + suffix);
+            if (sseDetails) sseDetails.classList.toggle('hidden', suffix === '-compare' && !compareMode);
 
             const capturedActualXMax = actualXMax;
             chartPlugins.push({
@@ -710,16 +712,21 @@ function toggleProjection() {
     projectionActive = !projectionActive;
     const btn = document.getElementById('projection-toggle-btn');
     const controls = document.getElementById('projection-controls');
+    const ssePrimary = document.getElementById('projection-sse-details');
+    const sseCmp = document.getElementById('projection-sse-details-compare');
     if (projectionActive) {
         btn.textContent = 'Hide Projection';
         btn.classList.add('active');
         controls.classList.remove('hidden');
+        if (ssePrimary) ssePrimary.classList.remove('hidden');
         document.getElementById('fit-mode-btn').textContent =
             currentFitMode === 'log' ? 'Switch to Linear' : 'Switch to Log';
     } else {
         btn.textContent = 'Show Projection';
         btn.classList.remove('active');
         controls.classList.add('hidden');
+        if (ssePrimary) { ssePrimary.classList.add('hidden'); ssePrimary.removeAttribute('open'); }
+        if (sseCmp) { sseCmp.classList.add('hidden'); sseCmp.removeAttribute('open'); }
     }
     reloadProjections();
 }
