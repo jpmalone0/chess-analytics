@@ -945,7 +945,7 @@ async function loadRatingDiff(username, color, op, loadId, suffix = '') {
                 ]
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true, maintainAspectRatio: false, animation: false,
                 plugins: {
                     legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
                     tooltip: {
@@ -1051,7 +1051,7 @@ async function loadGameLength(username, color, op, loadId, suffix = '') {
                 ]
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true, maintainAspectRatio: false, animation: false,
                 plugins: {
                     legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
                     tooltip: {
@@ -1120,7 +1120,7 @@ async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
                 ]
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true, maintainAspectRatio: false, animation: false,
                 plugins: {
                     legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
                     tooltip: {
@@ -1228,7 +1228,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                 datasets: distDatasets,
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true, maintainAspectRatio: false, animation: false,
                 plugins: {
                     legend: { display: false },
                     tooltip: {
@@ -1303,7 +1303,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                 datasets,
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true, maintainAspectRatio: false, animation: false,
                 plugins: {
                     legend: { display: !!fit, position: 'top', labels: { boxWidth: 20, font: { size: 11 } } },
                     tooltip: {
