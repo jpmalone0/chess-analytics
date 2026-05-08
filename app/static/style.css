@@ -997,6 +997,52 @@ body.compare-mode #layer-1-right {
     color: var(--text-primary);
 }
 
+/* ── Stat info button & description ──────────────────────── */
+
+.stat-info-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 1px solid var(--text-muted);
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    font-family: var(--font-sans);
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+    line-height: 1;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.stat-info-btn:hover {
+    border-color: var(--text-primary);
+    color: var(--text-primary);
+}
+
+.stat-info-desc {
+    position: absolute;
+    left: calc(100% + 0.5rem);
+    top: 50%;
+    transform: translateY(-50%);
+    width: 160px;
+    white-space: normal;
+    line-height: 1.4;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.3rem 0.6rem;
+    z-index: 20;
+    pointer-events: none;
+    font-family: var(--font-sans);
+    font-weight: 400;
+}
+
 /* ── Triple Pair (3 combo charts) ────────────────────────── */
 
 .triple-pair {
@@ -1009,6 +1055,11 @@ body.compare-mode #layer-1-right {
 .triple-pair > .analytic-row {
     margin-bottom: 0;
     min-width: 0;
+}
+
+.triple-pair .chart-container {
+    aspect-ratio: 1 / 1;
+    max-height: 760px;
 }
 
 body.compare-mode .triple-pair {
@@ -1039,6 +1090,29 @@ body.compare-mode .compare-secondary { display: block; }
 }
 body.compare-mode .single-pair {
     display: block;
+}
+
+.time-chart-row {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+}
+.time-chart-row .chart-container {
+    flex: 1;
+    min-width: 0;
+    aspect-ratio: 2 / 1;
+    max-height: 380px;
+}
+.time-side-stats {
+    width: 110px;
+    flex-shrink: 0;
+}
+body.compare-mode .time-chart-row {
+    display: block;
+}
+body.compare-mode .time-side-stats {
+    width: 100%;
+    margin-top: 0.5rem;
 }
 
 .compare-wrap {

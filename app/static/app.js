@@ -158,6 +158,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
         });
     });
+
+    document.querySelectorAll('.chart-title .stat-info-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const existing = btn.querySelector('.stat-info-desc');
+            if (existing) { existing.remove(); return; }
+            const desc = document.createElement('div');
+            desc.className = 'stat-info-desc';
+            desc.textContent = btn.dataset.desc;
+            btn.appendChild(desc);
+            const close = () => { desc.remove(); document.removeEventListener('click', close); };
+            document.addEventListener('click', close);
+        });
+    });
 });
 
 
@@ -974,44 +988,45 @@ async function loadRatingDiff(username, color, op, loadId, suffix = '') {
         const overallDrawRate     = totalGames ? Math.round(totalDraws / totalGames * 100) : 0;
         const overallDecisiveRate = (totalWins + totalLosses) ? Math.round(totalWins / (totalWins + totalLosses) * 100) : 0;
 
-        document.getElementById("rating-diff-headlines" + suffix).innerHTML = `
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:1rem;">
-                <div class="stat-card" style="padding:0.6rem 0.75rem;">
-                    <div class="stat-label">Games</div>
-                    <div class="stat-value" style="font-size:1.3rem;">${totalGames}</div>
+        const el = document.getElementById("rating-diff-headlines" + suffix);
+        el.innerHTML = `
+            <div style="display: flex; gap: 0.75rem; padding: 1rem 0;">
+                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid var(--green);">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem; display: flex; align-items: center; gap: 0.3rem;">
+                        Hold Rate
+                        <span class="stat-info-btn" data-desc="Win % in games where you are rated more than 10 Elo above your opponent.">?</span>
+                    </div>
+                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--green);">${data.hold_rate}%</div>
                 </div>
-                <div class="stat-card win" style="padding:0.6rem 0.75rem;">
-                    <div class="stat-label">Win Rate</div>
-                    <div class="stat-value" style="font-size:1.3rem;">${overallWinRate}%</div>
+                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #94a3b8;">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem; display: flex; align-items: center; gap: 0.3rem;">
+                        Even Match Rate
+                        <span class="stat-info-btn" data-desc="Win % in games where you and your opponent are within 10 Elo of each other.">?</span>
+                    </div>
+                    <div style="font-size: 1.2rem; font-weight: 700; color: #cbd5e1;">${data.even_rate}%</div>
                 </div>
-                <div class="stat-card draw" style="padding:0.6rem 0.75rem;">
-                    <div class="stat-label">Draw Rate</div>
-                    <div class="stat-value" style="font-size:1.3rem;">${overallDrawRate}%</div>
-                </div>
-                <div class="stat-card accent" style="padding:0.6rem 0.75rem;">
-                    <div class="stat-label">Decisive Win Rate</div>
-                    <div class="stat-value" style="font-size:1.3rem;">${overallDecisiveRate}%</div>
-                </div>
-            </div>
-            <div class="headline-stat green" style="padding: 1rem;">
-                <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
-                    Hold Rate (win % when >10 elo higher rated than your opponent):
-                    <strong style="color: var(--green); font-size: 1.1rem;">${data.hold_rate}%</strong>
-                </div>
-            </div>
-            <div class="headline-stat" style="margin-top: 1rem; padding: 1rem; border-left-color: #94a3b8;">
-                <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
-                    Even Match Rate (win % when evenly rated with your opponent):
-                    <strong style="color: #cbd5e1; font-size: 1.1rem;">${data.even_rate}%</strong>
-                </div>
-            </div>
-            <div class="headline-stat accent" style="margin-top: 1rem; padding: 1rem;">
-                <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
-                    Upset Rate (win % when >10 elo lower rated than your opponent):
-                    <strong style="color: var(--accent); font-size: 1.1rem;">${data.upset_rate}%</strong>
+                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid var(--accent);">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem; display: flex; align-items: center; gap: 0.3rem;">
+                        Upset Rate
+                        <span class="stat-info-btn" data-desc="Win % in games where you are rated more than 10 Elo below your opponent.">?</span>
+                    </div>
+                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--accent);">${data.upset_rate}%</div>
                 </div>
             </div>
         `;
+        el.querySelectorAll('.stat-info-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const existing = btn.querySelector('.stat-info-desc');
+                if (existing) { existing.remove(); return; }
+                const desc = document.createElement('div');
+                desc.className = 'stat-info-desc';
+                desc.textContent = btn.dataset.desc;
+                btn.appendChild(desc);
+                const close = () => { desc.remove(); document.removeEventListener('click', close); };
+                document.addEventListener('click', close);
+            });
+        });
     } catch (e) { console.error('Rating diff error:', e); }
 }
 
@@ -1132,13 +1147,7 @@ async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
                             }
                         }
                     },
-                    subtitle: {
-                        display: true,
-                        text: 'Average clock difference (your time − opponent time) across all moves in each game',
-                        color: '#5a6a85',
-                        font: { size: 11 },
-                        padding: { bottom: 10 },
-                    },
+                    subtitle: { display: false },
                 },
                 scales: {
                     x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
@@ -1252,18 +1261,18 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         });
 
         document.getElementById("move-time-stats" + suffix).innerHTML = `
-            <div style="display: flex; gap: 0.75rem; padding: 1rem 0;">
-                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
+            <div style="display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0;">
+                <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Mean</div>
-                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">${data.mean}s</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${data.mean}s</div>
                 </div>
-                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
+                <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Median</div>
-                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">${data.median}s</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${data.median}s</div>
                 </div>
-                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
+                <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Std Dev</div>
-                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">±${data.std_dev}s</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">±${data.std_dev}s</div>
                 </div>
             </div>
         `;
@@ -1347,17 +1356,17 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
             const secs = Math.round(totalSec % 60);
             const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
             statsEl.innerHTML = `
-                <div style="display: flex; gap: 0.75rem; padding: 0.75rem 0 0.25rem;">
-                    <div style="flex: 1; padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                <div style="display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0;">
+                    <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                         <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Avg time per game</div>
                         <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${timeStr}</div>
                     </div>
                     ${fit ? `
-                    <div style="flex: 1; padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                    <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                         <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Mean effort move</div>
                         <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">move ${medianEffortMove}</div>
                     </div>
-                    <div style="flex: 1; padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                    <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                         <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Peak think move</div>
                         <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">move ${fit.peakMove}</div>
                     </div>` : ''}
