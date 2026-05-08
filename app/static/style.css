@@ -619,6 +619,29 @@ body {
 .opening-stats-table .wr-draw  { color: var(--yellow); }
 .opening-stats-table .wr-dec   { color: var(--accent-light); font-weight: 600; }
 
+.opening-stats-table tr.opening-total-row:last-of-type td {
+    border-bottom: 2px solid var(--border-light);
+}
+
+.opening-stats-table tr.opening-total-row td {
+    color: var(--text-primary);
+    font-weight: 600;
+    background: var(--bg-secondary);
+}
+
+.color-pip {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    border: 1px solid var(--border-light);
+    margin-right: 6px;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+.color-pip.white { background: #dde4ef; }
+.color-pip.black { background: #2a3548; }
+
 .win-bar {
     display: flex;
     height: 14px;

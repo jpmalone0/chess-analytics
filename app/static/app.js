@@ -756,6 +756,50 @@ function reloadProjections() {
 }
 
 
+function renderOpeningRow(o, showColorPip = false, totalRow = false) {
+    const wPct = o.games ? o.wins   / o.games * 100 : 0;
+    const dPct = o.games ? o.draws  / o.games * 100 : 0;
+    const lPct = o.games ? o.losses / o.games * 100 : 0;
+    const pip  = (showColorPip || totalRow)
+        ? `<span class="color-pip ${o.color}"></span>`
+        : '';
+    const cls  = totalRow ? ' class="opening-total-row"' : '';
+    return `
+        <tr${cls}>
+            <td>${pip}${o.name}</td>
+            <td>${o.games}</td>
+            <td>
+                <div class="win-bar" data-wins="${o.wins}" data-draws="${o.draws}" data-losses="${o.losses}">
+                    <span class="win-bar-w" style="width:${wPct.toFixed(1)}%"></span>
+                    <span class="win-bar-d" style="width:${dPct.toFixed(1)}%"></span>
+                    <span class="win-bar-l" style="width:${lPct.toFixed(1)}%"></span>
+                </div>
+            </td>
+            <td class="wr-win">${o.win_rate}%</td>
+            <td class="wr-draw">${o.draw_rate}%</td>
+            <td class="wr-dec">${o.decisive_win_rate}%</td>
+        </tr>`;
+}
+
+function buildOpeningTable(openings, showColorPip = false, footerRows = []) {
+    const rows   = openings.map(o => renderOpeningRow(o, showColorPip)).join('');
+    const footer = footerRows.map(o => renderOpeningRow(o, false, true)).join('');
+    return `
+        <table class="opening-stats-table">
+            <thead>
+                <tr>
+                    <th>Opening</th>
+                    <th>Games</th>
+                    <th></th>
+                    <th>Win%</th>
+                    <th>Draw%</th>
+                    <th>Decisive%</th>
+                </tr>
+            </thead>
+            <tbody>${footer}${rows}</tbody>
+        </table>`;
+}
+
 async function initRepertoireTabs(username) {
     try {
         // Load analytics for whichever main tab is currently active
@@ -786,46 +830,12 @@ async function initRepertoireTabs(username) {
                 ${openings.map((o, i) => `<button class="tab-btn" data-color="${color}" data-op="${o.name}">#${i+1} ${o.name}</button>`).join('')}
             `;
 
-            // Populate opening overview table for this color
+            // Populate opening overview table for this color (with color total as footer)
             const tableEl = document.getElementById(`opening-stats-table-${color}`);
             if (tableEl && openings.length > 0) {
-                tableEl.innerHTML = `
-                    <table class="opening-stats-table">
-                        <thead>
-                            <tr>
-                                <th>Opening</th>
-                                <th>Games</th>
-                                <th></th>
-                                <th>Win%</th>
-                                <th>Draw%</th>
-                                <th>Decisive%</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${openings.map(o => {
-                                const wPct = o.games ? o.wins / o.games * 100 : 0;
-                                const dPct = o.games ? o.draws / o.games * 100 : 0;
-                                const lPct = o.games ? o.losses / o.games * 100 : 0;
-                                return `
-                                <tr>
-                                    <td>${o.name}</td>
-                                    <td>${o.games}</td>
-                                    <td>
-                                        <div class="win-bar"
-                                             data-wins="${o.wins}" data-draws="${o.draws}" data-losses="${o.losses}">
-                                            <span class="win-bar-w" style="width:${wPct.toFixed(1)}%"></span>
-                                            <span class="win-bar-d" style="width:${dPct.toFixed(1)}%"></span>
-                                            <span class="win-bar-l" style="width:${lPct.toFixed(1)}%"></span>
-                                        </div>
-                                    </td>
-                                    <td class="wr-win">${o.win_rate}%</td>
-                                    <td class="wr-draw">${o.draw_rate}%</td>
-                                    <td class="wr-dec">${o.decisive_win_rate}%</td>
-                                </tr>`;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                `;
+                const tot = topOpenings.totals?.[color];
+                const footer = tot ? [{ ...tot, name: color === 'white' ? 'White Pieces' : 'Black Pieces', color }] : [];
+                tableEl.innerHTML = buildOpeningTable(openings, false, footer);
                 attachWinBarTooltips(tableEl);
             }
 
@@ -842,19 +852,36 @@ async function initRepertoireTabs(username) {
                 });
             });
         }
+
+        // Build global combined table: top 8 combined + both color totals as footer
+        const globalEl = document.getElementById('opening-stats-table-global');
+        if (globalEl) {
+            const combined = [
+                ...topOpenings.white.map(o => ({ ...o, color: 'white' })),
+                ...topOpenings.black.map(o => ({ ...o, color: 'black' })),
+            ].sort((a, b) => b.games - a.games).slice(0, 8);
+
+            const totals = topOpenings.totals || {};
+            const footer = [
+                totals.white ? { ...totals.white, name: 'White Pieces', color: 'white' } : null,
+                totals.black ? { ...totals.black, name: 'Black Pieces', color: 'black' } : null,
+            ].filter(Boolean);
+
+            if (combined.length > 0 || footer.length > 0) {
+                globalEl.innerHTML = buildOpeningTable(combined, true, footer);
+                attachWinBarTooltips(globalEl);
+            }
+        }
     } catch (e) { console.error('Error loading top openings', e); }
 }
 
 function loadColorAnalytics(username, color, op) {
     const overview = document.getElementById('opening-stats-overview');
     if (overview) {
-        if (color !== 'global') {
-            overview.classList.remove('hidden');
-            document.getElementById('opening-stats-table-white').classList.toggle('hidden', color !== 'white');
-            document.getElementById('opening-stats-table-black').classList.toggle('hidden', color !== 'black');
-        } else {
-            overview.classList.add('hidden');
-        }
+        overview.classList.remove('hidden');
+        document.getElementById('opening-stats-table-global').classList.toggle('hidden', color !== 'global');
+        document.getElementById('opening-stats-table-white').classList.toggle('hidden', color !== 'white');
+        document.getElementById('opening-stats-table-black').classList.toggle('hidden', color !== 'black');
     }
 
     const loadId = ++analyticsLoadId;
@@ -1476,7 +1503,7 @@ function getOrCreateWinBarTooltip() {
 function attachWinBarTooltips(container) {
     const tip = getOrCreateWinBarTooltip();
     container.querySelectorAll('.win-bar').forEach(bar => {
-        bar.addEventListener('mouseenter', (e) => {
+        bar.addEventListener('mouseenter', () => {
             const wins   = bar.dataset.wins;
             const draws  = bar.dataset.draws;
             const losses = bar.dataset.losses;
