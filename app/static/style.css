@@ -619,6 +619,39 @@ body {
 .opening-stats-table .wr-draw  { color: var(--yellow); }
 .opening-stats-table .wr-dec   { color: var(--accent-light); font-weight: 600; }
 
+.win-bar {
+    display: flex;
+    height: 14px;
+    border-radius: 3px;
+    overflow: hidden;
+    width: 360px;
+    cursor: default;
+    gap: 1px;
+    background: var(--bg-primary);
+}
+
+.win-bar-w { background: rgba(34, 197, 94, 0.75); flex-shrink: 0; }
+.win-bar-d { background: rgba(234, 179, 8, 0.65); flex-shrink: 0; }
+.win-bar-l { background: rgba(239, 68, 68, 0.70); flex-shrink: 0; }
+
+.win-bar-tooltip {
+    position: fixed;
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding: 0.45rem 0.65rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    pointer-events: none;
+    z-index: 200;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    white-space: nowrap;
+}
+
 /* ── Pagination ─────────────────────────────────────────── */
 
 .pagination-controls {

@@ -795,24 +795,38 @@ async function initRepertoireTabs(username) {
                             <tr>
                                 <th>Opening</th>
                                 <th>Games</th>
+                                <th></th>
                                 <th>Win%</th>
                                 <th>Draw%</th>
                                 <th>Decisive%</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${openings.map(o => `
+                            ${openings.map(o => {
+                                const wPct = o.games ? o.wins / o.games * 100 : 0;
+                                const dPct = o.games ? o.draws / o.games * 100 : 0;
+                                const lPct = o.games ? o.losses / o.games * 100 : 0;
+                                return `
                                 <tr>
                                     <td>${o.name}</td>
                                     <td>${o.games}</td>
+                                    <td>
+                                        <div class="win-bar"
+                                             data-wins="${o.wins}" data-draws="${o.draws}" data-losses="${o.losses}">
+                                            <span class="win-bar-w" style="width:${wPct.toFixed(1)}%"></span>
+                                            <span class="win-bar-d" style="width:${dPct.toFixed(1)}%"></span>
+                                            <span class="win-bar-l" style="width:${lPct.toFixed(1)}%"></span>
+                                        </div>
+                                    </td>
                                     <td class="wr-win">${o.win_rate}%</td>
                                     <td class="wr-draw">${o.draw_rate}%</td>
                                     <td class="wr-dec">${o.decisive_win_rate}%</td>
-                                </tr>
-                            `).join('')}
+                                </tr>`;
+                            }).join('')}
                         </tbody>
                     </table>
                 `;
+                attachWinBarTooltips(tableEl);
             }
 
             tabsContainer.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1443,6 +1457,47 @@ async function openGameDetail(gameId) {
 function closeModal() { document.getElementById('game-modal').classList.add('hidden'); }
 document.addEventListener('click', e => { if (e.target.id === 'game-modal') closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+// ═══════════════════════════════════════════════════════════
+// Win Bar Tooltips
+// ═══════════════════════════════════════════════════════════
+
+function getOrCreateWinBarTooltip() {
+    let tip = document.getElementById('win-bar-tooltip');
+    if (!tip) {
+        tip = document.createElement('div');
+        tip.id = 'win-bar-tooltip';
+        tip.className = 'win-bar-tooltip hidden';
+        document.body.appendChild(tip);
+    }
+    return tip;
+}
+
+function attachWinBarTooltips(container) {
+    const tip = getOrCreateWinBarTooltip();
+    container.querySelectorAll('.win-bar').forEach(bar => {
+        bar.addEventListener('mouseenter', (e) => {
+            const wins   = bar.dataset.wins;
+            const draws  = bar.dataset.draws;
+            const losses = bar.dataset.losses;
+            tip.innerHTML = `
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:rgba(34,197,94,0.75);margin-right:5px;"></span>Wins: ${wins}</span>
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:rgba(234,179,8,0.65);margin-right:5px;"></span>Draws: ${draws}</span>
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:rgba(239,68,68,0.70);margin-right:5px;"></span>Losses: ${losses}</span>
+            `;
+            tip.classList.remove('hidden');
+        });
+        bar.addEventListener('mousemove', (e) => {
+            const x = e.clientX + 14;
+            const y = e.clientY - 10;
+            tip.style.left = `${x}px`;
+            tip.style.top  = `${y}px`;
+        });
+        bar.addEventListener('mouseleave', () => {
+            tip.classList.add('hidden');
+        });
+    });
+}
 
 // ═══════════════════════════════════════════════════════════
 // Utilities
