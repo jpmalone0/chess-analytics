@@ -571,7 +571,6 @@ async function loadEloChart(username, suffix = '', animate = true) {
                 if (points.length < 2) continue;
                 const xs = points.map(p => p.x);
                 const tcXMin = Math.min(...xs);
-                const range = actualXMax - tcXMin || 1;
 
                 const fitLog = fitLogarithmic(points);
                 const fitLin = fitLinear(points);
