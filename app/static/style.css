@@ -359,7 +359,6 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: 1.5rem;
-    animation: fadeIn 0.4s ease;
 }
 
 @keyframes fadeIn {
@@ -491,6 +490,12 @@ body {
     width: 100%;
     max-height: 380px;
     aspect-ratio: 2 / 1;
+}
+
+.chart-container > canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
 }
 
 .two-col {

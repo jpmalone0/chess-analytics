@@ -527,7 +527,7 @@ async function loadStats(username) {
 // Elo Chart
 // ═══════════════════════════════════════════════════════════
 
-async function loadEloChart(username, suffix = '', animate = true) {
+async function loadEloChart(username, suffix = '', animate = false) {
     const chartKey = 'elo' + suffix;
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/elo-history${buildFilterParams()}`);
@@ -664,7 +664,7 @@ async function loadEloChart(username, suffix = '', animate = true) {
             data: { datasets },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                animation: animate ? {} : false,
+                animation: false,
                 plugins: {
                     legend: {
                         display: !currentTimeClass || projectionActive,
