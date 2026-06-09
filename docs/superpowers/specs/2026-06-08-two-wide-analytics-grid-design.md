@@ -88,6 +88,13 @@ the active `#main-perspective-tabs .tab-btn` (`data-target`). The toggle reads
 these the same way the rest of the analytics flow does, so no new state is needed
 beyond `moreDataShown`.
 
+#### Lint note
+
+`#more-data-btn` uses an inline `onclick="toggleMoreData()"` like the other
+buttons. `eslint.config.js` enforces a `varsIgnorePattern` allowlist of such
+handler names; `toggleMoreData` must be added to that pattern, otherwise the
+pre-commit eslint hook flags it as an unused variable.
+
 ## Out of Scope
 
 - No backend, API, endpoint, schema, or data-model changes. The
