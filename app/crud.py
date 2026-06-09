@@ -821,6 +821,7 @@ def winrate_by_color_ema(
     end_date: Optional[date] = None,
     window_days: int = 30,
     ema_alpha: float = 0.15,
+    min_games: int = 30,
 ):
     """
     For each date that has games, compute rolling `window_days` win rate for white
@@ -881,7 +882,9 @@ def winrate_by_color_ema(
                     if g["is_white"] == (1 if color_key == "white" else 0):
                         total += 1
                         wins  += g["is_win"]
-        return round(wins / total * 100, 2) if total else None
+        if total < min_games:
+            return None
+        return round(wins / total * 100, 2)
 
     raw_white = [rolling_wr(d, "white") for d in all_dates]
     raw_black = [rolling_wr(d, "black") for d in all_dates]
