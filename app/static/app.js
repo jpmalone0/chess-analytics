@@ -17,6 +17,7 @@ const requestCache = {};
 let analyticsLoadId = 0;
 let compareLoadId = 0;
 let currentOpeningFilter = '';
+let moreDataShown = false;
 
 // Chart.js defaults
 Chart.defaults.color = '#8b9ab8';
@@ -304,6 +305,10 @@ async function loadPlayer() {
     currentTimeClass = 'rapid';
     gamesPage = 0;
     currentOpeningFilter = '';
+    moreDataShown = false;
+    document.getElementById('rating-diff-cell').classList.add('hidden');
+    document.getElementById('rating-diff-stats-row').classList.add('hidden');
+    document.getElementById('more-data-btn').textContent = 'Load More Data';
     document.querySelectorAll('.tc-btn').forEach(b => b.classList.remove('active'));
     document.querySelector('.tc-btn[data-tc="rapid"]').classList.add('active');
 
@@ -900,14 +905,14 @@ function loadColorAnalytics(username, color, op) {
     }
 
     const loadId = ++analyticsLoadId;
-    loadRatingDiff(username, color, op, loadId);
+    if (moreDataShown) loadRatingDiff(username, color, op, loadId);
     loadGameLength(username, color, op, loadId);
     loadClockAdvantage(username, color, op, loadId);
     loadMoveTime(username, color, op, loadId);
 
     if (compareMode && currentCompareUsername) {
         const cId = ++compareLoadId;
-        loadRatingDiff(currentCompareUsername, color, op, cId, '-compare');
+        if (moreDataShown) loadRatingDiff(currentCompareUsername, color, op, cId, '-compare');
         loadGameLength(currentCompareUsername, color, op, cId, '-compare');
         loadClockAdvantage(currentCompareUsername, color, op, cId, '-compare');
         loadMoveTime(currentCompareUsername, color, op, cId, '-compare');
@@ -1555,3 +1560,31 @@ async function fetchJSON(url, opts = {}) {
     return requestCache[url];
 }
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ═══════════════════════════════════════════════════════════
+// Load More Data toggle (deferred rating-diff chart)
+// ═══════════════════════════════════════════════════════════
+
+function toggleMoreData() {
+    moreDataShown = !moreDataShown;
+
+    const cell = document.getElementById('rating-diff-cell');
+    const stats = document.getElementById('rating-diff-stats-row');
+    const btn = document.getElementById('more-data-btn');
+
+    cell.classList.toggle('hidden', !moreDataShown);
+    stats.classList.toggle('hidden', !moreDataShown);
+    btn.textContent = moreDataShown ? 'Hide' : 'Load More Data';
+
+    if (!moreDataShown || !currentUsername) return;
+
+    // Lazy-fetch the rating-diff chart for the current filters.
+    const activeTab = document.querySelector('#main-perspective-tabs .tab-btn.active');
+    const color = activeTab ? activeTab.dataset.target : 'global';
+    const op = currentOpeningFilter;
+
+    loadRatingDiff(currentUsername, color, op, analyticsLoadId);
+    if (compareMode && currentCompareUsername) {
+        loadRatingDiff(currentCompareUsername, color, op, compareLoadId, '-compare');
+    }
+}
