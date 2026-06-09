@@ -1013,6 +1013,41 @@ body.compare-mode #layer-1-right {
     color: var(--text-primary);
 }
 
+#winrate-chart-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.chart-mode-btns {
+    margin-left: auto;
+    display: flex;
+    gap: 0.2rem;
+}
+
+.chart-mode-btn {
+    font-family: var(--font-sans);
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 0.18rem 0.5rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.chart-mode-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-card-hover);
+}
+
+.chart-mode-btn.active {
+    background: var(--accent);
+    color: white;
+}
+
 /* ── Stat info button & description ──────────────────────── */
 
 .stat-info-btn {

@@ -250,7 +250,14 @@
 
                     <!-- Win Rate by Color Over Time — deferred behind Load More Data -->
                     <div class="analytic-row hidden" id="winrate-color-cell">
-                        <h4 class="chart-title">♟ Win Rate by Color <span class="stat-info-btn" data-desc="Exponential moving average of your 30-day rolling win rate when playing as White vs Black.">?</span></h4>
+                        <h4 class="chart-title" id="winrate-chart-title">
+                            <span id="winrate-title-text">♟ Win Rate by Color</span>
+                            <span class="stat-info-btn" id="winrate-info-btn" data-desc="Exponential moving average of your 30-day rolling win rate when playing as White vs Black.">?</span>
+                            <span class="chart-mode-btns">
+                                <button class="chart-mode-btn active" id="winrate-mode-color" onclick="setWinrateMode('color')">White / Black</button>
+                                <button class="chart-mode-btn" id="winrate-mode-opening" onclick="setWinrateMode('opening')">vs 1.e4 / 1.d4</button>
+                            </span>
+                        </h4>
                         <div class="compare-wrap">
                             <div class="compare-col">
                                 <div class="chart-container">

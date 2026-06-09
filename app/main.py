@@ -281,6 +281,22 @@ def winrate_by_color(
     )
 
 
+@app.get("/api/players/{username}/analytics/winrate-vs-opening")
+def winrate_vs_opening(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    db: Session = Depends(get_db),
+):
+    player = crud.get_player(db, username)
+    if not player:
+        raise HTTPException(404, f"Player '{username}' not found")
+    return crud.winrate_vs_first_move_ema(
+        db, player.player_id, time_class, start_date, end_date,
+    )
+
+
 @app.get("/api/players/{username}/analytics/top-openings")
 def top_openings(
     username: str,

@@ -18,6 +18,7 @@ let analyticsLoadId = 0;
 let compareLoadId = 0;
 let currentOpeningFilter = '';
 let moreDataShown = false;
+let winrateMode = 'color';
 
 // Chart.js defaults
 Chart.defaults.color = '#8b9ab8';
@@ -306,6 +307,9 @@ async function loadPlayer() {
     gamesPage = 0;
     currentOpeningFilter = '';
     moreDataShown = false;
+    winrateMode = 'color';
+    document.getElementById('winrate-mode-color').classList.add('active');
+    document.getElementById('winrate-mode-opening').classList.remove('active');
     document.getElementById('rating-diff-cell').classList.add('hidden');
     document.getElementById('rating-diff-stats-row').classList.add('hidden');
     document.getElementById('winrate-color-cell').classList.add('hidden');
@@ -935,11 +939,32 @@ function colorParams(color, op) {
 // Win Rate by Color Over Time (rolling 30-day EMA)
 // ═══════════════════════════════════════════════════════════
 
+function setWinrateMode(mode) {
+    winrateMode = mode;
+    document.getElementById('winrate-mode-color').classList.toggle('active', mode === 'color');
+    document.getElementById('winrate-mode-opening').classList.toggle('active', mode === 'opening');
+    if (!currentUsername || !moreDataShown) return;
+    loadWinrateByColor(currentUsername, analyticsLoadId);
+    if (compareMode && currentCompareUsername) {
+        loadWinrateByColor(currentCompareUsername, compareLoadId, '-compare');
+    }
+}
+
 async function loadWinrateByColor(username, loadId, suffix = '') {
     const chartKey = 'loadWinrateByColor' + suffix;
     const noDataEl = document.getElementById('winrate-color-no-data' + (suffix ? suffix : ''));
+    const opening = winrateMode === 'opening';
+    const url = opening
+        ? `/api/players/${username}/analytics/winrate-vs-opening${buildFilterParams()}`
+        : `/api/players/${username}/analytics/winrate-by-color${buildFilterParams()}`;
+    const s1 = opening
+        ? { label: 'vs 1.e4', key: 'e4', color: '#fb923c', bg: 'rgba(251,146,60,0.08)' }
+        : { label: 'White',   key: 'white', color: '#e2e8f0', bg: 'rgba(226,232,240,0.08)' };
+    const s2 = opening
+        ? { label: 'vs 1.d4', key: 'd4', color: '#34d399', bg: 'rgba(52,211,153,0.08)' }
+        : { label: 'Black',   key: 'black', color: '#818cf8', bg: 'rgba(129,140,248,0.08)' };
     try {
-        const data = await fetchJSON(`/api/players/${username}/analytics/winrate-by-color${buildFilterParams()}`);
+        const data = await fetchJSON(url);
         if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
         if (charts[chartKey]) charts[chartKey].destroy();
 
@@ -947,26 +972,22 @@ async function loadWinrateByColor(username, loadId, suffix = '') {
         if (noDataEl) noDataEl.classList.toggle('hidden', !sparse);
         if (sparse) return;
 
-        const whitePts = data.filter(d => d.white !== null).map(d => ({ x: toMs(d.date), y: d.white }));
-        const blackPts = data.filter(d => d.black !== null).map(d => ({ x: toMs(d.date), y: d.black }));
+        const pts1 = data.filter(d => d[s1.key] !== null).map(d => ({ x: toMs(d.date), y: d[s1.key] }));
+        const pts2 = data.filter(d => d[s2.key] !== null).map(d => ({ x: toMs(d.date), y: d[s2.key] }));
 
         charts[chartKey] = new Chart(document.getElementById('winrate-color-chart' + suffix).getContext('2d'), {
             type: 'line',
             data: {
                 datasets: [
                     {
-                        label: 'White',
-                        data: whitePts,
-                        borderColor: '#e2e8f0',
-                        backgroundColor: 'rgba(226,232,240,0.08)',
+                        label: s1.label, data: pts1,
+                        borderColor: s1.color, backgroundColor: s1.bg,
                         borderWidth: 2, pointRadius: 0, pointHitRadius: 20,
                         tension: 0, spanGaps: true,
                     },
                     {
-                        label: 'Black',
-                        data: blackPts,
-                        borderColor: '#818cf8',
-                        backgroundColor: 'rgba(129,140,248,0.08)',
+                        label: s2.label, data: pts2,
+                        borderColor: s2.color, backgroundColor: s2.bg,
                         borderWidth: 2, pointRadius: 0, pointHitRadius: 20,
                         tension: 0, spanGaps: true,
                     },
