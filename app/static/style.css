@@ -1063,8 +1063,8 @@ body.compare-mode #layer-1-right {
 }
 
 .analytics-grid .chart-container {
-    aspect-ratio: 1 / 1;
-    max-height: 760px;
+    aspect-ratio: 3 / 2;
+    max-height: 460px;
 }
 
 body.compare-mode .analytics-grid {
@@ -1073,6 +1073,12 @@ body.compare-mode .analytics-grid {
 
 body.compare-mode .analytics-grid > .analytic-row {
     margin-bottom: 3rem;
+}
+
+.more-data-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
 }
 
 .rating-diff-stats-row {
