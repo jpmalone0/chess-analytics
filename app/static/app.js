@@ -533,7 +533,7 @@ async function loadStats(username) {
 // Elo Chart
 // ═══════════════════════════════════════════════════════════
 
-async function loadEloChart(username, suffix = '', animate = false) {
+async function loadEloChart(username, suffix = '') {
     const chartKey = 'elo' + suffix;
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/elo-history${buildFilterParams()}`);
@@ -768,9 +768,9 @@ function toggleFitMode() {
 
 function reloadProjections() {
     if (!currentUsername) return;
-    const tasks = [loadEloChart(currentUsername, '', false)];
+    const tasks = [loadEloChart(currentUsername, '')];
     if (compareMode && currentCompareUsername)
-        tasks.push(loadEloChart(currentCompareUsername, '-compare', false));
+        tasks.push(loadEloChart(currentCompareUsername, '-compare'));
     Promise.all(tasks).then(() => {
         if (compareMode && currentCompareUsername) syncYAxes('elo', 'elo-compare');
     });
@@ -1069,14 +1069,6 @@ async function loadRatingDiff(username, color, op, loadId, suffix = '') {
                 }
             }
         });
-
-        const totalGames = buckets.reduce((s, b) => s + b.total_games, 0);
-        const totalWins  = buckets.reduce((s, b) => s + b.wins, 0);
-        const totalDraws = buckets.reduce((s, b) => s + b.draws, 0);
-        const totalLosses = buckets.reduce((s, b) => s + b.losses, 0);
-        const overallWinRate      = totalGames ? Math.round(totalWins / totalGames * 100) : 0;
-        const overallDrawRate     = totalGames ? Math.round(totalDraws / totalGames * 100) : 0;
-        const overallDecisiveRate = (totalWins + totalLosses) ? Math.round(totalWins / (totalWins + totalLosses) * 100) : 0;
 
         const el = document.getElementById("rating-diff-headlines" + suffix);
         el.innerHTML = `
