@@ -1048,30 +1048,30 @@ body.compare-mode #layer-1-right {
     font-weight: 400;
 }
 
-/* ── Triple Pair (3 combo charts) ────────────────────────── */
+/* ── Analytics Grid (2-wide combo charts) ────────────────── */
 
-.triple-pair {
+.analytics-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 1.5rem;
     margin-bottom: 0;
 }
 
-.triple-pair > .analytic-row {
+.analytics-grid > .analytic-row {
     margin-bottom: 0;
     min-width: 0;
 }
 
-.triple-pair .chart-container {
+.analytics-grid .chart-container {
     aspect-ratio: 1 / 1;
     max-height: 760px;
 }
 
-body.compare-mode .triple-pair {
+body.compare-mode .analytics-grid {
     display: block;
 }
 
-body.compare-mode .triple-pair > .analytic-row {
+body.compare-mode .analytics-grid > .analytic-row {
     margin-bottom: 3rem;
 }
 
