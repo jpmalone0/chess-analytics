@@ -208,7 +208,7 @@
                 </div>
 
                 <!-- Layer 2: Three combo charts -->
-                <div class="triple-pair">
+                <div class="analytics-grid">
                     <!-- Game Length -->
                     <div class="analytic-row">
                         <h4 class="chart-title">📏 Game Length vs Win Rate</h4>
@@ -235,8 +235,8 @@
                         </div>
                     </div>
 
-                    <!-- Rating Diff (chart only) -->
-                    <div class="analytic-row">
+                    <!-- Rating Diff (chart only) — deferred behind Load More Data -->
+                    <div class="analytic-row hidden" id="rating-diff-cell">
                         <h4 class="chart-title">📊 Win Rate vs Opponent Rating</h4>
                         <div class="compare-wrap">
                             <div class="compare-col">
@@ -250,7 +250,7 @@
                 </div>
 
                 <!-- Hold/Even/Upset rate stats -->
-                <div class="rating-diff-stats-row">
+                <div class="rating-diff-stats-row hidden" id="rating-diff-stats-row">
                     <div class="compare-wrap">
                         <div class="compare-col">
                             <div class="headline-stats" id="rating-diff-headlines"></div>
@@ -259,6 +259,11 @@
                             <div class="headline-stats" id="rating-diff-headlines-compare"></div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Load More Data toggle (reveals the deferred rating-diff chart) -->
+                <div class="more-data-row">
+                    <button class="btn-sm" id="more-data-btn" onclick="toggleMoreData()">Load More Data</button>
                 </div>
 
                 <!-- Layer 3: Time charts -->
@@ -391,7 +396,7 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=21"></script>
+    <script src="/static/app.js?v=22"></script>
 </body>
 
 </html>
