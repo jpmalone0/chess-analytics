@@ -308,6 +308,7 @@ async function loadPlayer() {
     moreDataShown = false;
     document.getElementById('rating-diff-cell').classList.add('hidden');
     document.getElementById('rating-diff-stats-row').classList.add('hidden');
+    document.getElementById('winrate-color-cell').classList.add('hidden');
     document.getElementById('more-data-btn').textContent = 'Load More Data';
     document.querySelectorAll('.tc-btn').forEach(b => b.classList.remove('active'));
     document.querySelector('.tc-btn[data-tc="rapid"]').classList.add('active');
@@ -453,7 +454,7 @@ function exitCompareMode() {
     document.getElementById('compare-search').value = '';
     document.getElementById('compare-stats-grid').innerHTML = '';
 
-    const compareKeys = ['loadGameLength', 'loadClockAdvantage', 'loadRatingDiff', 'loadMoveTimeDist', 'loadMoveTimeByMove', 'elo'];
+    const compareKeys = ['loadGameLength', 'loadClockAdvantage', 'loadRatingDiff', 'loadMoveTimeDist', 'loadMoveTimeByMove', 'elo', 'loadWinrateByColor'];
     compareKeys.forEach(k => {
         const key = k + '-compare';
         if (charts[key]) { charts[key].destroy(); delete charts[key]; }
@@ -906,6 +907,7 @@ function loadColorAnalytics(username, color, op) {
 
     const loadId = ++analyticsLoadId;
     if (moreDataShown) loadRatingDiff(username, color, op, loadId);
+    if (moreDataShown) loadWinrateByColor(username, loadId);
     loadGameLength(username, color, op, loadId);
     loadClockAdvantage(username, color, op, loadId);
     loadMoveTime(username, color, op, loadId);
@@ -913,6 +915,7 @@ function loadColorAnalytics(username, color, op) {
     if (compareMode && currentCompareUsername) {
         const cId = ++compareLoadId;
         if (moreDataShown) loadRatingDiff(currentCompareUsername, color, op, cId, '-compare');
+        if (moreDataShown) loadWinrateByColor(currentCompareUsername, cId, '-compare');
         loadGameLength(currentCompareUsername, color, op, cId, '-compare');
         loadClockAdvantage(currentCompareUsername, color, op, cId, '-compare');
         loadMoveTime(currentCompareUsername, color, op, cId, '-compare');
@@ -927,6 +930,88 @@ function colorParams(color, op) {
     if (op) ext.opening_names = op; // fetchJSON handles encoding
     return buildFilterParamsExtra(ext);
 }
+
+// ═══════════════════════════════════════════════════════════
+// Win Rate by Color Over Time (rolling 30-day EMA)
+// ═══════════════════════════════════════════════════════════
+
+async function loadWinrateByColor(username, loadId, suffix = '') {
+    const chartKey = 'loadWinrateByColor' + suffix;
+    const noDataEl = document.getElementById('winrate-color-no-data' + (suffix ? suffix : ''));
+    try {
+        const data = await fetchJSON(`/api/players/${username}/analytics/winrate-by-color${buildFilterParams()}`);
+        if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
+        if (charts[chartKey]) charts[chartKey].destroy();
+
+        const sparse = data.length < 5;
+        if (noDataEl) noDataEl.classList.toggle('hidden', !sparse);
+        if (sparse) return;
+
+        const whitePts = data.filter(d => d.white !== null).map(d => ({ x: toMs(d.date), y: d.white }));
+        const blackPts = data.filter(d => d.black !== null).map(d => ({ x: toMs(d.date), y: d.black }));
+
+        charts[chartKey] = new Chart(document.getElementById('winrate-color-chart' + suffix).getContext('2d'), {
+            type: 'line',
+            data: {
+                datasets: [
+                    {
+                        label: 'White',
+                        data: whitePts,
+                        borderColor: '#e2e8f0',
+                        backgroundColor: 'rgba(226,232,240,0.08)',
+                        borderWidth: 2, pointRadius: 0, pointHitRadius: 20,
+                        tension: 0, spanGaps: true,
+                    },
+                    {
+                        label: 'Black',
+                        data: blackPts,
+                        borderColor: '#818cf8',
+                        backgroundColor: 'rgba(129,140,248,0.08)',
+                        borderWidth: 2, pointRadius: 0, pointHitRadius: 20,
+                        tension: 0, spanGaps: true,
+                    },
+                    {
+                        label: '50%',
+                        data: data.length ? [
+                            { x: Math.min(...data.map(d => toMs(d.date))), y: 50 },
+                            { x: Math.max(...data.map(d => toMs(d.date))), y: 50 },
+                        ] : [],
+                        borderColor: 'rgba(100,116,139,0.4)',
+                        borderWidth: 1, borderDash: [4, 4],
+                        pointRadius: 0, pointHitRadius: 0,
+                        spanGaps: true,
+                    },
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false,
+                plugins: {
+                    legend: { position: 'top', labels: { boxWidth: 12, padding: 16, filter: item => item.text !== '50%' } },
+                    tooltip: {
+                        callbacks: {
+                            title: items => items.length ? fmtDate(items[0].parsed.x) : '',
+                            label: item => `${item.dataset.label}: ${item.parsed.y.toFixed(1)}%`,
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        ticks: { maxTicksLimit: 10, maxRotation: 0, callback: v => fmtDate(v) },
+                        grid: { display: false },
+                    },
+                    y: {
+                        min: 0, max: 100,
+                        grid: { color: 'rgba(42,53,72,0.5)' },
+                        ticks: { callback: v => v + '%' },
+                        title: { display: true, text: 'Win Rate (30-day EMA)', color: '#5a6a85', font: { size: 11 } },
+                    },
+                }
+            }
+        });
+    } catch (e) { console.error('Winrate-by-color chart error:', e); }
+}
+
 
 // ═══════════════════════════════════════════════════════════
 // Feature 1: Rating Differential (10pt buckets within ±50)
@@ -1570,21 +1655,24 @@ function toggleMoreData() {
 
     const cell = document.getElementById('rating-diff-cell');
     const stats = document.getElementById('rating-diff-stats-row');
+    const wrCell = document.getElementById('winrate-color-cell');
     const btn = document.getElementById('more-data-btn');
 
     cell.classList.toggle('hidden', !moreDataShown);
     stats.classList.toggle('hidden', !moreDataShown);
+    wrCell.classList.toggle('hidden', !moreDataShown);
     btn.textContent = moreDataShown ? 'Hide' : 'Load More Data';
 
     if (!moreDataShown || !currentUsername) return;
 
-    // Lazy-fetch the rating-diff chart for the current filters.
     const activeTab = document.querySelector('#main-perspective-tabs .tab-btn.active');
     const color = activeTab ? activeTab.dataset.target : 'global';
     const op = currentOpeningFilter;
 
     loadRatingDiff(currentUsername, color, op, analyticsLoadId);
+    loadWinrateByColor(currentUsername, analyticsLoadId);
     if (compareMode && currentCompareUsername) {
         loadRatingDiff(currentCompareUsername, color, op, compareLoadId, '-compare');
+        loadWinrateByColor(currentCompareUsername, compareLoadId, '-compare');
     }
 }

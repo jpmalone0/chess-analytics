@@ -247,6 +247,25 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Win Rate by Color Over Time — deferred behind Load More Data -->
+                    <div class="analytic-row hidden" id="winrate-color-cell">
+                        <h4 class="chart-title">♟ Win Rate by Color <span class="stat-info-btn" data-desc="Exponential moving average of your 30-day rolling win rate when playing as White vs Black.">?</span></h4>
+                        <div class="compare-wrap">
+                            <div class="compare-col">
+                                <div class="chart-container">
+                                    <canvas id="winrate-color-chart"></canvas>
+                                    <div class="chart-no-data hidden" id="winrate-color-no-data">Not enough data</div>
+                                </div>
+                            </div>
+                            <div class="compare-col compare-secondary">
+                                <div class="chart-container">
+                                    <canvas id="winrate-color-chart-compare"></canvas>
+                                    <div class="chart-no-data hidden" id="winrate-color-no-data-compare">Not enough data</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Hold/Even/Upset rate stats -->
