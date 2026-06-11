@@ -271,13 +271,14 @@ def winrate_by_color(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    ema_days: int = 30,
     db: Session = Depends(get_db),
 ):
     player = crud.get_player(db, username)
     if not player:
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.winrate_by_color_ema(
-        db, player.player_id, time_class, start_date, end_date,
+        db, player.player_id, time_class, start_date, end_date, ema_days=ema_days,
     )
 
 
@@ -287,13 +288,14 @@ def winrate_vs_opening(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    ema_days: int = 30,
     db: Session = Depends(get_db),
 ):
     player = crud.get_player(db, username)
     if not player:
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.winrate_vs_first_move_ema(
-        db, player.player_id, time_class, start_date, end_date,
+        db, player.player_id, time_class, start_date, end_date, ema_days=ema_days,
     )
 
 

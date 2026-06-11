@@ -812,29 +812,32 @@ def get_top_openings(
     return result
 
 
-# ── Win Rate by Color Over Time (rolling 30-day + EMA) ──
+# ── Win Rate by Color Over Time (daily rate + EMA) ──
 
 def winrate_by_color_ema(
     db: Session, player_id: int,
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    window_days: int = 30,
-    ema_alpha: float = 0.15,
-    min_games: int = 30,
+    ema_days: int = 30,
 ):
     """
-    For each date that has games, compute rolling `window_days` win rate for white
-    and black, then smooth both series with EMA(ema_alpha).
+    For each date that has games, compute that day's win rate and draw rate for
+    white and black, then smooth all series with an `ema_days`-span EMA
+    (alpha = 2 / (ema_days + 1)); ema_days=1 yields the raw daily rates.
     """
+    ema_alpha = 2 / (max(ema_days, 1) + 1)
+
     clauses = ["(g.white_player_id = :player_id OR g.black_player_id = :player_id)"]
     params: dict[str, Any] = {"player_id": player_id}
     if time_class:
         clauses.append("g.time_class = :time_class")
         params["time_class"] = time_class
     if start_date:
-        clauses.append("g.date_played >= :start_date")
-        params["start_date"] = start_date
+        # Fetch extra history before start_date so the EMA is already warmed
+        # up at the first visible day (3x the span covers ~99% of its weight).
+        clauses.append("g.date_played >= :data_start")
+        params["data_start"] = start_date - timedelta(days=3 * max(ema_days, 1))
     if end_date:
         clauses.append("g.date_played <= :end_date")
         params["end_date"] = end_date
@@ -848,7 +851,8 @@ def winrate_by_color_ema(
                 WHEN (g.white_player_id = :player_id AND g.result = '1-0')
                   OR (g.black_player_id = :player_id AND g.result = '0-1') THEN 1
                 ELSE 0
-            END AS is_win
+            END AS is_win,
+            CASE WHEN g.result = '1/2-1/2' THEN 1 ELSE 0 END AS is_draw
         FROM games g
         WHERE {where}
           AND g.date_played IS NOT NULL
@@ -868,52 +872,55 @@ def winrate_by_color_ema(
     by_date: dict[date, list[dict]] = {}
     for r in rows:
         d = _to_date(r["date_played"])
-        by_date.setdefault(d, []).append({"is_white": r["is_white"], "is_win": r["is_win"]})
+        by_date.setdefault(d, []).append({
+            "is_white": r["is_white"], "is_win": r["is_win"], "is_draw": r["is_draw"]
+        })
 
     all_dates = sorted(by_date.keys())
 
-    # For each date, compute rolling-window win rate per color
-    def rolling_wr(target_date: date, color_key: str) -> float | None:
-        cutoff = target_date - timedelta(days=window_days - 1)
-        wins = total = 0
-        for d, games in by_date.items():
-            if cutoff <= d <= target_date:
-                for g in games:
-                    if g["is_white"] == (1 if color_key == "white" else 0):
-                        total += 1
-                        wins  += g["is_win"]
-        if total < min_games:
-            return None
-        return round(wins / total * 100, 2)
+    def daily_rates(target_date: date, color_key: str) -> tuple[float | None, float | None]:
+        wins = draws = total = 0
+        for g in by_date[target_date]:
+            if g["is_white"] == (1 if color_key == "white" else 0):
+                total += 1
+                wins  += g["is_win"]
+                draws += g["is_draw"]
+        if total == 0:
+            return None, None
+        return round(wins / total * 100, 2), round(draws / total * 100, 2)
 
-    raw_white = [rolling_wr(d, "white") for d in all_dates]
-    raw_black = [rolling_wr(d, "black") for d in all_dates]
+    raw_white_wr, raw_white_dr = zip(*[daily_rates(d, "white") for d in all_dates], strict=True)
+    raw_black_wr, raw_black_dr = zip(*[daily_rates(d, "black") for d in all_dates], strict=True)
 
     def ema(series: list) -> list:
+        # Bias-corrected EMA: zero-init normalized by the accumulated weight,
+        # so early points are true weighted averages of the days seen so far
+        # instead of being pinned to the first day's value.
         result: list = []
-        val: float | None = None
+        num = den = 0.0
         for x in series:
-            if x is None:
-                result.append(round(val, 2) if val is not None else None)
-            elif val is None:
-                val = x
-                result.append(round(val, 2))
-            else:
-                val = ema_alpha * x + (1 - ema_alpha) * val
-                result.append(round(val, 2))
+            if x is not None:
+                num = ema_alpha * x + (1 - ema_alpha) * num
+                den = ema_alpha + (1 - ema_alpha) * den
+            result.append(round(num / den, 2) if den > 0 else None)
         return result
 
-    smoothed_white = ema(raw_white)
-    smoothed_black = ema(raw_black)
+    s_white_wr = ema(list(raw_white_wr))
+    s_white_dr = ema(list(raw_white_dr))
+    s_black_wr = ema(list(raw_black_wr))
+    s_black_dr = ema(list(raw_black_dr))
 
     return [
         {
-            "date":  str(all_dates[i]),
-            "white": smoothed_white[i],
-            "black": smoothed_black[i],
+            "date":       str(all_dates[i]),
+            "white":      s_white_wr[i],
+            "black":      s_black_wr[i],
+            "white_draw": s_white_dr[i],
+            "black_draw": s_black_dr[i],
         }
         for i in range(len(all_dates))
-        if smoothed_white[i] is not None or smoothed_black[i] is not None
+        if (s_white_wr[i] is not None or s_black_wr[i] is not None)
+        and (start_date is None or all_dates[i] >= start_date)
     ]
 
 
@@ -922,22 +929,25 @@ def winrate_vs_first_move_ema(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    window_days: int = 30,
-    ema_alpha: float = 0.15,
-    min_games: int = 15,
+    ema_days: int = 30,
 ):
     """
-    Rolling `window_days` win rate for the player's black games against 1.e4 and 1.d4,
-    smoothed with EMA. Requires at least `min_games` per opening in the window.
+    Daily win rate and draw rate for the player's black games against 1.e4 and
+    1.d4, smoothed with an `ema_days`-span EMA (alpha = 2 / (ema_days + 1));
+    ema_days=1 yields the raw daily rates.
     """
+    ema_alpha = 2 / (max(ema_days, 1) + 1)
+
     clauses = ["g.black_player_id = :player_id", "m.ply = 1", "m.move_san IN ('e4', 'd4')"]
     params: dict[str, Any] = {"player_id": player_id}
     if time_class:
         clauses.append("g.time_class = :time_class")
         params["time_class"] = time_class
     if start_date:
-        clauses.append("g.date_played >= :start_date")
-        params["start_date"] = start_date
+        # Fetch extra history before start_date so the EMA is already warmed
+        # up at the first visible day (3x the span covers ~99% of its weight).
+        clauses.append("g.date_played >= :data_start")
+        params["data_start"] = start_date - timedelta(days=3 * max(ema_days, 1))
     if end_date:
         clauses.append("g.date_played <= :end_date")
         params["end_date"] = end_date
@@ -947,7 +957,8 @@ def winrate_vs_first_move_ema(
         SELECT
             g.date_played,
             m.move_san AS first_move,
-            CASE WHEN g.result = '0-1' THEN 1 ELSE 0 END AS is_win
+            CASE WHEN g.result = '0-1' THEN 1 ELSE 0 END AS is_win,
+            CASE WHEN g.result = '1/2-1/2' THEN 1 ELSE 0 END AS is_draw
         FROM games g
         JOIN moves m ON m.game_id = g.game_id
         WHERE {where}
@@ -968,48 +979,50 @@ def winrate_vs_first_move_ema(
     for r in rows:
         d = _to_date(r["date_played"])
         entry = by_date.setdefault(d, {"e4": [], "d4": []})
-        entry[r["first_move"]].append(r["is_win"])
+        entry[r["first_move"]].append({"is_win": r["is_win"], "is_draw": r["is_draw"]})
 
     all_dates = sorted(by_date.keys())
 
-    def rolling_wr(target_date: date, move: str) -> float | None:
-        cutoff = target_date - timedelta(days=window_days - 1)
-        wins = total = 0
-        for d, groups in by_date.items():
-            if cutoff <= d <= target_date:
-                for is_win in groups[move]:
-                    total += 1
-                    wins += is_win
-        if total < min_games:
-            return None
-        return round(wins / total * 100, 2)
+    def daily_rates(target_date: date, move: str) -> tuple[float | None, float | None]:
+        wins = draws = total = 0
+        for g in by_date[target_date][move]:
+            total += 1
+            wins  += g["is_win"]
+            draws += g["is_draw"]
+        if total == 0:
+            return None, None
+        return round(wins / total * 100, 2), round(draws / total * 100, 2)
 
-    raw_e4 = [rolling_wr(d, "e4") for d in all_dates]
-    raw_d4 = [rolling_wr(d, "d4") for d in all_dates]
+    raw_e4_wr, raw_e4_dr = zip(*[daily_rates(d, "e4") for d in all_dates], strict=True)
+    raw_d4_wr, raw_d4_dr = zip(*[daily_rates(d, "d4") for d in all_dates], strict=True)
 
     def ema(series: list) -> list:
+        # Bias-corrected EMA: zero-init normalized by the accumulated weight,
+        # so early points are true weighted averages of the days seen so far
+        # instead of being pinned to the first day's value.
         result: list = []
-        val: float | None = None
+        num = den = 0.0
         for x in series:
-            if x is None:
-                result.append(round(val, 2) if val is not None else None)
-            elif val is None:
-                val = x
-                result.append(round(val, 2))
-            else:
-                val = ema_alpha * x + (1 - ema_alpha) * val
-                result.append(round(val, 2))
+            if x is not None:
+                num = ema_alpha * x + (1 - ema_alpha) * num
+                den = ema_alpha + (1 - ema_alpha) * den
+            result.append(round(num / den, 2) if den > 0 else None)
         return result
 
-    smoothed_e4 = ema(raw_e4)
-    smoothed_d4 = ema(raw_d4)
+    s_e4_wr = ema(list(raw_e4_wr))
+    s_e4_dr = ema(list(raw_e4_dr))
+    s_d4_wr = ema(list(raw_d4_wr))
+    s_d4_dr = ema(list(raw_d4_dr))
 
     return [
         {
-            "date": str(all_dates[i]),
-            "e4":   smoothed_e4[i],
-            "d4":   smoothed_d4[i],
+            "date":    str(all_dates[i]),
+            "e4":      s_e4_wr[i],
+            "d4":      s_d4_wr[i],
+            "e4_draw": s_e4_dr[i],
+            "d4_draw": s_d4_dr[i],
         }
         for i in range(len(all_dates))
-        if smoothed_e4[i] is not None or smoothed_d4[i] is not None
+        if (s_e4_wr[i] is not None or s_d4_wr[i] is not None)
+        and (start_date is None or all_dates[i] >= start_date)
     ]

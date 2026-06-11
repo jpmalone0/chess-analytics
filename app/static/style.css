@@ -1048,6 +1048,52 @@ body.compare-mode #layer-1-right {
     color: white;
 }
 
+/* ── EMA window slider ────────────────────────────────────── */
+
+.ema-window-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.ema-window-label {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.ema-window-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--bg-card-hover);
+    outline: none;
+    cursor: pointer;
+}
+
+.ema-window-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+}
+
+.ema-window-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+}
+
 /* ── Stat info button & description ──────────────────────── */
 
 .stat-info-btn {

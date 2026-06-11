@@ -14,12 +14,13 @@ export default [
                 Chart: "readonly",
                 localStorage: "readonly",
                 setTimeout: "readonly",
+                clearTimeout: "readonly",
                 Promise: "readonly",
             },
         },
         rules: {
             "no-unused-vars": ["warn", {
-                "varsIgnorePattern": "^(loadPlayer|nextPage|prevPage|openGameDetail|closeModal|resetDateRange|escapeHtml|toggleCompare|loadComparePlayer|exitCompareMode|nextPageCompare|prevPageCompare|toggleProjection|toggleFitMode|toggleMoreData)$"
+                "varsIgnorePattern": "^(loadPlayer|nextPage|prevPage|openGameDetail|closeModal|resetDateRange|escapeHtml|toggleCompare|loadComparePlayer|exitCompareMode|nextPageCompare|prevPageCompare|toggleProjection|toggleFitMode|toggleMoreData|setWinrateMode|setWinrateWindow)$"
             }],
             "no-undef": "error",
             "no-console": "off",
