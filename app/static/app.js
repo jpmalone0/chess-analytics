@@ -974,8 +974,8 @@ async function loadWinrateByColor(username, loadId, suffix = '') {
     const opening = winrateMode === 'opening';
 
     const windowParam = buildFilterParams()
-        ? `&ema_days=${winrateWindow}`
-        : `?ema_days=${winrateWindow}`;
+        ? `&window_games=${winrateWindow}`
+        : `?window_games=${winrateWindow}`;
     const url = opening
         ? `/api/players/${username}/analytics/winrate-vs-opening${buildFilterParams()}${windowParam}`
         : `/api/players/${username}/analytics/winrate-by-color${buildFilterParams()}${windowParam}`;
@@ -1000,6 +1000,7 @@ async function loadWinrateByColor(username, loadId, suffix = '') {
         const pts2     = data.filter(d => d[s2.key]     !== null).map(d => ({ x: toMs(d.date), y: d[s2.key] }));
         const ptsDraw1 = data.filter(d => d[s1.drawKey] !== null).map(d => ({ x: toMs(d.date), y: d[s1.drawKey] }));
         const ptsDraw2 = data.filter(d => d[s2.drawKey] !== null).map(d => ({ x: toMs(d.date), y: d[s2.drawKey] }));
+        const ptsOverall = opening ? [] : data.filter(d => d.overall !== null).map(d => ({ x: toMs(d.date), y: d.overall }));
 
         const xMin = Math.min(...data.map(d => toMs(d.date)));
         const xMax = Math.max(...data.map(d => toMs(d.date)));
@@ -1013,13 +1014,15 @@ async function loadWinrateByColor(username, loadId, suffix = '') {
                 datasets: [
                     {
                         label: s1.label, data: pts1,
-                        borderColor: s1.color, backgroundColor: s1.bg,
+                        borderColor: opening ? s1.color : hexToRgba(s1.color, 0.8),
+                        backgroundColor: s1.bg,
                         borderWidth: 2, pointRadius: 0, pointHitRadius: 20,
                         tension: 0, spanGaps: true,
                     },
                     {
                         label: s2.label, data: pts2,
-                        borderColor: s2.color, backgroundColor: s2.bg,
+                        borderColor: opening ? s2.color : hexToRgba(s2.color, 0.8),
+                        backgroundColor: s2.bg,
                         borderWidth: 2, pointRadius: 0, pointHitRadius: 20,
                         tension: 0, spanGaps: true,
                     },
@@ -1039,20 +1042,19 @@ async function loadWinrateByColor(username, loadId, suffix = '') {
                         pointRadius: 0, pointHitRadius: 16,
                         tension: 0, spanGaps: true,
                     },
-                    {
-                        label: '50%',
-                        data: data.length ? [{ x: xMin, y: 50 }, { x: xMax, y: 50 }] : [],
-                        borderColor: 'rgba(100,116,139,0.4)',
-                        borderWidth: 1, borderDash: [4, 4],
-                        pointRadius: 0, pointHitRadius: 0,
-                        spanGaps: true,
-                    },
+                    ...(opening ? [] : [{
+                        label: 'Overall Win', data: ptsOverall,
+                        borderColor: 'rgba(148,163,184,0.45)',
+                        backgroundColor: 'transparent',
+                        borderWidth: 1.5, pointRadius: 0, pointHitRadius: 16,
+                        tension: 0, spanGaps: true,
+                    }]),
                 ]
             },
             options: {
                 responsive: true, maintainAspectRatio: false, animation: false,
                 plugins: {
-                    legend: { position: 'top', labels: { boxWidth: 12, padding: 16, filter: item => item.text !== '50%' } },
+                    legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
                     tooltip: {
                         callbacks: {
                             title: items => items.length ? fmtDate(items[0].parsed.x) : '',
@@ -1071,7 +1073,7 @@ async function loadWinrateByColor(username, loadId, suffix = '') {
                         min: 0, max: 100,
                         grid: { color: 'rgba(42,53,72,0.5)' },
                         ticks: { callback: v => v + '%' },
-                        title: { display: true, text: `Rate (${winrateWindow}-day EMA)`, color: '#5a6a85', font: { size: 11 } },
+                        title: { display: true, text: `Rate (last ${winrateWindow} games)`, color: '#5a6a85', font: { size: 11 } },
                     },
                 }
             }

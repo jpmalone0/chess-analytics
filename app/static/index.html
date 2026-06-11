@@ -252,14 +252,14 @@
                     <div class="analytic-row hidden" id="winrate-color-cell">
                         <h4 class="chart-title" id="winrate-chart-title">
                             <span id="winrate-title-text">♟ Win Rate by Color</span>
-                            <span class="stat-info-btn" id="winrate-info-btn" data-desc="Daily win rate and draw rate when playing as White vs Black (or as Black vs 1.e4/1.d4), smoothed with an exponential moving average. Use the slider to adjust the EMA span — 1d shows raw daily rates.">?</span>
+                            <span class="stat-info-btn" id="winrate-info-btn" data-desc="Win rate and draw rate when playing as White vs Black (or as Black vs 1.e4/1.d4), computed over a rolling window of your most recent games. Use the slider to adjust the window size — fewer games is more responsive, more games is smoother.">?</span>
                             <span class="chart-mode-btns">
                                 <button class="chart-mode-btn active" id="winrate-mode-color" onclick="setWinrateMode('color')">White / Black</button>
                                 <button class="chart-mode-btn" id="winrate-mode-opening" onclick="setWinrateMode('opening')">vs 1.e4 / 1.d4</button>
                             </span>
                         </h4>
                         <div class="ema-window-row">
-                            <label class="ema-window-label" for="ema-window-slider">EMA window: <span id="ema-window-label">30</span>d</label>
+                            <label class="ema-window-label" for="ema-window-slider">Window: <span id="ema-window-label">30</span> games</label>
                             <input type="range" id="ema-window-slider" class="ema-window-slider" min="1" max="30" step="1" value="30" oninput="setWinrateWindow(this.value)">
                         </div>
                         <div class="compare-wrap">
@@ -426,7 +426,7 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=25"></script>
+    <script src="/static/app.js?v=28"></script>
 </body>
 
 </html>
