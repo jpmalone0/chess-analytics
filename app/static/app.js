@@ -786,6 +786,8 @@ function renderOpeningRow(o, showColorPip = false, totalRow = false) {
     const wPct = o.games ? o.wins   / o.games * 100 : 0;
     const dPct = o.games ? o.draws  / o.games * 100 : 0;
     const lPct = o.games ? o.losses / o.games * 100 : 0;
+    const xElo = o.games ? 8 * (o.wins - o.losses) / o.games : 0;
+    const xEloStr = (xElo >= 0 ? '+' : '') + xElo.toFixed(1);
     const pip  = (showColorPip || totalRow)
         ? `<span class="color-pip ${o.color}"></span>`
         : '';
@@ -804,6 +806,7 @@ function renderOpeningRow(o, showColorPip = false, totalRow = false) {
             <td class="wr-win">${o.win_rate}%</td>
             <td class="wr-draw">${o.draw_rate}%</td>
             <td class="wr-dec">${o.decisive_win_rate}%</td>
+            <td class="wr-elo ${xElo >= 0 ? 'wr-elo-pos' : 'wr-elo-neg'}">${xEloStr}</td>
         </tr>`;
 }
 
@@ -820,6 +823,7 @@ function buildOpeningTable(openings, showColorPip = false, footerRows = []) {
                     <th>Win%</th>
                     <th>Draw%</th>
                     <th>Decisive%</th>
+                    <th title="Expected Elo per game: +8 per win, -8 per loss, 0 per draw">Exp. Elo</th>
                 </tr>
             </thead>
             <tbody>${footer}${rows}</tbody>

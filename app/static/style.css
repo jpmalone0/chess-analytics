@@ -634,6 +634,8 @@ body {
 .opening-stats-table .wr-win   { color: var(--green); font-weight: 600; }
 .opening-stats-table .wr-draw  { color: var(--yellow); }
 .opening-stats-table .wr-dec   { color: var(--accent-light); font-weight: 600; }
+.opening-stats-table .wr-elo-pos { color: var(--green); }
+.opening-stats-table .wr-elo-neg { color: var(--red); }
 
 .opening-stats-table tr.opening-total-row:last-of-type td {
     border-bottom: 2px solid var(--border-light);

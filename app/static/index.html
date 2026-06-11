@@ -12,7 +12,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/static/style.css?v=11">
+    <link rel="stylesheet" href="/static/style.css?v=12">
 </head>
 
 <body>
@@ -260,7 +260,7 @@
                         </h4>
                         <div class="ema-window-row">
                             <label class="ema-window-label" for="ema-window-slider">Window: <span id="ema-window-label">30</span> games</label>
-                            <input type="range" id="ema-window-slider" class="ema-window-slider" min="1" max="30" step="1" value="30" oninput="setWinrateWindow(this.value)">
+                            <input type="range" id="ema-window-slider" class="ema-window-slider" min="1" max="100" step="1" value="30" oninput="setWinrateWindow(this.value)">
                         </div>
                         <div class="compare-wrap">
                             <div class="compare-col">
@@ -426,7 +426,7 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=28"></script>
+    <script src="/static/app.js?v=29"></script>
 </body>
 
 </html>
