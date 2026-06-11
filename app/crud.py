@@ -400,16 +400,6 @@ def rating_differential(
             "draw_rate":        round(b["draws"] / total   * 100, 1) if total    else 0,
         })
 
-    underdog_labels = {"< -100", "-100 to -50", "-50 to -40", "-40 to -30", "-30 to -20", "-20 to -10"}
-    favored_labels  = {"+10 to +20", "+20 to +30", "+30 to +40", "+40 to +50", "+50 to +100", "> +100"}
-    even_labels     = {"-10 to 0", "0 to +10"}
-
-    ug   = sum(r["total_games"] for r in results if r["bucket"] in underdog_labels)
-    uw   = sum(r["wins"]        for r in results if r["bucket"] in underdog_labels)
-    fg   = sum(r["total_games"] for r in results if r["bucket"] in favored_labels)
-    fw   = sum(r["wins"]        for r in results if r["bucket"] in favored_labels)
-    eg   = sum(r["total_games"] for r in results if r["bucket"] in even_labels)
-    ew   = sum(r["wins"]        for r in results if r["bucket"] in even_labels)
     og   = sum(r["total_games"] for r in results)
     ow   = sum(r["wins"]        for r in results)
     od   = sum(r["draws"]       for r in results)
@@ -417,9 +407,6 @@ def rating_differential(
 
     return {
         "buckets":                  results,
-        "upset_rate":               round(uw / ug   * 100, 1) if ug   else 0,
-        "hold_rate":                round(fw / fg   * 100, 1) if fg   else 0,
-        "even_rate":                round(ew / eg   * 100, 1) if eg   else 0,
         "overall_decisive_win_rate":round(ow / odec * 100, 1) if odec else 0,
         "overall_draw_rate":        round(od / og   * 100, 1) if og   else 0,
     }

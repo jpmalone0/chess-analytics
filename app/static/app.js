@@ -312,7 +312,6 @@ async function loadPlayer() {
     document.getElementById('winrate-mode-color').classList.add('active');
     document.getElementById('winrate-mode-opening').classList.remove('active');
     document.getElementById('rating-diff-cell').classList.remove('hidden');
-    document.getElementById('rating-diff-stats-row').classList.remove('hidden');
     document.getElementById('winrate-color-cell').classList.remove('hidden');
     document.getElementById('more-data-btn').textContent = 'Hide';
     document.querySelectorAll('.tc-btn').forEach(b => b.classList.remove('active'));
@@ -717,9 +716,10 @@ function hexToRgba(hex, a) {
 }
 
 function xEloColor(x) {
-    // Lerp neutral slate → red/green across the ±8 Elo-per-game range,
-    // so values near zero stay neutral instead of fully colored.
-    const t = Math.max(-1, Math.min(1, x / 8));
+    // Lerp neutral slate → red/green, fully saturated at ±4 Elo per game
+    // (where realistic values live), so near-zero stays neutral but
+    // moderate edges still read clearly.
+    const t = Math.max(-1, Math.min(1, x / 4));
     const from = [148, 163, 184];
     const to   = t < 0 ? [239, 68, 68] : [34, 197, 94];
     const k = Math.abs(t);
@@ -1156,45 +1156,6 @@ async function loadRatingDiff(username, color, op, loadId, suffix = '') {
             }
         });
 
-        const el = document.getElementById("rating-diff-headlines" + suffix);
-        el.innerHTML = `
-            <div style="display: flex; gap: 0.75rem; padding: 1rem 0;">
-                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid var(--green);">
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem; display: flex; align-items: center; gap: 0.3rem;">
-                        Hold Rate
-                        <span class="stat-info-btn" data-desc="Win % in games where you are rated more than 10 Elo above your opponent.">?</span>
-                    </div>
-                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--green);">${data.hold_rate}%</div>
-                </div>
-                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #94a3b8;">
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem; display: flex; align-items: center; gap: 0.3rem;">
-                        Even Match Rate
-                        <span class="stat-info-btn" data-desc="Win % in games where you and your opponent are within 10 Elo of each other.">?</span>
-                    </div>
-                    <div style="font-size: 1.2rem; font-weight: 700; color: #cbd5e1;">${data.even_rate}%</div>
-                </div>
-                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid var(--accent);">
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem; display: flex; align-items: center; gap: 0.3rem;">
-                        Upset Rate
-                        <span class="stat-info-btn" data-desc="Win % in games where you are rated more than 10 Elo below your opponent.">?</span>
-                    </div>
-                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--accent);">${data.upset_rate}%</div>
-                </div>
-            </div>
-        `;
-        el.querySelectorAll('.stat-info-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const existing = btn.querySelector('.stat-info-desc');
-                if (existing) { existing.remove(); return; }
-                const desc = document.createElement('div');
-                desc.className = 'stat-info-desc';
-                desc.textContent = btn.dataset.desc;
-                btn.appendChild(desc);
-                const close = () => { desc.remove(); document.removeEventListener('click', close); };
-                document.addEventListener('click', close);
-            });
-        });
     } catch (e) { console.error('Rating diff error:', e); }
 }
 
@@ -1732,12 +1693,10 @@ function toggleMoreData() {
     moreDataShown = !moreDataShown;
 
     const cell = document.getElementById('rating-diff-cell');
-    const stats = document.getElementById('rating-diff-stats-row');
     const wrCell = document.getElementById('winrate-color-cell');
     const btn = document.getElementById('more-data-btn');
 
     cell.classList.toggle('hidden', !moreDataShown);
-    stats.classList.toggle('hidden', !moreDataShown);
     wrCell.classList.toggle('hidden', !moreDataShown);
     btn.textContent = moreDataShown ? 'Hide' : 'Show More';
 
