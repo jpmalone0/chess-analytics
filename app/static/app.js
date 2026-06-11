@@ -17,7 +17,7 @@ const requestCache = {};
 let analyticsLoadId = 0;
 let compareLoadId = 0;
 let currentOpeningFilter = '';
-let moreDataShown = false;
+let moreDataShown = true;
 let winrateMode = 'color';
 
 // Chart.js defaults
@@ -306,14 +306,14 @@ async function loadPlayer() {
     currentTimeClass = 'rapid';
     gamesPage = 0;
     currentOpeningFilter = '';
-    moreDataShown = false;
+    moreDataShown = true;
     winrateMode = 'color';
     document.getElementById('winrate-mode-color').classList.add('active');
     document.getElementById('winrate-mode-opening').classList.remove('active');
-    document.getElementById('rating-diff-cell').classList.add('hidden');
-    document.getElementById('rating-diff-stats-row').classList.add('hidden');
-    document.getElementById('winrate-color-cell').classList.add('hidden');
-    document.getElementById('more-data-btn').textContent = 'Load More Data';
+    document.getElementById('rating-diff-cell').classList.remove('hidden');
+    document.getElementById('rating-diff-stats-row').classList.remove('hidden');
+    document.getElementById('winrate-color-cell').classList.remove('hidden');
+    document.getElementById('more-data-btn').textContent = 'Hide';
     document.querySelectorAll('.tc-btn').forEach(b => b.classList.remove('active'));
     document.querySelector('.tc-btn[data-tc="rapid"]').classList.add('active');
 
@@ -1660,7 +1660,7 @@ async function fetchJSON(url, opts = {}) {
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 // ═══════════════════════════════════════════════════════════
-// Load More Data toggle (deferred rating-diff chart)
+// Show More / Hide toggle for extra analytics charts
 // ═══════════════════════════════════════════════════════════
 
 function toggleMoreData() {
@@ -1674,7 +1674,7 @@ function toggleMoreData() {
     cell.classList.toggle('hidden', !moreDataShown);
     stats.classList.toggle('hidden', !moreDataShown);
     wrCell.classList.toggle('hidden', !moreDataShown);
-    btn.textContent = moreDataShown ? 'Hide' : 'Load More Data';
+    btn.textContent = moreDataShown ? 'Hide' : 'Show More';
 
     if (!moreDataShown || !currentUsername) return;
 
