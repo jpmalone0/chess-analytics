@@ -491,7 +491,7 @@ async function loadCompareStats(username) {
             <div class="stat-card win"><div class="stat-label">Wins</div><div class="stat-value">${stats.wins.toLocaleString()}</div></div>
             <div class="stat-card draw"><div class="stat-label">Draws</div><div class="stat-value">${stats.draws.toLocaleString()}</div></div>
             <div class="stat-card loss"><div class="stat-label">Losses</div><div class="stat-value">${stats.losses.toLocaleString()}</div></div>
-            <div class="stat-card"><div class="stat-label">Exp. Elo / Game</div><div class="stat-value" style="color:${xEloColor(xElo)}">${(xElo >= 0 ? '+' : '') + xElo.toFixed(1)}</div></div>
+            <div class="stat-card"><div class="stat-label">Exp. Elo / Game</div><div class="stat-value" style="color:${xEloColor(xElo, 1)}">${(xElo >= 0 ? '+' : '') + xElo.toFixed(1)}</div></div>
             <div class="stat-card accent"><div class="stat-label">Decisive Win Rate</div><div class="stat-value">${(stats.decisive_win_rate ?? 0).toFixed(1)}%</div></div>
             <div class="stat-card draw"><div class="stat-label">Draw Rate</div><div class="stat-value">${(stats.draw_rate ?? 0).toFixed(1)}%</div></div>
             <div class="stat-card win"><div class="stat-label">Win Rate</div><div class="stat-value">${stats.win_rate.toFixed(1)}%</div></div>
@@ -523,7 +523,7 @@ async function loadStats(username) {
         const xElo = stats.total_games ? 8 * (stats.wins - stats.losses) / stats.total_games : 0;
         const eloValue = document.getElementById('val-exp-elo');
         eloValue.textContent = (xElo >= 0 ? '+' : '') + xElo.toFixed(1);
-        eloValue.style.color = xEloColor(xElo);
+        eloValue.style.color = xEloColor(xElo, 1);
         document.getElementById('val-total').textContent = stats.total_games.toLocaleString();
         document.getElementById('val-wins').textContent = stats.wins.toLocaleString();
         document.getElementById('val-losses').textContent = stats.losses.toLocaleString();
@@ -715,11 +715,11 @@ function hexToRgba(hex, a) {
     return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
-function xEloColor(x) {
-    // Lerp neutral slate → red/green, fully saturated at ±4 Elo per game
-    // (where realistic values live), so near-zero stays neutral but
-    // moderate edges still read clearly.
-    const t = Math.max(-1, Math.min(1, x / 4));
+function xEloColor(x, scale = 4) {
+    // Lerp neutral slate → red/green, fully saturated at ±scale Elo per game.
+    // Per-opening values spread wide (scale 4); whole-player averages are
+    // much tighter, so the banner saturates at ±1.
+    const t = Math.max(-1, Math.min(1, x / scale));
     const from = [148, 163, 184];
     const to   = t < 0 ? [239, 68, 68] : [34, 197, 94];
     const k = Math.abs(t);
@@ -865,12 +865,9 @@ async function initRepertoireTabs(username) {
             const tabsContainer = document.getElementById(`${color}-tabs`);
             const openings = topOpenings[color] || [];
 
-            const top8Str = openings.map(o => o.name).join('|');
-
             tabsContainer.innerHTML = `
                 <button class="tab-btn active" data-color="${color}" data-op="">Overall</button>
-                <button class="tab-btn" data-color="${color}" data-op="${top8Str}">Top 8 Aggregated</button>
-                ${openings.map((o, i) => `<button class="tab-btn" data-color="${color}" data-op="${o.name}">#${i+1} ${o.name}</button>`).join('')}
+                ${openings.map((o, i) => `<button class="tab-btn" data-color="${color}" data-op="${o.filter || o.name}">#${i+1} ${o.name}</button>`).join('')}
             `;
 
             // Populate opening overview table for this color (with color total as footer)
@@ -896,13 +893,13 @@ async function initRepertoireTabs(username) {
             });
         }
 
-        // Build global combined table: top 8 combined + both color totals as footer
+        // Build global combined table: top 10 combined + both color totals as footer
         const globalEl = document.getElementById('opening-stats-table-global');
         if (globalEl) {
             const combined = [
                 ...topOpenings.white.map(o => ({ ...o, color: 'white' })),
                 ...topOpenings.black.map(o => ({ ...o, color: 'black' })),
-            ].sort((a, b) => b.games - a.games).slice(0, 8);
+            ].sort((a, b) => b.games - a.games).slice(0, 10);
 
             const totals = topOpenings.totals || {};
             const footer = [

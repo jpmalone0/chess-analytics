@@ -19,6 +19,29 @@ _FAMILY_TERMINALS = frozenset({
     'System', 'Formation', 'Variation', 'Stonewall',
 })
 
+# Sicilians are too common to lump together, so they get split one level
+# deeper: named systems below count as terminals alongside the family ones.
+_SICILIAN_TERMINALS = _FAMILY_TERMINALS | frozenset({
+    'Dragon', 'Najdorf', 'Sveshnikov', 'Kalashnikov', 'Taimanov',
+    'Kan', 'Scheveningen', 'Rossolimo', 'Alapin', 'Paulsen',
+})
+
+def _sicilian_subfamily(words: list[str], start: int) -> str:
+    """
+    Extend 'Sicilian Defense' with the named variation that follows.
+    The result is always a word-prefix of the raw opening_name, so the
+    LIKE-prefix opening filters keep working on sub-family names.
+    """
+    for i in range(start, len(words)):
+        if any(c.isdigit() for c in words[i]):
+            # Hit raw move text: keep any name words seen so far, otherwise
+            # fall back to the first move pair (e.g. 'Sicilian Defense 2.Nf3 d6').
+            end = i if i > start else min(start + 2, len(words))
+            return ' '.join(words[:end])
+        if words[i] in _SICILIAN_TERMINALS:
+            return ' '.join(words[:i + 1])
+    return ' '.join(words)
+
 def _opening_family(name: str) -> str:
     """Truncate an opening name at its first terminal keyword to get the family."""
     if not name:
@@ -26,8 +49,20 @@ def _opening_family(name: str) -> str:
     words = name.split()
     for i, w in enumerate(words):
         if w in _FAMILY_TERMINALS:
+            if ' '.join(words[:i + 1]) == 'Sicilian Defense':
+                return _sicilian_subfamily(words, i + 1)
             return ' '.join(words[:i + 1])
     return ' '.join(words[:2])
+
+def _family_display_name(family: str) -> str:
+    """Shorter table/tab label for Sicilian sub-families."""
+    prefix = 'Sicilian Defense '
+    if family.startswith(prefix):
+        sub = family[len(prefix):]
+        sub = sub.replace('Nyezhmetdinov Rossolimo', 'Rossolimo')
+        sub = sub.removesuffix(' Variation')
+        return 'Sicilian: ' + sub
+    return family
 
 def _build_game_filters(
     player_id: int,
@@ -808,7 +843,10 @@ def get_top_openings(
             family_data[fam]["losses"] += r["losses"]
 
         result[color] = [
-            {"name": fam, **_stats_entry(d["games"], d["wins"], d["draws"], d["losses"])}
+            # name is the display label; filter is the raw-name prefix used
+            # by the frontend's opening_names LIKE filter.
+            {"name": _family_display_name(fam), "filter": fam,
+             **_stats_entry(d["games"], d["wins"], d["draws"], d["losses"])}
             for fam, d in sorted(family_data.items(), key=lambda x: -x[1]["games"])[:limit]
         ]
 

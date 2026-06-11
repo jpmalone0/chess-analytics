@@ -312,5 +312,5 @@ def top_openings(
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.get_top_openings(
         db, player.player_id, time_class,
-        start_date, end_date, limit=8
+        start_date, end_date, limit=10
     )
