@@ -315,7 +315,8 @@ def rating_differential(
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
 ):
-    """Win/loss/draw counts bucketed by Elo gap (player Elo − opponent Elo)."""
+    """Win/loss/draw counts bucketed by estimated PRE-game Elo gap
+    (player Elo − opponent Elo, with each game's own rating update undone)."""
     where, params = _build_game_filters(
         player_id, time_class, start_date, end_date, player_color, opening_names
     )
@@ -338,6 +339,20 @@ def rating_differential(
     """)
     rows = db.execute(sql, params).mappings().all()
 
+    def pre_game_diff(diff_post: float, score: float) -> float:
+        # Chess.com PGN elos are POST-game, so each result is baked into its
+        # own stored gap: wins push the opponent below you, losses above.
+        # Undo both players' updates with the established-player Glicko
+        # approximation (Elo, K=16): diff_post = diff_pre + 32*(score - E),
+        # E = 1/(1+10^(-diff_pre/400)). Solved by fixed-point iteration.
+        d = diff_post
+        for _ in range(3):
+            expected = 1 / (1 + 10 ** (-d / 400))
+            d = diff_post - 32 * (score - expected)
+        return d
+
+    score_for = {"win": 1.0, "draw": 0.5, "loss": 0.0}
+
     bucket_defs = [
         ("> +100",       lambda d: d >= 100),
         ("+50 to +100",  lambda d: 50 <= d < 100),
@@ -357,7 +372,8 @@ def rating_differential(
     buckets = {label: {"wins": 0, "losses": 0, "draws": 0} for label, _ in bucket_defs}
 
     for row in rows:
-        diff, outcome = row["elo_diff"], row["outcome"]
+        outcome = row["outcome"]
+        diff = pre_game_diff(row["elo_diff"], score_for[outcome])
         for label, test in bucket_defs:
             if test(diff):
                 if outcome == "win":

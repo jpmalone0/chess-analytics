@@ -590,6 +590,7 @@ body {
 
 .opening-stats-table {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     font-size: 0.85rem;
 }
@@ -603,7 +604,16 @@ body {
     letter-spacing: 0.05em;
     color: var(--text-muted);
     border-bottom: 1px solid var(--border);
+    white-space: nowrap;
 }
+
+/* Compact widths for the numeric columns; Opening absorbs the remainder */
+.opening-stats-table th:nth-child(2) { width: 8%;    } /* Games     */
+.opening-stats-table th:nth-child(3) { width: 150px; } /* W/D/L bar */
+.opening-stats-table th:nth-child(4) { width: 10%;   } /* Win%      */
+.opening-stats-table th:nth-child(5) { width: 10%;   } /* Draw%     */
+.opening-stats-table th:nth-child(6) { width: 12%;   } /* Decisive% */
+.opening-stats-table th:nth-child(7) { width: 12%;   } /* Exp. Elo  */
 
 .opening-stats-table th:not(:first-child) {
     text-align: right;
@@ -634,8 +644,6 @@ body {
 .opening-stats-table .wr-win   { color: var(--green); font-weight: 600; }
 .opening-stats-table .wr-draw  { color: var(--yellow); }
 .opening-stats-table .wr-dec   { color: var(--accent-light); font-weight: 600; }
-.opening-stats-table .wr-elo-pos { color: var(--green); }
-.opening-stats-table .wr-elo-neg { color: var(--red); }
 
 .opening-stats-table tr.opening-total-row:last-of-type td {
     border-bottom: 2px solid var(--border-light);

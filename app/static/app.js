@@ -480,22 +480,22 @@ async function loadCompareStats(username) {
             const decisive = tc.wins + tc.losses;
             stats = {
                 total_games: tc.total, wins: tc.wins, losses: tc.losses, draws: tc.draws,
-                total_moves: tc.total_moves || 0,
                 win_rate: tc.total ? (tc.wins / tc.total * 100) : 0,
                 decisive_win_rate: decisive ? (tc.wins / decisive * 100) : 0,
                 draw_rate: tc.total ? (tc.draws / tc.total * 100) : 0,
             };
         }
 
+        const xElo = stats.total_games ? 8 * (stats.wins - stats.losses) / stats.total_games : 0;
         document.getElementById('compare-stats-grid').innerHTML = `
             <div class="stat-card"><div class="stat-label">Total Games</div><div class="stat-value">${stats.total_games.toLocaleString()}</div></div>
             <div class="stat-card win"><div class="stat-label">Wins</div><div class="stat-value">${stats.wins.toLocaleString()}</div></div>
             <div class="stat-card draw"><div class="stat-label">Draws</div><div class="stat-value">${stats.draws.toLocaleString()}</div></div>
             <div class="stat-card loss"><div class="stat-label">Losses</div><div class="stat-value">${stats.losses.toLocaleString()}</div></div>
-            <div class="stat-card"><div class="stat-label">Total Moves</div><div class="stat-value">${(stats.total_moves || 0).toLocaleString()}</div></div>
+            <div class="stat-card"><div class="stat-label">Exp. Elo / Game</div><div class="stat-value" style="color:${xEloColor(xElo)}">${(xElo >= 0 ? '+' : '') + xElo.toFixed(1)}</div></div>
             <div class="stat-card accent"><div class="stat-label">Decisive Win Rate</div><div class="stat-value">${(stats.decisive_win_rate ?? 0).toFixed(1)}%</div></div>
             <div class="stat-card draw"><div class="stat-label">Draw Rate</div><div class="stat-value">${(stats.draw_rate ?? 0).toFixed(1)}%</div></div>
-            <div class="stat-card accent"><div class="stat-label">Win Rate</div><div class="stat-value">${stats.win_rate.toFixed(1)}%</div></div>
+            <div class="stat-card win"><div class="stat-label">Win Rate</div><div class="stat-value">${stats.win_rate.toFixed(1)}%</div></div>
         `;
     } catch (e) { console.error('Compare stats error:', e.message, e); }
 }
@@ -515,15 +515,17 @@ async function loadStats(username) {
             const decisive = tc.wins + tc.losses;
             stats = {
                 total_games: tc.total, wins: tc.wins, losses: tc.losses, draws: tc.draws,
-                total_moves: tc.total_moves || 0,
                 win_rate: tc.total ? (tc.wins / tc.total * 100) : 0,
                 decisive_win_rate: decisive ? (tc.wins / decisive * 100) : 0,
                 draw_rate: tc.total ? (tc.draws / tc.total * 100) : 0,
             };
         }
 
+        const xElo = stats.total_games ? 8 * (stats.wins - stats.losses) / stats.total_games : 0;
+        const eloValue = document.getElementById('val-exp-elo');
+        eloValue.textContent = (xElo >= 0 ? '+' : '') + xElo.toFixed(1);
+        eloValue.style.color = xEloColor(xElo);
         document.getElementById('val-total').textContent = stats.total_games.toLocaleString();
-        document.getElementById('val-total-moves').textContent = (stats.total_moves || 0).toLocaleString();
         document.getElementById('val-wins').textContent = stats.wins.toLocaleString();
         document.getElementById('val-losses').textContent = stats.losses.toLocaleString();
         document.getElementById('val-draws').textContent = stats.draws.toLocaleString();
@@ -714,6 +716,17 @@ function hexToRgba(hex, a) {
     return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
+function xEloColor(x) {
+    // Lerp neutral slate → red/green across the ±8 Elo-per-game range,
+    // so values near zero stay neutral instead of fully colored.
+    const t = Math.max(-1, Math.min(1, x / 8));
+    const from = [148, 163, 184];
+    const to   = t < 0 ? [239, 68, 68] : [34, 197, 94];
+    const k = Math.abs(t);
+    const c = from.map((f, i) => Math.round(f + (to[i] - f) * k));
+    return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+}
+
 function ols(points, transform) {
     if (points.length < 2) return null;
     const xs = points.map(p => p.x);
@@ -806,7 +819,7 @@ function renderOpeningRow(o, showColorPip = false, totalRow = false) {
             <td class="wr-win">${o.win_rate}%</td>
             <td class="wr-draw">${o.draw_rate}%</td>
             <td class="wr-dec">${o.decisive_win_rate}%</td>
-            <td class="wr-elo ${xElo >= 0 ? 'wr-elo-pos' : 'wr-elo-neg'}">${xEloStr}</td>
+            <td class="wr-elo" style="color:${xEloColor(xElo)}">${xEloStr}</td>
         </tr>`;
 }
 
