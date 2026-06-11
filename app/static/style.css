@@ -359,7 +359,6 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: 1.5rem;
-    animation: fadeIn 0.4s ease;
 }
 
 @keyframes fadeIn {
@@ -491,6 +490,23 @@ body {
     width: 100%;
     max-height: 380px;
     aspect-ratio: 2 / 1;
+}
+
+.chart-container > canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.chart-no-data {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    pointer-events: none;
 }
 
 .two-col {
@@ -647,7 +663,7 @@ body {
     height: 14px;
     border-radius: 3px;
     overflow: hidden;
-    width: 360px;
+    width: 120px;
     cursor: default;
     gap: 1px;
     background: var(--bg-primary);
@@ -954,6 +970,37 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   Layer 1: Rating History + Opening Overview
+   ═══════════════════════════════════════════════════════════ */
+
+#layer-1 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    align-items: stretch;
+}
+
+#layer-1-left,
+#layer-1-right {
+    min-width: 0;
+}
+
+#layer-1-left .section,
+#layer-1-right .section {
+    margin-bottom: 0;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+body.compare-mode #layer-1 {
+    display: block;
+}
+
+body.compare-mode #layer-1-right {
+    display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════
    Analytics
    ═══════════════════════════════════════════════════════════ */
 
@@ -964,6 +1011,125 @@ body {
 .chart-title {
     margin-bottom: 1rem;
     color: var(--text-primary);
+}
+
+#winrate-chart-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.chart-mode-btns {
+    margin-left: auto;
+    display: flex;
+    gap: 0.2rem;
+}
+
+.chart-mode-btn {
+    font-family: var(--font-sans);
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 0.18rem 0.5rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.chart-mode-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-card-hover);
+}
+
+.chart-mode-btn.active {
+    background: var(--accent);
+    color: white;
+}
+
+/* ── Stat info button & description ──────────────────────── */
+
+.stat-info-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 1px solid var(--text-muted);
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    font-family: var(--font-sans);
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+    line-height: 1;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.stat-info-btn:hover {
+    border-color: var(--text-primary);
+    color: var(--text-primary);
+}
+
+.stat-info-desc {
+    position: absolute;
+    left: calc(100% + 0.5rem);
+    top: 50%;
+    transform: translateY(-50%);
+    width: 160px;
+    white-space: normal;
+    line-height: 1.4;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.3rem 0.6rem;
+    z-index: 20;
+    pointer-events: none;
+    font-family: var(--font-sans);
+    font-weight: 400;
+}
+
+/* ── Analytics Grid (2-wide combo charts) ────────────────── */
+
+.analytics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 0;
+}
+
+.analytics-grid > .analytic-row {
+    margin-bottom: 0;
+    min-width: 0;
+}
+
+.analytics-grid .chart-container {
+    aspect-ratio: 3 / 2;
+    max-height: 460px;
+}
+
+body.compare-mode .analytics-grid {
+    display: block;
+}
+
+body.compare-mode .analytics-grid > .analytic-row {
+    margin-bottom: 3rem;
+}
+
+.more-data-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+}
+
+.rating-diff-stats-row {
+    margin-top: 1.5rem;
+    margin-bottom: 3rem;
 }
 
 /* ── Compare Mode ─────────────────────────────────────────── */
@@ -981,6 +1147,29 @@ body.compare-mode .compare-secondary { display: block; }
 }
 body.compare-mode .single-pair {
     display: block;
+}
+
+.time-chart-row {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+}
+.time-chart-row .chart-container {
+    flex: 1;
+    min-width: 0;
+    aspect-ratio: 2 / 1;
+    max-height: 380px;
+}
+.time-side-stats {
+    width: 110px;
+    flex-shrink: 0;
+}
+body.compare-mode .time-chart-row {
+    display: block;
+}
+body.compare-mode .time-side-stats {
+    width: 100%;
+    margin-top: 0.5rem;
 }
 
 .compare-wrap {

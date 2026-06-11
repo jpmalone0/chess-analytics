@@ -4,7 +4,7 @@ Database query functions — all queries written as explicit SQL using sqlalchem
 
 import statistics as _stats
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -810,3 +810,206 @@ def get_top_openings(
         ]
 
     return result
+
+
+# ── Win Rate by Color Over Time (rolling 30-day + EMA) ──
+
+def winrate_by_color_ema(
+    db: Session, player_id: int,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    window_days: int = 30,
+    ema_alpha: float = 0.15,
+    min_games: int = 30,
+):
+    """
+    For each date that has games, compute rolling `window_days` win rate for white
+    and black, then smooth both series with EMA(ema_alpha).
+    """
+    clauses = ["(g.white_player_id = :player_id OR g.black_player_id = :player_id)"]
+    params: dict[str, Any] = {"player_id": player_id}
+    if time_class:
+        clauses.append("g.time_class = :time_class")
+        params["time_class"] = time_class
+    if start_date:
+        clauses.append("g.date_played >= :start_date")
+        params["start_date"] = start_date
+    if end_date:
+        clauses.append("g.date_played <= :end_date")
+        params["end_date"] = end_date
+
+    where = " AND ".join(clauses)
+    sql = text(f"""
+        SELECT
+            g.date_played,
+            CASE WHEN g.white_player_id = :player_id THEN 1 ELSE 0 END AS is_white,
+            CASE
+                WHEN (g.white_player_id = :player_id AND g.result = '1-0')
+                  OR (g.black_player_id = :player_id AND g.result = '0-1') THEN 1
+                ELSE 0
+            END AS is_win
+        FROM games g
+        WHERE {where}
+          AND g.date_played IS NOT NULL
+        ORDER BY g.date_played ASC
+    """)
+    rows = db.execute(sql, params).mappings().all()
+
+    if not rows:
+        return []
+
+    def _to_date(v) -> date:
+        if isinstance(v, date):
+            return v
+        return datetime.strptime(str(v), "%Y-%m-%d").date()
+
+    # Group games by date
+    by_date: dict[date, list[dict]] = {}
+    for r in rows:
+        d = _to_date(r["date_played"])
+        by_date.setdefault(d, []).append({"is_white": r["is_white"], "is_win": r["is_win"]})
+
+    all_dates = sorted(by_date.keys())
+
+    # For each date, compute rolling-window win rate per color
+    def rolling_wr(target_date: date, color_key: str) -> float | None:
+        cutoff = target_date - timedelta(days=window_days - 1)
+        wins = total = 0
+        for d, games in by_date.items():
+            if cutoff <= d <= target_date:
+                for g in games:
+                    if g["is_white"] == (1 if color_key == "white" else 0):
+                        total += 1
+                        wins  += g["is_win"]
+        if total < min_games:
+            return None
+        return round(wins / total * 100, 2)
+
+    raw_white = [rolling_wr(d, "white") for d in all_dates]
+    raw_black = [rolling_wr(d, "black") for d in all_dates]
+
+    def ema(series: list) -> list:
+        result: list = []
+        val: float | None = None
+        for x in series:
+            if x is None:
+                result.append(round(val, 2) if val is not None else None)
+            elif val is None:
+                val = x
+                result.append(round(val, 2))
+            else:
+                val = ema_alpha * x + (1 - ema_alpha) * val
+                result.append(round(val, 2))
+        return result
+
+    smoothed_white = ema(raw_white)
+    smoothed_black = ema(raw_black)
+
+    return [
+        {
+            "date":  str(all_dates[i]),
+            "white": smoothed_white[i],
+            "black": smoothed_black[i],
+        }
+        for i in range(len(all_dates))
+        if smoothed_white[i] is not None or smoothed_black[i] is not None
+    ]
+
+
+def winrate_vs_first_move_ema(
+    db: Session, player_id: int,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    window_days: int = 30,
+    ema_alpha: float = 0.15,
+    min_games: int = 15,
+):
+    """
+    Rolling `window_days` win rate for the player's black games against 1.e4 and 1.d4,
+    smoothed with EMA. Requires at least `min_games` per opening in the window.
+    """
+    clauses = ["g.black_player_id = :player_id", "m.ply = 1", "m.move_san IN ('e4', 'd4')"]
+    params: dict[str, Any] = {"player_id": player_id}
+    if time_class:
+        clauses.append("g.time_class = :time_class")
+        params["time_class"] = time_class
+    if start_date:
+        clauses.append("g.date_played >= :start_date")
+        params["start_date"] = start_date
+    if end_date:
+        clauses.append("g.date_played <= :end_date")
+        params["end_date"] = end_date
+
+    where = " AND ".join(clauses)
+    sql = text(f"""
+        SELECT
+            g.date_played,
+            m.move_san AS first_move,
+            CASE WHEN g.result = '0-1' THEN 1 ELSE 0 END AS is_win
+        FROM games g
+        JOIN moves m ON m.game_id = g.game_id
+        WHERE {where}
+          AND g.date_played IS NOT NULL
+        ORDER BY g.date_played ASC
+    """)
+    rows = db.execute(sql, params).mappings().all()
+
+    if not rows:
+        return []
+
+    def _to_date(v) -> date:
+        if isinstance(v, date):
+            return v
+        return datetime.strptime(str(v), "%Y-%m-%d").date()
+
+    by_date: dict[date, dict[str, list]] = {}
+    for r in rows:
+        d = _to_date(r["date_played"])
+        entry = by_date.setdefault(d, {"e4": [], "d4": []})
+        entry[r["first_move"]].append(r["is_win"])
+
+    all_dates = sorted(by_date.keys())
+
+    def rolling_wr(target_date: date, move: str) -> float | None:
+        cutoff = target_date - timedelta(days=window_days - 1)
+        wins = total = 0
+        for d, groups in by_date.items():
+            if cutoff <= d <= target_date:
+                for is_win in groups[move]:
+                    total += 1
+                    wins += is_win
+        if total < min_games:
+            return None
+        return round(wins / total * 100, 2)
+
+    raw_e4 = [rolling_wr(d, "e4") for d in all_dates]
+    raw_d4 = [rolling_wr(d, "d4") for d in all_dates]
+
+    def ema(series: list) -> list:
+        result: list = []
+        val: float | None = None
+        for x in series:
+            if x is None:
+                result.append(round(val, 2) if val is not None else None)
+            elif val is None:
+                val = x
+                result.append(round(val, 2))
+            else:
+                val = ema_alpha * x + (1 - ema_alpha) * val
+                result.append(round(val, 2))
+        return result
+
+    smoothed_e4 = ema(raw_e4)
+    smoothed_d4 = ema(raw_d4)
+
+    return [
+        {
+            "date": str(all_dates[i]),
+            "e4":   smoothed_e4[i],
+            "d4":   smoothed_d4[i],
+        }
+        for i in range(len(all_dates))
+        if smoothed_e4[i] is not None or smoothed_d4[i] is not None
+    ]

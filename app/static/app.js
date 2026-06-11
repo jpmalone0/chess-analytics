@@ -17,6 +17,8 @@ const requestCache = {};
 let analyticsLoadId = 0;
 let compareLoadId = 0;
 let currentOpeningFilter = '';
+let moreDataShown = true;
+let winrateMode = 'color';
 
 // Chart.js defaults
 Chart.defaults.color = '#8b9ab8';
@@ -158,6 +160,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
         });
     });
+
+    document.querySelectorAll('.chart-title .stat-info-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const existing = btn.querySelector('.stat-info-desc');
+            if (existing) { existing.remove(); return; }
+            const desc = document.createElement('div');
+            desc.className = 'stat-info-desc';
+            desc.textContent = btn.dataset.desc;
+            btn.appendChild(desc);
+            const close = () => { desc.remove(); document.removeEventListener('click', close); };
+            document.addEventListener('click', close);
+        });
+    });
 });
 
 
@@ -290,6 +306,14 @@ async function loadPlayer() {
     currentTimeClass = 'rapid';
     gamesPage = 0;
     currentOpeningFilter = '';
+    moreDataShown = true;
+    winrateMode = 'color';
+    document.getElementById('winrate-mode-color').classList.add('active');
+    document.getElementById('winrate-mode-opening').classList.remove('active');
+    document.getElementById('rating-diff-cell').classList.remove('hidden');
+    document.getElementById('rating-diff-stats-row').classList.remove('hidden');
+    document.getElementById('winrate-color-cell').classList.remove('hidden');
+    document.getElementById('more-data-btn').textContent = 'Hide';
     document.querySelectorAll('.tc-btn').forEach(b => b.classList.remove('active'));
     document.querySelector('.tc-btn[data-tc="rapid"]').classList.add('active');
 
@@ -354,6 +378,7 @@ async function refreshAll() {
 
     updateDateRangeLabel();
     gamesPage = 0;
+    document.getElementById('layer-1').classList.remove('hidden');
     document.querySelectorAll('.section').forEach(s => s.classList.remove('hidden'));
 
     const promises = [
@@ -433,7 +458,7 @@ function exitCompareMode() {
     document.getElementById('compare-search').value = '';
     document.getElementById('compare-stats-grid').innerHTML = '';
 
-    const compareKeys = ['loadGameLength', 'loadClockAdvantage', 'loadRatingDiff', 'loadMoveTimeDist', 'loadMoveTimeByMove', 'elo'];
+    const compareKeys = ['loadGameLength', 'loadClockAdvantage', 'loadRatingDiff', 'loadMoveTimeDist', 'loadMoveTimeByMove', 'elo', 'loadWinrateByColor'];
     compareKeys.forEach(k => {
         const key = k + '-compare';
         if (charts[key]) { charts[key].destroy(); delete charts[key]; }
@@ -512,7 +537,7 @@ async function loadStats(username) {
 // Elo Chart
 // ═══════════════════════════════════════════════════════════
 
-async function loadEloChart(username, suffix = '', animate = true) {
+async function loadEloChart(username, suffix = '') {
     const chartKey = 'elo' + suffix;
     try {
         const data = await fetchJSON(`/api/players/${username}/analytics/elo-history${buildFilterParams()}`);
@@ -649,7 +674,7 @@ async function loadEloChart(username, suffix = '', animate = true) {
             data: { datasets },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                animation: animate ? {} : false,
+                animation: false,
                 plugins: {
                     legend: {
                         display: !currentTimeClass || projectionActive,
@@ -747,9 +772,9 @@ function toggleFitMode() {
 
 function reloadProjections() {
     if (!currentUsername) return;
-    const tasks = [loadEloChart(currentUsername, '', false)];
+    const tasks = [loadEloChart(currentUsername, '')];
     if (compareMode && currentCompareUsername)
-        tasks.push(loadEloChart(currentCompareUsername, '-compare', false));
+        tasks.push(loadEloChart(currentCompareUsername, '-compare'));
     Promise.all(tasks).then(() => {
         if (compareMode && currentCompareUsername) syncYAxes('elo', 'elo-compare');
     });
@@ -885,14 +910,16 @@ function loadColorAnalytics(username, color, op) {
     }
 
     const loadId = ++analyticsLoadId;
-    loadRatingDiff(username, color, op, loadId);
+    if (moreDataShown) loadRatingDiff(username, color, op, loadId);
+    if (moreDataShown) loadWinrateByColor(username, loadId);
     loadGameLength(username, color, op, loadId);
     loadClockAdvantage(username, color, op, loadId);
     loadMoveTime(username, color, op, loadId);
 
     if (compareMode && currentCompareUsername) {
         const cId = ++compareLoadId;
-        loadRatingDiff(currentCompareUsername, color, op, cId, '-compare');
+        if (moreDataShown) loadRatingDiff(currentCompareUsername, color, op, cId, '-compare');
+        if (moreDataShown) loadWinrateByColor(currentCompareUsername, cId, '-compare');
         loadGameLength(currentCompareUsername, color, op, cId, '-compare');
         loadClockAdvantage(currentCompareUsername, color, op, cId, '-compare');
         loadMoveTime(currentCompareUsername, color, op, cId, '-compare');
@@ -907,6 +934,105 @@ function colorParams(color, op) {
     if (op) ext.opening_names = op; // fetchJSON handles encoding
     return buildFilterParamsExtra(ext);
 }
+
+// ═══════════════════════════════════════════════════════════
+// Win Rate by Color Over Time (rolling 30-day EMA)
+// ═══════════════════════════════════════════════════════════
+
+function setWinrateMode(mode) {
+    winrateMode = mode;
+    document.getElementById('winrate-mode-color').classList.toggle('active', mode === 'color');
+    document.getElementById('winrate-mode-opening').classList.toggle('active', mode === 'opening');
+    if (!currentUsername || !moreDataShown) return;
+    loadWinrateByColor(currentUsername, analyticsLoadId);
+    if (compareMode && currentCompareUsername) {
+        loadWinrateByColor(currentCompareUsername, compareLoadId, '-compare');
+    }
+}
+
+async function loadWinrateByColor(username, loadId, suffix = '') {
+    const chartKey = 'loadWinrateByColor' + suffix;
+    const noDataEl = document.getElementById('winrate-color-no-data' + (suffix ? suffix : ''));
+    const opening = winrateMode === 'opening';
+    const url = opening
+        ? `/api/players/${username}/analytics/winrate-vs-opening${buildFilterParams()}`
+        : `/api/players/${username}/analytics/winrate-by-color${buildFilterParams()}`;
+    const s1 = opening
+        ? { label: 'vs 1.e4', key: 'e4', color: '#fb923c', bg: 'rgba(251,146,60,0.08)' }
+        : { label: 'White',   key: 'white', color: '#e2e8f0', bg: 'rgba(226,232,240,0.08)' };
+    const s2 = opening
+        ? { label: 'vs 1.d4', key: 'd4', color: '#34d399', bg: 'rgba(52,211,153,0.08)' }
+        : { label: 'Black',   key: 'black', color: '#818cf8', bg: 'rgba(129,140,248,0.08)' };
+    try {
+        const data = await fetchJSON(url);
+        if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
+        if (charts[chartKey]) charts[chartKey].destroy();
+
+        const sparse = data.length < 5;
+        if (noDataEl) noDataEl.classList.toggle('hidden', !sparse);
+        if (sparse) return;
+
+        const pts1 = data.filter(d => d[s1.key] !== null).map(d => ({ x: toMs(d.date), y: d[s1.key] }));
+        const pts2 = data.filter(d => d[s2.key] !== null).map(d => ({ x: toMs(d.date), y: d[s2.key] }));
+
+        charts[chartKey] = new Chart(document.getElementById('winrate-color-chart' + suffix).getContext('2d'), {
+            type: 'line',
+            data: {
+                datasets: [
+                    {
+                        label: s1.label, data: pts1,
+                        borderColor: s1.color, backgroundColor: s1.bg,
+                        borderWidth: 2, pointRadius: 0, pointHitRadius: 20,
+                        tension: 0, spanGaps: true,
+                    },
+                    {
+                        label: s2.label, data: pts2,
+                        borderColor: s2.color, backgroundColor: s2.bg,
+                        borderWidth: 2, pointRadius: 0, pointHitRadius: 20,
+                        tension: 0, spanGaps: true,
+                    },
+                    {
+                        label: '50%',
+                        data: data.length ? [
+                            { x: Math.min(...data.map(d => toMs(d.date))), y: 50 },
+                            { x: Math.max(...data.map(d => toMs(d.date))), y: 50 },
+                        ] : [],
+                        borderColor: 'rgba(100,116,139,0.4)',
+                        borderWidth: 1, borderDash: [4, 4],
+                        pointRadius: 0, pointHitRadius: 0,
+                        spanGaps: true,
+                    },
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false,
+                plugins: {
+                    legend: { position: 'top', labels: { boxWidth: 12, padding: 16, filter: item => item.text !== '50%' } },
+                    tooltip: {
+                        callbacks: {
+                            title: items => items.length ? fmtDate(items[0].parsed.x) : '',
+                            label: item => `${item.dataset.label}: ${item.parsed.y.toFixed(1)}%`,
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        ticks: { maxTicksLimit: 10, maxRotation: 0, callback: v => fmtDate(v) },
+                        grid: { display: false },
+                    },
+                    y: {
+                        min: 0, max: 100,
+                        grid: { color: 'rgba(42,53,72,0.5)' },
+                        ticks: { callback: v => v + '%' },
+                        title: { display: true, text: 'Win Rate (30-day EMA)', color: '#5a6a85', font: { size: 11 } },
+                    },
+                }
+            }
+        });
+    } catch (e) { console.error('Winrate-by-color chart error:', e); }
+}
+
 
 // ═══════════════════════════════════════════════════════════
 // Feature 1: Rating Differential (10pt buckets within ±50)
@@ -965,52 +1091,45 @@ async function loadRatingDiff(username, color, op, loadId, suffix = '') {
             }
         });
 
-        const totalGames = buckets.reduce((s, b) => s + b.total_games, 0);
-        const totalWins  = buckets.reduce((s, b) => s + b.wins, 0);
-        const totalDraws = buckets.reduce((s, b) => s + b.draws, 0);
-        const totalLosses = buckets.reduce((s, b) => s + b.losses, 0);
-        const overallWinRate      = totalGames ? Math.round(totalWins / totalGames * 100) : 0;
-        const overallDrawRate     = totalGames ? Math.round(totalDraws / totalGames * 100) : 0;
-        const overallDecisiveRate = (totalWins + totalLosses) ? Math.round(totalWins / (totalWins + totalLosses) * 100) : 0;
-
-        document.getElementById("rating-diff-headlines" + suffix).innerHTML = `
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-bottom:1rem;">
-                <div class="stat-card" style="padding:0.6rem 0.75rem;">
-                    <div class="stat-label">Games</div>
-                    <div class="stat-value" style="font-size:1.3rem;">${totalGames}</div>
+        const el = document.getElementById("rating-diff-headlines" + suffix);
+        el.innerHTML = `
+            <div style="display: flex; gap: 0.75rem; padding: 1rem 0;">
+                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid var(--green);">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem; display: flex; align-items: center; gap: 0.3rem;">
+                        Hold Rate
+                        <span class="stat-info-btn" data-desc="Win % in games where you are rated more than 10 Elo above your opponent.">?</span>
+                    </div>
+                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--green);">${data.hold_rate}%</div>
                 </div>
-                <div class="stat-card win" style="padding:0.6rem 0.75rem;">
-                    <div class="stat-label">Win Rate</div>
-                    <div class="stat-value" style="font-size:1.3rem;">${overallWinRate}%</div>
+                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #94a3b8;">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem; display: flex; align-items: center; gap: 0.3rem;">
+                        Even Match Rate
+                        <span class="stat-info-btn" data-desc="Win % in games where you and your opponent are within 10 Elo of each other.">?</span>
+                    </div>
+                    <div style="font-size: 1.2rem; font-weight: 700; color: #cbd5e1;">${data.even_rate}%</div>
                 </div>
-                <div class="stat-card draw" style="padding:0.6rem 0.75rem;">
-                    <div class="stat-label">Draw Rate</div>
-                    <div class="stat-value" style="font-size:1.3rem;">${overallDrawRate}%</div>
-                </div>
-                <div class="stat-card accent" style="padding:0.6rem 0.75rem;">
-                    <div class="stat-label">Decisive Win Rate</div>
-                    <div class="stat-value" style="font-size:1.3rem;">${overallDecisiveRate}%</div>
-                </div>
-            </div>
-            <div class="headline-stat green" style="padding: 1rem;">
-                <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
-                    Hold Rate (win % when >10 elo higher rated than your opponent):
-                    <strong style="color: var(--green); font-size: 1.1rem;">${data.hold_rate}%</strong>
-                </div>
-            </div>
-            <div class="headline-stat" style="margin-top: 1rem; padding: 1rem; border-left-color: #94a3b8;">
-                <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
-                    Even Match Rate (win % when evenly rated with your opponent):
-                    <strong style="color: #cbd5e1; font-size: 1.1rem;">${data.even_rate}%</strong>
-                </div>
-            </div>
-            <div class="headline-stat accent" style="margin-top: 1rem; padding: 1rem;">
-                <div style="font-size: 0.95rem; color: var(--text-primary); line-height: 1.4;">
-                    Upset Rate (win % when >10 elo lower rated than your opponent):
-                    <strong style="color: var(--accent); font-size: 1.1rem;">${data.upset_rate}%</strong>
+                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid var(--accent);">
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem; display: flex; align-items: center; gap: 0.3rem;">
+                        Upset Rate
+                        <span class="stat-info-btn" data-desc="Win % in games where you are rated more than 10 Elo below your opponent.">?</span>
+                    </div>
+                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--accent);">${data.upset_rate}%</div>
                 </div>
             </div>
         `;
+        el.querySelectorAll('.stat-info-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const existing = btn.querySelector('.stat-info-desc');
+                if (existing) { existing.remove(); return; }
+                const desc = document.createElement('div');
+                desc.className = 'stat-info-desc';
+                desc.textContent = btn.dataset.desc;
+                btn.appendChild(desc);
+                const close = () => { desc.remove(); document.removeEventListener('click', close); };
+                document.addEventListener('click', close);
+            });
+        });
     } catch (e) { console.error('Rating diff error:', e); }
 }
 
@@ -1131,13 +1250,7 @@ async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
                             }
                         }
                     },
-                    subtitle: {
-                        display: true,
-                        text: 'Average clock difference (your time − opponent time) across all moves in each game',
-                        color: '#5a6a85',
-                        font: { size: 11 },
-                        padding: { bottom: 10 },
-                    },
+                    subtitle: { display: false },
                 },
                 scales: {
                     x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
@@ -1251,18 +1364,18 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         });
 
         document.getElementById("move-time-stats" + suffix).innerHTML = `
-            <div style="display: flex; gap: 0.75rem; padding: 1rem 0;">
-                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
+            <div style="display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0;">
+                <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Mean</div>
-                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">${data.mean}s</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${data.mean}s</div>
                 </div>
-                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
+                <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Median</div>
-                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">${data.median}s</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${data.median}s</div>
                 </div>
-                <div style="flex: 1; padding: 0.75rem; border-left: 3px solid #475569;">
+                <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Std Dev</div>
-                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary);">±${data.std_dev}s</div>
+                    <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">±${data.std_dev}s</div>
                 </div>
             </div>
         `;
@@ -1346,17 +1459,17 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
             const secs = Math.round(totalSec % 60);
             const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
             statsEl.innerHTML = `
-                <div style="display: flex; gap: 0.75rem; padding: 0.75rem 0 0.25rem;">
-                    <div style="flex: 1; padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                <div style="display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0;">
+                    <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                         <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Avg time per game</div>
                         <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${timeStr}</div>
                     </div>
                     ${fit ? `
-                    <div style="flex: 1; padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                    <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                         <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Mean effort move</div>
                         <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">move ${medianEffortMove}</div>
                     </div>
-                    <div style="flex: 1; padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                    <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                         <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Peak think move</div>
                         <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">move ${fit.peakMove}</div>
                     </div>` : ''}
@@ -1545,3 +1658,34 @@ async function fetchJSON(url, opts = {}) {
     return requestCache[url];
 }
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ═══════════════════════════════════════════════════════════
+// Show More / Hide toggle for extra analytics charts
+// ═══════════════════════════════════════════════════════════
+
+function toggleMoreData() {
+    moreDataShown = !moreDataShown;
+
+    const cell = document.getElementById('rating-diff-cell');
+    const stats = document.getElementById('rating-diff-stats-row');
+    const wrCell = document.getElementById('winrate-color-cell');
+    const btn = document.getElementById('more-data-btn');
+
+    cell.classList.toggle('hidden', !moreDataShown);
+    stats.classList.toggle('hidden', !moreDataShown);
+    wrCell.classList.toggle('hidden', !moreDataShown);
+    btn.textContent = moreDataShown ? 'Hide' : 'Show More';
+
+    if (!moreDataShown || !currentUsername) return;
+
+    const activeTab = document.querySelector('#main-perspective-tabs .tab-btn.active');
+    const color = activeTab ? activeTab.dataset.target : 'global';
+    const op = currentOpeningFilter;
+
+    loadRatingDiff(currentUsername, color, op, analyticsLoadId);
+    loadWinrateByColor(currentUsername, analyticsLoadId);
+    if (compareMode && currentCompareUsername) {
+        loadRatingDiff(currentCompareUsername, color, op, compareLoadId, '-compare');
+        loadWinrateByColor(currentCompareUsername, compareLoadId, '-compare');
+    }
+}
