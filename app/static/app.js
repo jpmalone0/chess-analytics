@@ -312,6 +312,8 @@ async function loadPlayer() {
     document.getElementById('winrate-mode-color').classList.add('active');
     document.getElementById('winrate-mode-opening').classList.remove('active');
     document.getElementById('rating-diff-cell').classList.remove('hidden');
+    document.getElementById('streak-loss-cell').classList.remove('hidden');
+    document.getElementById('streak-win-cell').classList.remove('hidden');
     document.getElementById('winrate-color-cell').classList.remove('hidden');
     document.getElementById('more-data-btn').textContent = 'Hide';
     document.querySelectorAll('.tc-btn').forEach(b => b.classList.remove('active'));
@@ -927,6 +929,7 @@ function loadColorAnalytics(username, color, op) {
     const loadId = ++analyticsLoadId;
     if (moreDataShown) loadRatingDiff(username, color, op, loadId);
     if (moreDataShown) loadWinrateByColor(username, loadId);
+    if (moreDataShown) loadStreakReaction(username, loadId);
     loadGameLength(username, color, op, loadId);
     loadClockAdvantage(username, color, op, loadId);
     loadMoveTime(username, color, op, loadId);
@@ -935,6 +938,7 @@ function loadColorAnalytics(username, color, op) {
         const cId = ++compareLoadId;
         if (moreDataShown) loadRatingDiff(currentCompareUsername, color, op, cId, '-compare');
         if (moreDataShown) loadWinrateByColor(currentCompareUsername, cId, '-compare');
+        if (moreDataShown) loadStreakReaction(currentCompareUsername, cId, '-compare');
         loadGameLength(currentCompareUsername, color, op, cId, '-compare');
         loadClockAdvantage(currentCompareUsername, color, op, cId, '-compare');
         loadMoveTime(currentCompareUsername, color, op, cId, '-compare');
@@ -1216,6 +1220,72 @@ async function loadGameLength(username, color, op, loadId, suffix = '') {
 }
 
 
+
+
+// ═══════════════════════════════════════════════════════════
+// Win Rate After a Streak
+// ═══════════════════════════════════════════════════════════
+
+function renderStreakChart(chartKey, canvasId, buckets, singular, plural) {
+    if (charts[chartKey]) charts[chartKey].destroy();
+    const el = document.getElementById(canvasId);
+    if (!el) return;
+
+    charts[chartKey] = new Chart(el.getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: buckets.map(b => `${b.bucket} ${b.bucket === '1' ? singular : plural}`),
+            datasets: [
+                { label: 'Wins', data: buckets.map(b => b.wins), backgroundColor: 'rgba(34, 197, 94, 0.7)', borderRadius: 4, stack: 'stack' },
+                { label: 'Losses', data: buckets.map(b => b.losses), backgroundColor: 'rgba(239, 68, 68, 0.7)', borderRadius: 4, stack: 'stack' },
+                { label: 'Draws', data: buckets.map(b => b.draws), backgroundColor: 'rgba(234, 179, 8, 0.7)', borderRadius: 4, stack: 'stack' },
+                {
+                    label: 'Win Rate (Decisive) %', type: 'line',
+                    data: buckets.map(b => b.win_rate_no_draws),
+                    borderColor: '#818cf8', backgroundColor: 'transparent',
+                    borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#818cf8', pointHitRadius: 24,
+                    yAxisID: 'y2',
+                },
+                {
+                    label: 'Draw Rate %', type: 'line',
+                    data: buckets.map(b => b.draw_rate),
+                    borderColor: '#eab308', backgroundColor: 'transparent',
+                    borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#eab308', pointHitRadius: 24,
+                    yAxisID: 'y2',
+                },
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            plugins: {
+                legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
+                tooltip: {
+                    callbacks: {
+                        afterBody: (items) => {
+                            const b = buckets[items[0].dataIndex];
+                            return `Win Rate (Decisive): ${b.win_rate_no_draws}%\nDraw Rate: ${b.draw_rate}%\nTotal Games: ${b.total_games}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { stacked: true, grid: { display: false } },
+                y: { stacked: true, grid: { color: 'rgba(42, 53, 72, 0.5)' }, title: { display: true, text: 'Games', color: '#5a6a85' } },
+                y2: { position: 'right', min: 0, max: 100, grid: { display: false }, title: { display: true, text: 'Win Rate %', color: '#5a6a85' }, ticks: { callback: v => v + '%' } },
+            }
+        }
+    });
+}
+
+async function loadStreakReaction(username, loadId, suffix = '') {
+    try {
+        const data = await fetchJSON(`/api/players/${username}/analytics/streak-reaction${buildFilterParams()}`);
+        if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
+
+        renderStreakChart('loadStreakLoss' + suffix, 'streak-loss-chart' + suffix, data.after_loss, 'Loss', 'Losses');
+        renderStreakChart('loadStreakWin' + suffix, 'streak-win-chart' + suffix, data.after_win, 'Win', 'Wins');
+    } catch (e) { console.error('Streak reaction error:', e); }
+}
 
 
 // ═══════════════════════════════════════════════════════════
@@ -1690,10 +1760,14 @@ function toggleMoreData() {
     moreDataShown = !moreDataShown;
 
     const cell = document.getElementById('rating-diff-cell');
+    const lossCell = document.getElementById('streak-loss-cell');
+    const winCell = document.getElementById('streak-win-cell');
     const wrCell = document.getElementById('winrate-color-cell');
     const btn = document.getElementById('more-data-btn');
 
     cell.classList.toggle('hidden', !moreDataShown);
+    lossCell.classList.toggle('hidden', !moreDataShown);
+    winCell.classList.toggle('hidden', !moreDataShown);
     wrCell.classList.toggle('hidden', !moreDataShown);
     btn.textContent = moreDataShown ? 'Hide' : 'Show More';
 
@@ -1705,8 +1779,10 @@ function toggleMoreData() {
 
     loadRatingDiff(currentUsername, color, op, analyticsLoadId);
     loadWinrateByColor(currentUsername, analyticsLoadId);
+    loadStreakReaction(currentUsername, analyticsLoadId);
     if (compareMode && currentCompareUsername) {
         loadRatingDiff(currentCompareUsername, color, op, compareLoadId, '-compare');
         loadWinrateByColor(currentCompareUsername, compareLoadId, '-compare');
+        loadStreakReaction(currentCompareUsername, compareLoadId, '-compare');
     }
 }

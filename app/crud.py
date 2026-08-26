@@ -1036,3 +1036,101 @@ def winrate_vs_first_move_rolling(
             "d4_draw": d4_dr,
         })
     return out
+
+
+# ── Win Rate After a Streak ──────────────────────────────
+
+def streak_reaction(
+    db: Session, player_id: int,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+):
+    """
+    Win/loss/draw outcomes bucketed by how many consecutive losses (or wins)
+    immediately preceded each game. Draws don't break a streak in progress —
+    they're skipped over for counting purposes — but the draw's own outcome
+    is still bucketed against whatever streak was active when it happened.
+
+    No lower date bound at the SQL level (same reasoning as
+    winrate_by_color_rolling): the streak needs games before start_date to
+    know its state entering the window, so we compute over full history up
+    to end_date and trim the bucketed output to start_date afterward.
+    """
+    clauses = ["(g.white_player_id = :player_id OR g.black_player_id = :player_id)",
+               "g.date_played IS NOT NULL"]
+    params: dict[str, Any] = {"player_id": player_id}
+    if time_class:
+        clauses.append("g.time_class = :time_class")
+        params["time_class"] = time_class
+    if end_date:
+        clauses.append("g.date_played <= :end_date")
+        params["end_date"] = end_date
+
+    where = " AND ".join(clauses)
+    sql = text(f"""
+        SELECT
+            g.date_played,
+            CASE
+                WHEN (g.white_player_id = :player_id AND g.result = '1-0')
+                  OR (g.black_player_id = :player_id AND g.result = '0-1') THEN 'win'
+                WHEN g.result = '1/2-1/2'                                   THEN 'draw'
+                ELSE 'loss'
+            END AS outcome
+        FROM games g
+        WHERE {where}
+        ORDER BY g.date_played ASC, g.game_id ASC
+    """)
+    rows = db.execute(sql, params).mappings().all()
+
+    def _to_date(v) -> date:
+        if isinstance(v, date):
+            return v
+        return datetime.strptime(str(v), "%Y-%m-%d").date()
+
+    loss_buckets = {n: {"wins": 0, "losses": 0, "draws": 0} for n in (1, 2, 3, 4)}
+    win_buckets  = {n: {"wins": 0, "losses": 0, "draws": 0} for n in (1, 2, 3, 4)}
+
+    loss_streak = 0
+    win_streak  = 0
+    for row in rows:
+        outcome = row["outcome"]
+        in_range = not start_date or _to_date(row["date_played"]) >= start_date
+
+        if in_range and loss_streak >= 1:
+            b = loss_buckets[min(loss_streak, 4)]
+            b["wins" if outcome == "win" else "losses" if outcome == "loss" else "draws"] += 1
+        if in_range and win_streak >= 1:
+            b = win_buckets[min(win_streak, 4)]
+            b["wins" if outcome == "win" else "losses" if outcome == "loss" else "draws"] += 1
+
+        if outcome == "loss":
+            loss_streak += 1
+            win_streak = 0
+        elif outcome == "win":
+            win_streak += 1
+            loss_streak = 0
+        # draw: both streaks carry through unchanged
+
+    def _build(buckets: dict) -> list[dict[str, Any]]:
+        results = []
+        for n in (1, 2, 3, 4):
+            b = buckets[n]
+            total    = b["wins"] + b["losses"] + b["draws"]
+            decisive = b["wins"] + b["losses"]
+            results.append({
+                "bucket":            f"{n}" if n < 4 else "4+",
+                "total_games":       total,
+                "wins":              b["wins"],
+                "losses":            b["losses"],
+                "draws":             b["draws"],
+                "win_rate":          round(b["wins"] / total    * 100, 1) if total    else 0,
+                "win_rate_no_draws": round(b["wins"] / decisive * 100, 1) if decisive else 0,
+                "draw_rate":         round(b["draws"] / total   * 100, 1) if total    else 0,
+            })
+        return results
+
+    return {
+        "after_loss": _build(loss_buckets),
+        "after_win":  _build(win_buckets),
+    }
