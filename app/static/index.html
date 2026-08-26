@@ -248,32 +248,6 @@
                         </div>
                     </div>
 
-                    <!-- Win Rate After a Losing Streak -->
-                    <div class="analytic-row hidden" id="streak-loss-cell">
-                        <h4 class="chart-title">🔥 Win Rate After a Losing Streak <span class="stat-info-btn" data-desc="Outcome of each game, bucketed by how many losses in a row came immediately before it. Draws don't break a streak in progress, but a draw's own outcome still counts toward whichever bucket was active when it happened.">?</span></h4>
-                        <div class="compare-wrap">
-                            <div class="compare-col">
-                                <div class="chart-container"><canvas id="streak-loss-chart"></canvas></div>
-                            </div>
-                            <div class="compare-col compare-secondary">
-                                <div class="chart-container"><canvas id="streak-loss-chart-compare"></canvas></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Win Rate After a Winning Streak -->
-                    <div class="analytic-row hidden" id="streak-win-cell">
-                        <h4 class="chart-title">🚀 Win Rate After a Winning Streak <span class="stat-info-btn" data-desc="Outcome of each game, bucketed by how many wins in a row came immediately before it. Draws don't break a streak in progress, but a draw's own outcome still counts toward whichever bucket was active when it happened.">?</span></h4>
-                        <div class="compare-wrap">
-                            <div class="compare-col">
-                                <div class="chart-container"><canvas id="streak-win-chart"></canvas></div>
-                            </div>
-                            <div class="compare-col compare-secondary">
-                                <div class="chart-container"><canvas id="streak-win-chart-compare"></canvas></div>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Win Rate by Color Over Time -->
                     <div class="analytic-row hidden" id="winrate-color-cell">
                         <h4 class="chart-title" id="winrate-chart-title">
@@ -300,6 +274,32 @@
                                     <canvas id="winrate-color-chart-compare"></canvas>
                                     <div class="chart-no-data hidden" id="winrate-color-no-data-compare">Not enough data</div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Win Rate After a Losing Streak -->
+                    <div class="analytic-row hidden" id="streak-loss-cell">
+                        <h4 class="chart-title">🔥 Win Rate After a Losing Streak <span class="stat-info-btn" data-desc="Outcome of each game, bucketed by how many losses in a row came immediately before it. Draws don't break a streak in progress, but a draw's own outcome still counts toward whichever bucket was active when it happened.">?</span></h4>
+                        <div class="compare-wrap">
+                            <div class="compare-col">
+                                <div class="chart-container"><canvas id="streak-loss-chart"></canvas></div>
+                            </div>
+                            <div class="compare-col compare-secondary">
+                                <div class="chart-container"><canvas id="streak-loss-chart-compare"></canvas></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Win Rate After a Winning Streak -->
+                    <div class="analytic-row hidden" id="streak-win-cell">
+                        <h4 class="chart-title">🚀 Win Rate After a Winning Streak <span class="stat-info-btn" data-desc="Outcome of each game, bucketed by how many wins in a row came immediately before it. Draws don't break a streak in progress, but a draw's own outcome still counts toward whichever bucket was active when it happened.">?</span></h4>
+                        <div class="compare-wrap">
+                            <div class="compare-col">
+                                <div class="chart-container"><canvas id="streak-win-chart"></canvas></div>
+                            </div>
+                            <div class="compare-col compare-secondary">
+                                <div class="chart-container"><canvas id="streak-win-chart-compare"></canvas></div>
                             </div>
                         </div>
                     </div>
@@ -441,7 +441,7 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=37"></script>
+    <script src="/static/app.js?v=38"></script>
 </body>
 
 </html>
