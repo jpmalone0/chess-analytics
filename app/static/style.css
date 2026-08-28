@@ -104,6 +104,9 @@ body {
     line-height: 1;
     display: block;
     color: var(--accent-light);
+    /* Box-centering isn't optical centering: the glyph's ink sits low in its
+       em box, so lift it onto the wordmark's cap-height axis. */
+    transform: translateY(-0.105em);
 }
 
 .logo h1 {

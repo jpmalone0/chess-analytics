@@ -20,6 +20,9 @@ let currentOpeningFilter = '';
 let currentOpeningColor = 'global';  // 'global' | 'white' | 'black'
 const ANALYTICS_SECTIONS = ['outcomes', 'time', 'form'];
 const collapsedSections = new Set();  // sections the user has collapsed
+const OPENINGS_PREVIEW_COUNT = 6;     // opening rows shown before "show all"
+let openingsExpanded = false;
+let lastTopOpenings = null;           // cached so the toggle can re-render
 let winrateMode = 'color';
 let winrateWindow = 30;
 
@@ -33,6 +36,7 @@ const toMs = s => Date.parse(s);
 const fmtDate = ms => new Date(ms).toISOString().slice(0, 10);
 const TIME_CLASS_COLORS = { bullet: '#ef4444', blitz: '#eab308', rapid: '#22c55e' };
 const DEFAULT_COLOR = '#3792b8';
+const ACCENT_LIGHT = '#6fbcd8';
 const Y_AXIS_STEP = 20;
 const PROJECTION_STEPS = 80;
 
@@ -535,7 +539,11 @@ async function loadEloChart(username, suffix = '') {
 
         const datasets = [];
         for (const [tc, points] of Object.entries(groups)) {
-            const color = TIME_CLASS_COLORS[tc] || DEFAULT_COLOR;
+            // One line on screen needs no colour coding, so it takes the app
+            // accent; the "All" view keeps per-class colours to stay separable.
+            const color = currentTimeClass
+                ? ACCENT_LIGHT
+                : (TIME_CLASS_COLORS[tc] || DEFAULT_COLOR);
             const label = tc.charAt(0).toUpperCase() + tc.slice(1);
             const firstPt = points[0];
             const lastPt = points[points.length - 1];
@@ -761,6 +769,21 @@ function reloadProjections() {
 }
 
 
+/**
+ * Extra tooltip lines for the win/loss/draw bucket charts. Chart.js already
+ * prints the hovered dataset's own value, so any metric it's showing is
+ * skipped here rather than repeated.
+ */
+function outcomeTooltipLines(row, items) {
+    if (!row) return [];
+    const shown = new Set(items.map(i => i.dataset.label));
+    const lines = [];
+    if (!shown.has('Win Rate (Decisive) %')) lines.push(`Win Rate (Decisive): ${row.win_rate_no_draws}%`);
+    if (!shown.has('Draw Rate %')) lines.push(`Draw Rate: ${row.draw_rate}%`);
+    lines.push(`Total Games: ${row.total_games}`);
+    return lines;
+}
+
 function renderOpeningRow(o, showColorPip = false, totalRow = false) {
     const wPct = o.games ? o.wins   / o.games * 100 : 0;
     const dPct = o.games ? o.draws  / o.games * 100 : 0;
@@ -774,7 +797,7 @@ function renderOpeningRow(o, showColorPip = false, totalRow = false) {
     // Total rows switch the color perspective; opening rows set the opening
     // filter (data-op), with data-name reused by the "Filtered to X" chip.
     const opAttr = totalRow
-        ? ` data-color-target="${o.color}"`
+        ? ` data-color-target="${o.color === 'all' ? 'global' : o.color}"`
         : ` data-op="${escapeHtml(o.filter || o.name)}" data-name="${escapeHtml(o.name)}"`;
     return `
         <tr${cls}${opAttr}>
@@ -814,43 +837,83 @@ function buildOpeningTable(openings, showColorPip = false, footerRows = []) {
         </table>`;
 }
 
+/** Both colors' totals summed — the "All Games" row that resets every filter. */
+function combinedTotals(totals) {
+    const w = totals.white, b = totals.black;
+    if (!w && !b) return null;
+    const games  = (w?.games  || 0) + (b?.games  || 0);
+    const wins   = (w?.wins   || 0) + (b?.wins   || 0);
+    const draws  = (w?.draws  || 0) + (b?.draws  || 0);
+    const losses = (w?.losses || 0) + (b?.losses || 0);
+    const decisive = wins + losses;
+    const pct = (n, d) => d ? Math.round(n / d * 1000) / 10 : 0;
+    return {
+        name: 'All Games', color: 'all', games, wins, draws, losses,
+        win_rate: pct(wins, games),
+        draw_rate: pct(draws, games),
+        decisive_win_rate: pct(wins, decisive),
+    };
+}
+
+/**
+ * Render the three opening tables from the cached payload. Split out from the
+ * fetch so the show-all toggle can re-render without refetching.
+ */
+function renderOpeningTables() {
+    if (!lastTopOpenings) return;
+    const totals = lastTopOpenings.totals || {};
+
+    // Summary rows head every table: they double as the perspective switch, so
+    // they must stay reachable from any view.
+    const summaryRows = [
+        combinedTotals(totals),
+        totals.white ? { ...totals.white, name: 'White Pieces', color: 'white' } : null,
+        totals.black ? { ...totals.black, name: 'Black Pieces', color: 'black' } : null,
+    ].filter(Boolean);
+
+    const renderTable = (el, openings, showColorPip) => {
+        // Always rewritten, even when empty — leaving the previous render in
+        // place would show the old filter's openings as if they were current.
+        if (!el) return;
+        if (openings.length === 0 && summaryRows.length === 0) {
+            el.innerHTML = '<div class="table-empty">No games for this filter.</div>';
+            return;
+        }
+        const shown = openingsExpanded ? openings : openings.slice(0, OPENINGS_PREVIEW_COUNT);
+        let html = buildOpeningTable(shown, showColorPip, summaryRows);
+        if (openings.length > OPENINGS_PREVIEW_COUNT) {
+            html += `<button class="openings-toggle" onclick="toggleOpeningRows()">${
+                openingsExpanded ? 'Show fewer' : `Show all ${openings.length} openings`
+            }</button>`;
+        }
+        el.innerHTML = html;
+        attachWinBarTooltips(el);
+        attachOpeningRowFilters(el);
+    };
+
+    for (const color of ['white', 'black']) {
+        renderTable(document.getElementById(`opening-stats-table-${color}`), lastTopOpenings[color] || [], false);
+    }
+
+    const combined = [
+        ...(lastTopOpenings.white || []).map(o => ({ ...o, color: 'white' })),
+        ...(lastTopOpenings.black || []).map(o => ({ ...o, color: 'black' })),
+    ].sort((a, b) => b.games - a.games);
+    renderTable(document.getElementById('opening-stats-table-global'), combined, true);
+}
+
+function toggleOpeningRows() {
+    openingsExpanded = !openingsExpanded;
+    renderOpeningTables();
+    syncOpeningFilterUI(currentOpeningFilter);
+}
+
 async function initRepertoireTabs(username) {
     try {
         loadColorAnalytics(username, currentOpeningColor, currentOpeningFilter);
 
-        const topOpenings = await fetchJSON(`/api/players/${username}/analytics/top-openings${buildFilterParams()}`);
-
-        // Both color totals head every table: they double as the White/Black
-        // perspective switch, so they must stay reachable from any view.
-        const totals = topOpenings.totals || {};
-        const colorRows = [
-            totals.white ? { ...totals.white, name: 'White Pieces', color: 'white' } : null,
-            totals.black ? { ...totals.black, name: 'Black Pieces', color: 'black' } : null,
-        ].filter(Boolean);
-
-        const renderTable = (el, openings, showColorPip) => {
-            // Always rewritten, even when empty — leaving the previous render in
-            // place would show the old filter's openings as if they were current.
-            if (!el) return;
-            if (openings.length === 0 && colorRows.length === 0) {
-                el.innerHTML = '<div class="table-empty">No games for this filter.</div>';
-                return;
-            }
-            el.innerHTML = buildOpeningTable(openings, showColorPip, colorRows);
-            attachWinBarTooltips(el);
-            attachOpeningRowFilters(el);
-        };
-
-        for (const color of ['white', 'black']) {
-            renderTable(document.getElementById(`opening-stats-table-${color}`), topOpenings[color] || [], false);
-        }
-
-        // Global table: top 10 openings across both colors
-        const combined = [
-            ...topOpenings.white.map(o => ({ ...o, color: 'white' })),
-            ...topOpenings.black.map(o => ({ ...o, color: 'black' })),
-        ].sort((a, b) => b.games - a.games).slice(0, 10);
-        renderTable(document.getElementById('opening-stats-table-global'), combined, true);
+        lastTopOpenings = await fetchJSON(`/api/players/${username}/analytics/top-openings${buildFilterParams()}`);
+        renderOpeningTables();
 
         // The rebuilt table may no longer list the active opening (e.g. it drops
         // out of the top N after a time-class change). Leaving the filter set
@@ -915,10 +978,11 @@ function attachOpeningRowFilters(container) {
     container.querySelectorAll('tr[data-color-target]').forEach(tr => {
         const color = tr.dataset.colorTarget;
         tr.classList.add('opening-row-clickable');
-        tr.title = currentOpeningColor === color
-            ? 'Back to all games'
-            : `Show only games as ${color}`;
+        tr.title = color === 'global'
+            ? 'Show all games, clearing any opening filter'
+            : (currentOpeningColor === color ? 'Back to all games' : `Show only games as ${color}`);
         tr.addEventListener('click', () => {
+            // "All Games" always resets; a color row toggles off to the same place.
             applyOpeningColor(currentOpeningColor === color ? 'global' : color);
         });
     });
@@ -951,11 +1015,27 @@ function syncOpeningFilterUI(op) {
         tr.classList.toggle('opening-row-active', !!op && tr.dataset.op === op);
     });
 
-    // With no perspective tabs, the highlighted total row is the only cue for
-    // which color's games are on screen.
+    // With no perspective tabs, the highlighted summary row is the only cue for
+    // which games are on screen. "All Games" only counts as active when nothing
+    // at all is filtered, otherwise it would contradict the opening filter.
     document.querySelectorAll('.opening-stats-table tr[data-color-target]').forEach(tr => {
-        tr.classList.toggle('opening-row-active', tr.dataset.colorTarget === currentOpeningColor);
+        const target = tr.dataset.colorTarget;
+        const active = target === 'global'
+            ? (currentOpeningColor === 'global' && !op)
+            : target === currentOpeningColor;
+        tr.classList.toggle('opening-row-active', active);
     });
+}
+
+/**
+ * Move times aren't comparable across bullet/blitz/rapid, so the Time Usage
+ * charts are only meaningful for a single time control.
+ */
+function syncTimeUsageAvailability() {
+    const available = !!currentTimeClass;
+    document.getElementById('time-usage-note')?.classList.toggle('hidden', available);
+    document.getElementById('time-usage-grid')?.classList.toggle('hidden', !available);
+    return available;
 }
 
 function clearOpeningFilter() {
@@ -977,6 +1057,7 @@ function loadColorAnalytics(username, color, op) {
     }
 
     syncOpeningFilterUI(op);
+    syncTimeUsageAvailability();
 
     ++analyticsLoadId;
     if (compareMode && currentCompareUsername) ++compareLoadId;
@@ -1819,6 +1900,7 @@ function loadAnalyticsSection(name) {
             loadGameLength(currentCompareUsername, color, op, cid, '-compare');
         }
     } else if (name === 'time') {
+        if (!syncTimeUsageAvailability()) return;
         loadClockAdvantage(currentUsername, color, op, id);
         loadMoveTime(currentUsername, color, op, id);
         if (withCompare) {

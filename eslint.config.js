@@ -20,7 +20,7 @@ export default [
         },
         rules: {
             "no-unused-vars": ["warn", {
-                "varsIgnorePattern": "^(loadPlayer|nextPage|prevPage|openGameDetail|closeModal|resetDateRange|escapeHtml|toggleCompare|loadComparePlayer|exitCompareMode|nextPageCompare|prevPageCompare|toggleProjection|toggleFitMode|toggleAnalyticsSection|setWinrateMode|setWinrateWindow|clearOpeningFilter)$"
+                "varsIgnorePattern": "^(loadPlayer|nextPage|prevPage|openGameDetail|closeModal|resetDateRange|escapeHtml|toggleCompare|loadComparePlayer|exitCompareMode|nextPageCompare|prevPageCompare|toggleProjection|toggleFitMode|toggleAnalyticsSection|setWinrateMode|setWinrateWindow|clearOpeningFilter|toggleOpeningRows)$"
             }],
             "no-undef": "error",
             "no-console": "off",
