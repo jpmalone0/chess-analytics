@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS games (
     black_player_id     INT NOT NULL REFERENCES players(player_id),
     result              VARCHAR(10) NOT NULL,        -- '1-0', '0-1', '1/2-1/2'
     date_played         DATE,
+    end_time            BIGINT,                      -- game end, Unix epoch seconds (UTC)
     time_control        VARCHAR(30),                 -- e.g. '180', '600+2'
     time_class          VARCHAR(20),                 -- bullet, blitz, rapid, daily
     white_elo           INT,

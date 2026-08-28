@@ -14,7 +14,7 @@ Clock computation:
 import io
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Generator
 
 import chess.pgn
@@ -58,6 +58,22 @@ def _classify_time_class(tc_str: str) -> str:
         return "blitz"
     else:
         return "rapid"
+
+
+def _end_time_epoch(headers: dict) -> int | None:
+    """
+    Game end time as Unix epoch seconds (UTC) from chess.com PGN headers.
+    Prefers EndDate/EndTime; falls back to UTCDate/UTCTime (game start).
+    """
+    for date_key, time_key in (("EndDate", "EndTime"), ("UTCDate", "UTCTime")):
+        d, t = headers.get(date_key), headers.get(time_key)
+        if d and t:
+            try:
+                dt = datetime.strptime(f"{d} {t}", "%Y.%m.%d %H:%M:%S")
+                return int(dt.replace(tzinfo=timezone.utc).timestamp())
+            except ValueError:
+                continue
+    return None
 
 
 def _extract_opening_name(eco_url: str | None) -> str | None:
@@ -107,6 +123,7 @@ def parse_pgn_file(filepath: str) -> Generator[tuple[dict, list[dict]], None, No
             "black_username": headers.get("Black", "").lower(),
             "result":         headers.get("Result", "*"),
             "date_played":    date_played,
+            "end_time":       _end_time_epoch(headers),
             "time_control":   tc,
             "time_class":     _classify_time_class(tc),
             "white_elo":      _safe_int(headers.get("WhiteElo")),

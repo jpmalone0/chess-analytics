@@ -143,20 +143,11 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('#main-perspective-tabs .tab-btn').forEach(b => b.classList.remove('active'));
             e.target.classList.add('active');
-            const targetId = e.target.dataset.target;
-            document.getElementById('white-tabs-container').classList.add('hidden');
-            document.getElementById('black-tabs-container').classList.add('hidden');
-            if (targetId !== 'global') {
-                document.getElementById(targetId + '-tabs-container').classList.remove('hidden');
-                const activeSub = document.querySelector(`#${targetId}-tabs .tab-btn.active`);
-                const op = activeSub ? activeSub.dataset.op : "";
-                currentOpeningFilter = op;
-                loadColorAnalytics(currentUsername, targetId, op);
-            } else {
-                currentOpeningFilter = '';
-                loadColorAnalytics(currentUsername, 'global', "");
-            }
+            // Each perspective lists different openings, so a filter picked in
+            // one doesn't carry over.
+            currentOpeningFilter = '';
             gamesPage = 0;
+            loadColorAnalytics(currentUsername, e.target.dataset.target, '');
             loadGames(currentUsername);
             if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
         });
@@ -322,8 +313,6 @@ async function loadPlayer() {
     // Reset perspective tabs to Overall so initRepertoireTabs loads global data
     document.querySelectorAll('#main-perspective-tabs .tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelector('#main-perspective-tabs .tab-btn[data-target="global"]').classList.add('active');
-    document.getElementById('white-tabs-container').classList.add('hidden');
-    document.getElementById('black-tabs-container').classList.add('hidden');
 
     await ensureSynced(username);
     await refreshAll();
@@ -435,12 +424,7 @@ async function loadComparePlayer() {
 
     await ensureSynced(username);
 
-    const activeTab = document.querySelector('#main-perspective-tabs .tab-btn.active');
-    const targetId = activeTab?.dataset.target || 'global';
-    const color = targetId === 'global' ? 'global' : targetId;
-    const activeSub = targetId !== 'global' ? document.querySelector(`#${targetId}-tabs .tab-btn.active`) : null;
-    const op = activeSub?.dataset.op || '';
-    loadColorAnalytics(currentUsername, color, op);
+    loadColorAnalytics(currentUsername, activeOpeningColor(), currentOpeningFilter);
 
     const compareTasks = [
         loadCompareStats(username),
@@ -807,8 +791,13 @@ function renderOpeningRow(o, showColorPip = false, totalRow = false) {
         ? `<span class="color-pip ${o.color}"></span>`
         : '';
     const cls  = totalRow ? ' class="opening-total-row"' : '';
+    // data-op is the filter value the row applies when clicked; data-name is
+    // its display label, reused by the "Filtered to X" chip.
+    const opAttr = totalRow
+        ? ''
+        : ` data-op="${escapeHtml(o.filter || o.name)}" data-name="${escapeHtml(o.name)}"`;
     return `
-        <tr${cls}>
+        <tr${cls}${opAttr}>
             <td>${pip}${o.name}</td>
             <td>${o.games}</td>
             <td>
@@ -850,49 +839,27 @@ async function initRepertoireTabs(username) {
         // Load analytics for whichever main tab is currently active
         const activeMainTab = document.querySelector('#main-perspective-tabs .tab-btn.active');
         const activeTarget = activeMainTab ? activeMainTab.dataset.target : 'global';
-        if (activeTarget !== 'global') {
-            document.getElementById('white-tabs-container').classList.add('hidden');
-            document.getElementById('black-tabs-container').classList.add('hidden');
-            document.getElementById(activeTarget + '-tabs-container').classList.remove('hidden');
-            const activeSub = document.querySelector(`#${activeTarget}-tabs .tab-btn.active`);
-            const op = activeSub ? activeSub.dataset.op : "";
-            loadColorAnalytics(username, activeTarget, op);
-        } else {
-            loadColorAnalytics(username, 'global', "");
-        }
+        loadColorAnalytics(username, activeTarget, currentOpeningFilter);
 
         const topOpenings = await fetchJSON(`/api/players/${username}/analytics/top-openings${buildFilterParams()}`);
 
         for (const color of ['white', 'black']) {
-            const tabsContainer = document.getElementById(`${color}-tabs`);
             const openings = topOpenings[color] || [];
 
-            tabsContainer.innerHTML = `
-                <button class="tab-btn active" data-color="${color}" data-op="">Overall</button>
-                ${openings.map((o, i) => `<button class="tab-btn" data-color="${color}" data-op="${o.filter || o.name}">#${i+1} ${o.name}</button>`).join('')}
-            `;
-
-            // Populate opening overview table for this color (with color total as footer)
+            // Populate opening overview table for this color (with color total as footer).
+            // Always rewritten, even when empty — leaving the previous render in
+            // place would show the old filter's openings as if they were current.
             const tableEl = document.getElementById(`opening-stats-table-${color}`);
-            if (tableEl && openings.length > 0) {
-                const tot = topOpenings.totals?.[color];
-                const footer = tot ? [{ ...tot, name: color === 'white' ? 'White Pieces' : 'Black Pieces', color }] : [];
-                tableEl.innerHTML = buildOpeningTable(openings, false, footer);
-                attachWinBarTooltips(tableEl);
+            if (!tableEl) continue;
+            if (openings.length === 0) {
+                tableEl.innerHTML = '<div class="table-empty">No games for this filter.</div>';
+                continue;
             }
-
-            tabsContainer.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    tabsContainer.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                    e.target.classList.add('active');
-                    const op = e.target.dataset.op;
-                    currentOpeningFilter = op;
-                    gamesPage = 0;
-                    loadColorAnalytics(currentUsername, color, op);
-                    loadGames(currentUsername);
-                    if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
-                });
-            });
+            const tot = topOpenings.totals?.[color];
+            const footer = tot ? [{ ...tot, name: color === 'white' ? 'White Pieces' : 'Black Pieces', color }] : [];
+            tableEl.innerHTML = buildOpeningTable(openings, false, footer);
+            attachWinBarTooltips(tableEl);
+            attachOpeningRowFilters(tableEl);
         }
 
         // Build global combined table: top 10 combined + both color totals as footer
@@ -912,9 +879,93 @@ async function initRepertoireTabs(username) {
             if (combined.length > 0 || footer.length > 0) {
                 globalEl.innerHTML = buildOpeningTable(combined, true, footer);
                 attachWinBarTooltips(globalEl);
+                attachOpeningRowFilters(globalEl);
+            } else {
+                globalEl.innerHTML = '<div class="table-empty">No games for this filter.</div>';
             }
         }
+
+        // The rebuilt table may no longer list the active opening (e.g. it drops
+        // out of the top N after a time-class change). Leaving the filter set
+        // would strand it: nothing selectable to clear it, charts still filtered.
+        if (currentOpeningFilter && !visibleOpeningRow(currentOpeningFilter)) {
+            currentOpeningFilter = '';
+            gamesPage = 0;
+            loadColorAnalytics(username, activeTarget, '');
+            loadGames(username);
+            if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
+            return;
+        }
+
+        // Tables were rebuilt above, after loadColorAnalytics ran — re-apply the
+        // filter indicator so it survives the refresh.
+        syncOpeningFilterUI(currentOpeningFilter);
     } catch (e) { console.error('Error loading top openings', e); }
+}
+
+/** The row for an opening in whichever stats table is currently shown. */
+function visibleOpeningRow(op) {
+    return [...document.querySelectorAll('.opening-stats-table tr[data-op]')].find(
+        tr => tr.dataset.op === op && tr.offsetParent !== null
+    );
+}
+
+/** Which color table is on screen, per the Overall/White/Black tabs. */
+function activeOpeningColor() {
+    const tab = document.querySelector('#main-perspective-tabs .tab-btn.active');
+    return tab ? tab.dataset.target : 'global';
+}
+
+/** Apply (or clear, when op is '') the opening filter across the dashboard. */
+function applyOpeningFilter(op) {
+    currentOpeningFilter = op;
+    gamesPage = 0;
+    loadColorAnalytics(currentUsername, activeOpeningColor(), op);
+    loadGames(currentUsername);
+    if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
+}
+
+/** Make each opening row a filter toggle; clicking the active row clears it. */
+function attachOpeningRowFilters(container) {
+    container.querySelectorAll('tr[data-op]').forEach(tr => {
+        tr.classList.add('opening-row-clickable');
+        tr.title = 'Filter charts and games by this opening';
+        tr.addEventListener('click', () => {
+            applyOpeningFilter(tr.dataset.op === currentOpeningFilter ? '' : tr.dataset.op);
+        });
+    });
+}
+
+/**
+ * Reflect the active opening filter in the places the user can see it: a
+ * "Filtered to X" chip above the charts and on the games header, plus a
+ * highlight on the selected row. Without these the filter only changes
+ * content that sits screens below the table you clicked.
+ */
+function syncOpeningFilterUI(op) {
+    let label = op;
+    const selected = op && visibleOpeningRow(op);
+    if (selected) label = selected.dataset.name || op;
+
+    const row = document.getElementById('analytics-filter-row');
+    if (row) {
+        row.classList.toggle('hidden', !op);
+        if (op) document.getElementById('analytics-filter-name').textContent = label;
+    }
+
+    const chip = document.getElementById('games-filter-chip');
+    if (chip) {
+        chip.classList.toggle('hidden', !op);
+        if (op) document.getElementById('games-filter-name').textContent = label;
+    }
+
+    document.querySelectorAll('.opening-stats-table tr[data-op]').forEach(tr => {
+        tr.classList.toggle('opening-row-active', !!op && tr.dataset.op === op);
+    });
+}
+
+function clearOpeningFilter() {
+    applyOpeningFilter('');
 }
 
 function loadColorAnalytics(username, color, op) {
@@ -925,6 +976,8 @@ function loadColorAnalytics(username, color, op) {
         document.getElementById('opening-stats-table-white').classList.toggle('hidden', color !== 'white');
         document.getElementById('opening-stats-table-black').classList.toggle('hidden', color !== 'black');
     }
+
+    syncOpeningFilterUI(op);
 
     const loadId = ++analyticsLoadId;
     if (moreDataShown) loadRatingDiff(username, color, op, loadId);

@@ -655,6 +655,77 @@ body {
     background: var(--bg-secondary);
 }
 
+.table-empty {
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+/* Opening rows double as the filter control */
+.opening-stats-table tr.opening-row-clickable {
+    cursor: pointer;
+}
+
+.opening-stats-table tr.opening-row-clickable:hover td {
+    background: var(--bg-card-hover);
+}
+
+/* Row for the currently selected opening filter */
+.opening-stats-table tr.opening-row-active td {
+    background: var(--accent-glow);
+    color: var(--text-primary);
+}
+
+.opening-stats-table tr.opening-row-active td:first-child {
+    box-shadow: inset 3px 0 0 var(--accent-light);
+    font-weight: 600;
+}
+
+/* "Filtered to X" chip shown wherever the opening filter is in effect */
+.filter-chip-row {
+    margin-bottom: 0.9rem;
+}
+
+.filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.3rem 0.4rem 0.3rem 0.7rem;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    background: var(--accent-glow);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.filter-chip strong {
+    color: var(--accent-light);
+    font-weight: 600;
+}
+
+.filter-chip-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.filter-chip-clear:hover {
+    background: var(--accent);
+    color: #fff;
+}
+
 .color-pip {
     display: inline-block;
     width: 9px;

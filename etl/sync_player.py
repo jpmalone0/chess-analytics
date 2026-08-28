@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.models import Game, Move, Player
 from etl.parse_pgn import (
     _classify_time_class,
+    _end_time_epoch,
     _extract_opening_name,
     _parse_clock,
     _parse_time_control,
@@ -91,6 +92,7 @@ def _parse_pgn_text(pgn_text: str):
             "black_username": headers.get("Black", "").lower(),
             "result":         headers.get("Result", "*"),
             "date_played":    date_played,
+            "end_time":       _end_time_epoch(headers),
             "time_control":   tc,
             "time_class":     _classify_time_class(tc),
             "white_elo":      _safe_int(headers.get("WhiteElo")),
@@ -195,9 +197,12 @@ def sync_player(
         games_in_month = archive_data.get("games", [])
         urls = [g.get("url") for g in games_in_month if g.get("url")]
 
-        # Bulk DB check for all games in the month
-        existing_urls_tuple = db.query(Game.chess_com_url).filter(Game.chess_com_url.in_(urls)).all()
-        existing_urls = {r[0] for r in existing_urls_tuple}
+        # Bulk DB check for all games in the month (end_time fetched so
+        # rows synced before that column existed can be backfilled below)
+        existing_rows = db.query(Game.chess_com_url, Game.game_id, Game.end_time).filter(
+            Game.chess_com_url.in_(urls)
+        ).all()
+        existing_games = {r[0]: (r[1], r[2]) for r in existing_rows}
 
         for api_game in games_in_month:
             # Date-filter using end_time to avoid parsing out-of-bounds games
@@ -210,7 +215,12 @@ def sync_player(
                     continue
 
             url = api_game.get("url")
-            if url and url in existing_urls:
+            if url and url in existing_games:
+                game_id, stored_end_time = existing_games[url]
+                if stored_end_time is None and end_time:
+                    db.query(Game).filter(Game.game_id == game_id).update(
+                        {"end_time": end_time}
+                    )
                 total_skipped += 1
                 continue
 
@@ -236,6 +246,7 @@ def sync_player(
                     black_player_id=black_player.player_id,
                     result=game_dict["result"],
                     date_played=game_dict["date_played"],
+                    end_time=end_time or game_dict["end_time"],
                     time_control=game_dict["time_control"],
                     time_class=game_dict["time_class"],
                     white_elo=game_dict["white_elo"],

@@ -29,6 +29,7 @@ class Game(Base):
     black_player_id  = Column(Integer, ForeignKey("players.player_id"), nullable=False)
     result           = Column(String(10), nullable=False)
     date_played      = Column(Date)
+    end_time         = Column(Integer)  # game end, Unix epoch seconds (UTC)
     time_control     = Column(String(30))
     time_class       = Column(String(20))
     white_elo        = Column(Integer)

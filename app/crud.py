@@ -6,6 +6,7 @@ import statistics as _stats
 from collections import defaultdict, deque
 from datetime import date, datetime
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -1052,6 +1053,11 @@ def streak_reaction(
     they're skipped over for counting purposes — but the draw's own outcome
     is still bucketed against whatever streak was active when it happened.
 
+    Streaks reset at the start of each new calendar day in US Eastern time
+    (tilt doesn't survive a night's sleep). ET days are derived from
+    end_time (epoch UTC); games missing end_time fall back to date_played,
+    a UTC calendar date, whose midnight is 7-8pm ET.
+
     No lower date bound at the SQL level (same reasoning as
     winrate_by_color_rolling): the streak needs games before start_date to
     know its state entering the window, so we compute over full history up
@@ -1071,6 +1077,7 @@ def streak_reaction(
     sql = text(f"""
         SELECT
             g.date_played,
+            g.end_time,
             CASE
                 WHEN (g.white_player_id = :player_id AND g.result = '1-0')
                   OR (g.black_player_id = :player_id AND g.result = '0-1') THEN 'win'
@@ -1079,7 +1086,7 @@ def streak_reaction(
             END AS outcome
         FROM games g
         WHERE {where}
-        ORDER BY g.date_played ASC, g.game_id ASC
+        ORDER BY g.date_played ASC, g.end_time ASC, g.game_id ASC
     """)
     rows = db.execute(sql, params).mappings().all()
 
@@ -1088,14 +1095,28 @@ def streak_reaction(
             return v
         return datetime.strptime(str(v), "%Y-%m-%d").date()
 
+    eastern = ZoneInfo("America/New_York")
+
+    def _local_day(row) -> date:
+        if row["end_time"] is not None:
+            return datetime.fromtimestamp(row["end_time"], tz=eastern).date()
+        return _to_date(row["date_played"])
+
     loss_buckets = {n: {"wins": 0, "losses": 0, "draws": 0} for n in (1, 2, 3, 4)}
     win_buckets  = {n: {"wins": 0, "losses": 0, "draws": 0} for n in (1, 2, 3, 4)}
 
     loss_streak = 0
     win_streak  = 0
+    prev_day: Optional[date] = None
     for row in rows:
         outcome = row["outcome"]
         in_range = not start_date or _to_date(row["date_played"]) >= start_date
+
+        day = _local_day(row)
+        if day != prev_day:
+            loss_streak = 0
+            win_streak = 0
+        prev_day = day
 
         if in_range and loss_streak >= 1:
             b = loss_buckets[min(loss_streak, 4)]

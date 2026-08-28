@@ -12,7 +12,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/static/style.css?v=16">
+    <link rel="stylesheet" href="/static/style.css?v=19">
 </head>
 
 <body>
@@ -177,15 +177,6 @@
                             <button class="tab-btn" data-target="black" style="font-size: 1rem;">♔ Black</button>
                         </div>
                     </div>
-                    <!-- Sub Tabs (Dynamically visible) -->
-                    <div id="white-tabs-container" class="hidden" style="margin-bottom: 1rem;">
-                        <div class="repertoire-tabs" id="white-tabs"
-                            style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.5rem;"></div>
-                    </div>
-                    <div id="black-tabs-container" class="hidden" style="margin-bottom: 1rem;">
-                        <div class="repertoire-tabs" id="black-tabs"
-                            style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.5rem;"></div>
-                    </div>
                     <div class="games-table-wrap">
                         <div id="opening-stats-table-global" class="hidden"></div>
                         <div id="opening-stats-table-white" class="hidden"></div>
@@ -205,6 +196,13 @@
                 <div class="compare-section-labels">
                     <div><span class="compare-user-label" id="analytics-primary-label"></span></div>
                     <div><span class="compare-user-label" id="analytics-compare-label"></span></div>
+                </div>
+
+                <div class="filter-chip-row hidden" id="analytics-filter-row">
+                    <span class="filter-chip">
+                        Filtered to <strong id="analytics-filter-name"></strong>
+                        <button class="filter-chip-clear" onclick="clearOpeningFilter()" title="Clear opening filter">✕</button>
+                    </span>
                 </div>
 
                 <!-- Layer 2: Three combo charts -->
@@ -280,7 +278,7 @@
 
                     <!-- Win Rate After a Losing Streak -->
                     <div class="analytic-row hidden" id="streak-loss-cell">
-                        <h4 class="chart-title">🔥 Win Rate After a Losing Streak <span class="stat-info-btn" data-desc="Outcome of each game, bucketed by how many losses in a row came immediately before it. Draws don't break a streak in progress, but a draw's own outcome still counts toward whichever bucket was active when it happened.">?</span></h4>
+                        <h4 class="chart-title">🔥 Win Rate After a Losing Streak <span class="stat-info-btn" data-desc="Outcome of each game, bucketed by how many losses in a row came immediately before it. Draws don't break a streak in progress, but a draw's own outcome still counts toward whichever bucket was active when it happened. Streaks reset at the start of each new day (Eastern time).">?</span></h4>
                         <div class="compare-wrap">
                             <div class="compare-col">
                                 <div class="chart-container"><canvas id="streak-loss-chart"></canvas></div>
@@ -293,7 +291,7 @@
 
                     <!-- Win Rate After a Winning Streak -->
                     <div class="analytic-row hidden" id="streak-win-cell">
-                        <h4 class="chart-title">🚀 Win Rate After a Winning Streak <span class="stat-info-btn" data-desc="Outcome of each game, bucketed by how many wins in a row came immediately before it. Draws don't break a streak in progress, but a draw's own outcome still counts toward whichever bucket was active when it happened.">?</span></h4>
+                        <h4 class="chart-title">🚀 Win Rate After a Winning Streak <span class="stat-info-btn" data-desc="Outcome of each game, bucketed by how many wins in a row came immediately before it. Draws don't break a streak in progress, but a draw's own outcome still counts toward whichever bucket was active when it happened. Streaks reset at the start of each new day (Eastern time).">?</span></h4>
                         <div class="compare-wrap">
                             <div class="compare-col">
                                 <div class="chart-container"><canvas id="streak-win-chart"></canvas></div>
@@ -365,6 +363,10 @@
         <section id="games-section" class="section hidden">
             <div class="section-header">
                 <h2>📋 Recent Games</h2>
+                <span class="filter-chip hidden" id="games-filter-chip">
+                    Filtered to <strong id="games-filter-name"></strong>
+                    <button class="filter-chip-clear" onclick="clearOpeningFilter()" title="Clear opening filter">✕</button>
+                </span>
             </div>
             <div class="compare-section-labels">
                 <div><span class="compare-user-label" id="games-primary-label"></span></div>
@@ -441,7 +443,7 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=38"></script>
+    <script src="/static/app.js?v=43"></script>
 </body>
 
 </html>

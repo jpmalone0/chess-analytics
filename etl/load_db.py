@@ -62,6 +62,7 @@ def load_games(pgn_directory: str, batch_size: int = 500):
                 black_player_id=black_player.player_id,
                 result=game_dict["result"],
                 date_played=game_dict["date_played"],
+                end_time=game_dict.get("end_time"),
                 time_control=game_dict["time_control"],
                 time_class=game_dict["time_class"],
                 white_elo=game_dict["white_elo"],
