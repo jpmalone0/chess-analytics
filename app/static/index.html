@@ -12,7 +12,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/static/style.css?v=19">
+    <link rel="stylesheet" href="/static/style.css?v=20">
 </head>
 
 <body>
@@ -170,12 +170,6 @@
                 <div id="opening-stats-overview" class="section hidden">
                     <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
                         <h2>Opening Overview</h2>
-                        <div class="repertoire-tabs" id="main-perspective-tabs"
-                            style="display: flex; gap: 0.5rem; margin: 0;">
-                            <button class="tab-btn active" data-target="global" style="font-size: 1rem;">Overall</button>
-                            <button class="tab-btn" data-target="white" style="font-size: 1rem;">♚ White</button>
-                            <button class="tab-btn" data-target="black" style="font-size: 1rem;">♔ Black</button>
-                        </div>
                     </div>
                     <div class="games-table-wrap">
                         <div id="opening-stats-table-global" class="hidden"></div>
@@ -278,7 +272,7 @@
 
                     <!-- Win Rate After a Losing Streak -->
                     <div class="analytic-row hidden" id="streak-loss-cell">
-                        <h4 class="chart-title">🔥 Win Rate After a Losing Streak <span class="stat-info-btn" data-desc="Outcome of each game, bucketed by how many losses in a row came immediately before it. Draws don't break a streak in progress, but a draw's own outcome still counts toward whichever bucket was active when it happened. Streaks reset at the start of each new day (Eastern time).">?</span></h4>
+                        <h4 class="chart-title">🗑️ Win Rate After a Losing Streak <span class="stat-info-btn" data-desc="Outcome of each game, bucketed by how many losses in a row came immediately before it. Draws don't break a streak in progress, but a draw's own outcome still counts toward whichever bucket was active when it happened. Streaks reset at the start of each new day (Eastern time).">?</span></h4>
                         <div class="compare-wrap">
                             <div class="compare-col">
                                 <div class="chart-container"><canvas id="streak-loss-chart"></canvas></div>
@@ -443,7 +437,7 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=43"></script>
+    <script src="/static/app.js?v=45"></script>
 </body>
 
 </html>

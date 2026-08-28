@@ -141,8 +141,11 @@ def get_games_for_player(
     end_date: Optional[date] = None,
     limit: int = 50, offset: int = 0,
     opening_names: Optional[str] = None,
+    player_color: Optional[str] = None,
 ):
-    where, params = _build_game_filters(player_id, time_class, start_date, end_date, opening_names=opening_names)
+    where, params = _build_game_filters(
+        player_id, time_class, start_date, end_date, player_color, opening_names
+    )
     params["limit"]  = limit
     params["offset"] = offset
     sql = text(f"""

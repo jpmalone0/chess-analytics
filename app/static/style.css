@@ -652,7 +652,7 @@ body {
 .opening-stats-table tr.opening-total-row td {
     color: var(--text-primary);
     font-weight: 600;
-    background: var(--bg-secondary);
+    background: var(--bg-card-hover);
 }
 
 .table-empty {
