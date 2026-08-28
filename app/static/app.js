@@ -882,9 +882,9 @@ function renderOpeningTables() {
         const shown = openingsExpanded ? openings : openings.slice(0, OPENINGS_PREVIEW_COUNT);
         let html = buildOpeningTable(shown, showColorPip, summaryRows);
         if (openings.length > OPENINGS_PREVIEW_COUNT) {
-            html += `<button class="openings-toggle" onclick="toggleOpeningRows()">${
-                openingsExpanded ? 'Show fewer' : `Show all ${openings.length} openings`
-            }</button>`;
+            const hint = openingsExpanded ? 'Show fewer openings' : `Show all ${openings.length} openings`;
+            html += `<button class="openings-toggle${openingsExpanded ? ' expanded' : ''}"`
+                  + ` onclick="toggleOpeningRows()" title="${hint}" aria-label="${hint}"><span>▼</span></button>`;
         }
         el.innerHTML = html;
         attachWinBarTooltips(el);
@@ -892,7 +892,10 @@ function renderOpeningTables() {
     };
 
     for (const color of ['white', 'black']) {
-        renderTable(document.getElementById(`opening-stats-table-${color}`), lastTopOpenings[color] || [], false);
+        // Tag each row with its color and keep the pip on: the perspective is
+        // implicit, but the pip makes which side you're looking at obvious.
+        const rows = (lastTopOpenings[color] || []).map(o => ({ ...o, color }));
+        renderTable(document.getElementById(`opening-stats-table-${color}`), rows, true);
     }
 
     const combined = [
@@ -1536,7 +1539,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         const distDatasets = [{
             label: 'Moves',
             data: data.buckets.map(b => b.count),
-            backgroundColor: 'rgba(55, 146, 184, 0.7)',
+            backgroundColor: 'rgba(111, 188, 216, 0.7)',
             borderRadius: 4,
         }];
         charts[distKey] = new Chart(document.getElementById("move-time-dist-chart" + suffix).getContext('2d'), {

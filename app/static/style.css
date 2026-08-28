@@ -93,7 +93,9 @@ body {
 
 .logo {
     display: flex;
-    align-items: center;
+    /* Share a baseline with the wordmark: the glyph's ink sits entirely above
+       its baseline, so this lands it on the cap-height band with no nudging. */
+    align-items: baseline;
     gap: 0.6rem;
 }
 
@@ -103,10 +105,7 @@ body {
        Inter; a tight line box + flex centering keeps it on the wordmark's axis. */
     line-height: 1;
     display: block;
-    color: var(--accent-light);
-    /* Box-centering isn't optical centering: the glyph's ink sits low in its
-       em box, so lift it onto the wordmark's cap-height axis. */
-    transform: translateY(-0.105em);
+    color: var(--text-primary);
 }
 
 .logo h1 {
@@ -758,26 +757,38 @@ body {
     background: linear-gradient(135deg, #dde4ef 0 50%, #2a3548 50% 100%);
 }
 
-/* Show all / show fewer toggle under the opening table */
+/* Chevron toggle for the rest of the openings */
 .openings-toggle {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
-    margin-top: 0.5rem;
-    padding: 0.45rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    height: 26px;
+    /* No border of its own: the last row's bottom border is already the
+       divider, and adding one here drew a second line below it. */
+    border: none;
+    border-radius: 0;
+    padding: 0;
     background: transparent;
-    color: var(--text-secondary);
-    font-family: var(--font-sans);
-    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-size: 0.62rem;
+    line-height: 1;
     cursor: pointer;
-    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    transition: color 0.15s, background 0.15s;
 }
 
 .openings-toggle:hover {
     background: var(--bg-card-hover);
-    border-color: var(--border-light);
     color: var(--text-primary);
+}
+
+.openings-toggle > span {
+    display: inline-block;
+    transition: transform 0.2s;
+}
+
+.openings-toggle.expanded > span {
+    transform: rotate(180deg);
 }
 
 .win-bar {
@@ -1289,6 +1300,12 @@ body.compare-mode #layer-1-right {
     aspect-ratio: auto;
     height: 300px;
     max-height: none;
+}
+
+/* Two dense stacked-bar charts with legends and rotated tick labels — they
+   need more vertical room than the rest before the plot area gets squeezed. */
+.analytics-section[data-section="outcomes"] .analytics-grid .chart-container {
+    height: 370px;
 }
 
 body.compare-mode .analytics-grid {

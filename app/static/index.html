@@ -12,7 +12,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/static/style.css?v=26">
+    <link rel="stylesheet" href="/static/style.css?v=29">
 </head>
 
 <body>
@@ -252,32 +252,6 @@
                             Pick a single time control above to see this section.
                         </div>
                         <div class="analytics-grid" id="time-usage-grid">
-                            <!-- Lead chart spans the width: 100 move numbers need the room,
-                                 and it mirrors Form's wide-chart-then-pair rhythm. -->
-                            <div class="analytic-row span-full">
-                                <h4 class="chart-title">Avg Think Time by Move Number</h4>
-                                <div class="compare-wrap">
-                                    <div class="compare-col">
-                                        <div class="time-chart-row">
-                                            <div class="chart-container">
-                                                <canvas id="move-time-by-move-chart"></canvas>
-                                                <span id="move-time-rmse" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);pointer-events:none;"></span>
-                                            </div>
-                                            <div class="time-side-stats" id="move-time-by-move-stats"></div>
-                                        </div>
-                                    </div>
-                                    <div class="compare-col compare-secondary">
-                                        <div class="time-chart-row">
-                                            <div class="chart-container">
-                                                <canvas id="move-time-by-move-chart-compare"></canvas>
-                                                <span id="move-time-rmse-compare" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);pointer-events:none;"></span>
-                                            </div>
-                                            <div class="time-side-stats" id="move-time-by-move-stats-compare"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
                             <!-- Clock Advantage -->
                             <div class="analytic-row">
                                 <h4 class="chart-title">Clock Advantage <span class="stat-info-btn" data-desc="Average clock difference (your time − opponent time) across all moves in each game.">?</span></h4>
@@ -305,6 +279,30 @@
                                         <div class="time-chart-row">
                                             <div class="chart-container"><canvas id="move-time-dist-chart-compare"></canvas></div>
                                             <div class="headline-stats time-side-stats" id="move-time-stats-compare"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Spans the width: 100 move numbers need the room -->
+                            <div class="analytic-row span-full">
+                                <h4 class="chart-title">Average Time Usage by Move Number</h4>
+                                <div class="compare-wrap">
+                                    <div class="compare-col">
+                                        <div class="time-chart-row">
+                                            <div class="chart-container">
+                                                <canvas id="move-time-by-move-chart"></canvas>
+                                                <span id="move-time-rmse" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);pointer-events:none;"></span>
+                                            </div>
+                                            <div class="time-side-stats" id="move-time-by-move-stats"></div>
+                                        </div>
+                                    </div>
+                                    <div class="compare-col compare-secondary">
+                                        <div class="time-chart-row">
+                                            <div class="chart-container">
+                                                <canvas id="move-time-by-move-chart-compare"></canvas>
+                                                <span id="move-time-rmse-compare" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);pointer-events:none;"></span>
+                                            </div>
+                                            <div class="time-side-stats" id="move-time-by-move-stats-compare"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -467,7 +465,7 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=47"></script>
+    <script src="/static/app.js?v=49"></script>
 </body>
 
 </html>
