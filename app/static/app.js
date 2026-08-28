@@ -18,7 +18,8 @@ let analyticsLoadId = 0;
 let compareLoadId = 0;
 let currentOpeningFilter = '';
 let currentOpeningColor = 'global';  // 'global' | 'white' | 'black'
-let moreDataShown = true;
+const ANALYTICS_SECTIONS = ['outcomes', 'time', 'form'];
+const collapsedSections = new Set();  // sections the user has collapsed
 let winrateMode = 'color';
 let winrateWindow = 30;
 
@@ -31,7 +32,7 @@ Chart.defaults.font.size = 12;
 const toMs = s => Date.parse(s);
 const fmtDate = ms => new Date(ms).toISOString().slice(0, 10);
 const TIME_CLASS_COLORS = { bullet: '#ef4444', blitz: '#eab308', rapid: '#22c55e' };
-const DEFAULT_COLOR = '#6366f1';
+const DEFAULT_COLOR = '#3792b8';
 const Y_AXIS_STEP = 20;
 const PROJECTION_STEPS = 80;
 
@@ -284,15 +285,9 @@ async function loadPlayer() {
     currentTimeClass = 'rapid';
     gamesPage = 0;
     currentOpeningFilter = '';
-    moreDataShown = true;
     winrateMode = 'color';
     document.getElementById('winrate-mode-color').classList.add('active');
     document.getElementById('winrate-mode-opening').classList.remove('active');
-    document.getElementById('rating-diff-cell').classList.remove('hidden');
-    document.getElementById('streak-loss-cell').classList.remove('hidden');
-    document.getElementById('streak-win-cell').classList.remove('hidden');
-    document.getElementById('winrate-color-cell').classList.remove('hidden');
-    document.getElementById('more-data-btn').textContent = 'Hide';
     document.querySelectorAll('.tc-btn').forEach(b => b.classList.remove('active'));
     document.querySelector('.tc-btn[data-tc="rapid"]').classList.add('active');
 
@@ -968,6 +963,11 @@ function clearOpeningFilter() {
 }
 
 function loadColorAnalytics(username, color, op) {
+    // loadAnalyticsSection reads these globals, so keep them authoritative.
+    currentUsername = username;
+    currentOpeningColor = color;
+    currentOpeningFilter = op;
+
     const overview = document.getElementById('opening-stats-overview');
     if (overview) {
         overview.classList.remove('hidden');
@@ -978,22 +978,13 @@ function loadColorAnalytics(username, color, op) {
 
     syncOpeningFilterUI(op);
 
-    const loadId = ++analyticsLoadId;
-    if (moreDataShown) loadRatingDiff(username, color, op, loadId);
-    if (moreDataShown) loadWinrateByColor(username, loadId);
-    if (moreDataShown) loadStreakReaction(username, loadId);
-    loadGameLength(username, color, op, loadId);
-    loadClockAdvantage(username, color, op, loadId);
-    loadMoveTime(username, color, op, loadId);
+    ++analyticsLoadId;
+    if (compareMode && currentCompareUsername) ++compareLoadId;
 
-    if (compareMode && currentCompareUsername) {
-        const cId = ++compareLoadId;
-        if (moreDataShown) loadRatingDiff(currentCompareUsername, color, op, cId, '-compare');
-        if (moreDataShown) loadWinrateByColor(currentCompareUsername, cId, '-compare');
-        if (moreDataShown) loadStreakReaction(currentCompareUsername, cId, '-compare');
-        loadGameLength(currentCompareUsername, color, op, cId, '-compare');
-        loadClockAdvantage(currentCompareUsername, color, op, cId, '-compare');
-        loadMoveTime(currentCompareUsername, color, op, cId, '-compare');
+    // A collapsed section's canvases have no layout box, so drawing into them
+    // now would produce a mis-sized chart; toggleAnalyticsSection redraws instead.
+    for (const name of ANALYTICS_SECTIONS) {
+        if (!collapsedSections.has(name)) loadAnalyticsSection(name);
     }
 }
 
@@ -1014,7 +1005,7 @@ function setWinrateMode(mode) {
     winrateMode = mode;
     document.getElementById('winrate-mode-color').classList.toggle('active', mode === 'color');
     document.getElementById('winrate-mode-opening').classList.toggle('active', mode === 'opening');
-    if (!currentUsername || !moreDataShown) return;
+    if (!currentUsername || collapsedSections.has('form')) return;
     loadWinrateByColor(currentUsername, analyticsLoadId);
     if (compareMode && currentCompareUsername) {
         loadWinrateByColor(currentCompareUsername, compareLoadId, '-compare');
@@ -1027,7 +1018,7 @@ function setWinrateWindow(val) {
     winrateWindow = parseInt(val, 10);
     // Update the label immediately for responsive feedback while dragging.
     document.getElementById('ema-window-label').textContent = winrateWindow;
-    if (!currentUsername || !moreDataShown) return;
+    if (!currentUsername || collapsedSections.has('form')) return;
     // Debounce the (relatively expensive) chart reload so dragging stays smooth.
     clearTimeout(winrateWindowTimer);
     winrateWindowTimer = setTimeout(() => {
@@ -1055,7 +1046,7 @@ async function loadWinrateByColor(username, loadId, suffix = '') {
         : { label: 'White Win',   key: 'white',  drawKey: 'white_draw', color: '#e2e8f0', bg: 'rgba(226,232,240,0.08)' };
     const s2 = opening
         ? { label: 'vs 1.d4 Win', key: 'd4',    drawKey: 'd4_draw', color: '#34d399', bg: 'rgba(52,211,153,0.08)' }
-        : { label: 'Black Win',   key: 'black',  drawKey: 'black_draw', color: '#818cf8', bg: 'rgba(129,140,248,0.08)' };
+        : { label: 'Black Win',   key: 'black',  drawKey: 'black_draw', color: '#6fbcd8', bg: 'rgba(111,188,216,0.08)' };
 
     try {
         const data = await fetchJSON(url);
@@ -1175,8 +1166,8 @@ async function loadRatingDiff(username, color, op, loadId, suffix = '') {
                     {
                         label: 'Win Rate (Decisive) %', type: 'line',
                         data: buckets.map(b => b.win_rate_no_draws),
-                        borderColor: '#818cf8', backgroundColor: 'transparent',
-                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#818cf8', pointHitRadius: 24,
+                        borderColor: '#6fbcd8', backgroundColor: 'transparent',
+                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#6fbcd8', pointHitRadius: 24,
                         yAxisID: 'y2',
                     },
                     {
@@ -1194,10 +1185,7 @@ async function loadRatingDiff(username, color, op, loadId, suffix = '') {
                     legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
                     tooltip: {
                         callbacks: {
-                            afterBody: (items) => {
-                                const b = buckets[items[0].dataIndex];
-                                return `Win Rate (Decisive): ${b.win_rate_no_draws}%\nDraw Rate: ${b.draw_rate}%\nTotal: ${b.total_games}`;
-                            }
+                            afterBody: (items) => outcomeTooltipLines(buckets[items[0].dataIndex], items)
                         }
                     }
                 },
@@ -1235,8 +1223,8 @@ async function loadGameLength(username, color, op, loadId, suffix = '') {
                     {
                         label: 'Win Rate (Decisive) %', type: 'line',
                         data: data.map(d => d.win_rate_no_draws),
-                        borderColor: '#818cf8', backgroundColor: 'transparent',
-                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#818cf8', pointHitRadius: 24,
+                        borderColor: '#6fbcd8', backgroundColor: 'transparent',
+                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#6fbcd8', pointHitRadius: 24,
                         yAxisID: 'y2',
                     },
                     {
@@ -1254,10 +1242,7 @@ async function loadGameLength(username, color, op, loadId, suffix = '') {
                     legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
                     tooltip: {
                         callbacks: {
-                            afterBody: (items) => {
-                                const d = data[items[0].dataIndex];
-                                return `Win Rate (Decisive): ${d.win_rate_no_draws}%\nDraw Rate: ${d.draw_rate}%\nTotal Games: ${d.total_games}`;
-                            }
+                            afterBody: (items) => outcomeTooltipLines(data[items[0].dataIndex], items)
                         }
                     }
                 },
@@ -1294,8 +1279,8 @@ function renderStreakChart(chartKey, canvasId, buckets, singular, plural) {
                 {
                     label: 'Win Rate (Decisive) %', type: 'line',
                     data: buckets.map(b => b.win_rate_no_draws),
-                    borderColor: '#818cf8', backgroundColor: 'transparent',
-                    borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#818cf8', pointHitRadius: 24,
+                    borderColor: '#6fbcd8', backgroundColor: 'transparent',
+                    borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#6fbcd8', pointHitRadius: 24,
                     yAxisID: 'y2',
                 },
                 {
@@ -1313,10 +1298,7 @@ function renderStreakChart(chartKey, canvasId, buckets, singular, plural) {
                 legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
                 tooltip: {
                     callbacks: {
-                        afterBody: (items) => {
-                            const b = buckets[items[0].dataIndex];
-                            return `Win Rate (Decisive): ${b.win_rate_no_draws}%\nDraw Rate: ${b.draw_rate}%\nTotal Games: ${b.total_games}`;
-                        }
+                        afterBody: (items) => outcomeTooltipLines(buckets[items[0].dataIndex], items)
                     }
                 }
             },
@@ -1370,8 +1352,8 @@ async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
                     {
                         label: 'Win Rate (Decisive) %', type: 'line',
                         data: data.map(d => d.win_rate_no_draws),
-                        borderColor: '#818cf8', backgroundColor: 'transparent',
-                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#818cf8', pointHitRadius: 24,
+                        borderColor: '#6fbcd8', backgroundColor: 'transparent',
+                        borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#6fbcd8', pointHitRadius: 24,
                         yAxisID: 'y2',
                     },
                     {
@@ -1389,10 +1371,7 @@ async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
                     legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } },
                     tooltip: {
                         callbacks: {
-                            afterBody: (items) => {
-                                const d = data[items[0].dataIndex];
-                                return `Win Rate (Decisive): ${d.win_rate_no_draws}%\nDraw Rate: ${d.draw_rate}%\nTotal: ${d.total_games}`;
-                            }
+                            afterBody: (items) => outcomeTooltipLines(data[items[0].dataIndex], items)
                         }
                     },
                     subtitle: { display: false },
@@ -1476,7 +1455,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         const distDatasets = [{
             label: 'Moves',
             data: data.buckets.map(b => b.count),
-            backgroundColor: 'rgba(129, 140, 248, 0.7)',
+            backgroundColor: 'rgba(55, 146, 184, 0.7)',
             borderRadius: 4,
         }];
         charts[distKey] = new Chart(document.getElementById("move-time-dist-chart" + suffix).getContext('2d'), {
@@ -1532,8 +1511,8 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         const datasets = [{
             label: 'Avg seconds',
             data: byMove.map(d => d.avg_seconds),
-            borderColor: '#818cf8',
-            backgroundColor: 'rgba(129, 140, 248, 0.08)',
+            borderColor: '#6fbcd8',
+            backgroundColor: 'rgba(111, 188, 216, 0.08)',
             fill: true,
             tension: 0.3,
             pointRadius: 3,
@@ -1806,35 +1785,52 @@ async function fetchJSON(url, opts = {}) {
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 // ═══════════════════════════════════════════════════════════
-// Show More / Hide toggle for extra analytics charts
+// Collapsible analytics sections
 // ═══════════════════════════════════════════════════════════
 
-function toggleMoreData() {
-    moreDataShown = !moreDataShown;
+/**
+ * Collapse/expand one analytics section. Charts in a collapsed section are
+ * skipped on load (Chart.js can't size a display:none canvas), so expanding
+ * one has to draw whatever it missed.
+ */
+function toggleAnalyticsSection(name) {
+    const section = document.querySelector(`.analytics-section[data-section="${name}"]`);
+    if (!section) return;
 
-    const cell = document.getElementById('rating-diff-cell');
-    const lossCell = document.getElementById('streak-loss-cell');
-    const winCell = document.getElementById('streak-win-cell');
-    const wrCell = document.getElementById('winrate-color-cell');
-    const btn = document.getElementById('more-data-btn');
+    const collapsed = section.classList.toggle('collapsed');
+    if (collapsed) collapsedSections.add(name); else collapsedSections.delete(name);
 
-    cell.classList.toggle('hidden', !moreDataShown);
-    lossCell.classList.toggle('hidden', !moreDataShown);
-    winCell.classList.toggle('hidden', !moreDataShown);
-    wrCell.classList.toggle('hidden', !moreDataShown);
-    btn.textContent = moreDataShown ? 'Hide' : 'Show More';
+    if (!collapsed && currentUsername) loadAnalyticsSection(name);
+}
 
-    if (!moreDataShown || !currentUsername) return;
-
+/** Draw the charts belonging to one section, for both compare columns. */
+function loadAnalyticsSection(name) {
     const color = currentOpeningColor;
     const op = currentOpeningFilter;
+    const id = analyticsLoadId;
+    const cid = compareLoadId;
+    const withCompare = compareMode && currentCompareUsername;
 
-    loadRatingDiff(currentUsername, color, op, analyticsLoadId);
-    loadWinrateByColor(currentUsername, analyticsLoadId);
-    loadStreakReaction(currentUsername, analyticsLoadId);
-    if (compareMode && currentCompareUsername) {
-        loadRatingDiff(currentCompareUsername, color, op, compareLoadId, '-compare');
-        loadWinrateByColor(currentCompareUsername, compareLoadId, '-compare');
-        loadStreakReaction(currentCompareUsername, compareLoadId, '-compare');
+    if (name === 'outcomes') {
+        loadRatingDiff(currentUsername, color, op, id);
+        loadGameLength(currentUsername, color, op, id);
+        if (withCompare) {
+            loadRatingDiff(currentCompareUsername, color, op, cid, '-compare');
+            loadGameLength(currentCompareUsername, color, op, cid, '-compare');
+        }
+    } else if (name === 'time') {
+        loadClockAdvantage(currentUsername, color, op, id);
+        loadMoveTime(currentUsername, color, op, id);
+        if (withCompare) {
+            loadClockAdvantage(currentCompareUsername, color, op, cid, '-compare');
+            loadMoveTime(currentCompareUsername, color, op, cid, '-compare');
+        }
+    } else if (name === 'form') {
+        loadWinrateByColor(currentUsername, id);
+        loadStreakReaction(currentUsername, id);
+        if (withCompare) {
+            loadWinrateByColor(currentCompareUsername, cid, '-compare');
+            loadStreakReaction(currentCompareUsername, cid, '-compare');
+        }
     }
 }

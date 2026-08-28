@@ -16,9 +16,11 @@
     --text-secondary: #8b9ab8;
     --text-muted: #5a6a85;
 
-    --accent: #6366f1;
-    --accent-light: #818cf8;
-    --accent-glow: rgba(99, 102, 241, 0.15);
+    /* Petrol blue: clear of the green/red/yellow result colors it's drawn
+       over, so win-rate lines stay readable on top of the outcome bars. */
+    --accent: #3792b8;
+    --accent-light: #6fbcd8;
+    --accent-glow: rgba(55, 146, 184, 0.16);
 
     --green: #22c55e;
     --green-dim: rgba(34, 197, 94, 0.12);
@@ -96,17 +98,19 @@ body {
 }
 
 .logo-icon {
-    font-size: 1.8rem;
-    filter: drop-shadow(0 0 8px var(--accent));
+    font-size: 1.7rem;
+    /* Chess glyphs fall back to a system symbol font whose metrics don't match
+       Inter; a tight line box + flex centering keeps it on the wordmark's axis. */
+    line-height: 1;
+    display: block;
+    color: var(--accent-light);
 }
 
 .logo h1 {
     font-size: 1.3rem;
     font-weight: 700;
-    background: linear-gradient(135deg, var(--accent-light), var(--blue));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
 }
 
 .player-search {
@@ -316,8 +320,8 @@ body {
 /* ── Sync Banner ─────────────────────────────────────────── */
 
 .sync-banner {
-    background: linear-gradient(90deg, rgba(99, 102, 241, 0.15), rgba(59, 130, 246, 0.15));
-    border-bottom: 1px solid rgba(99, 102, 241, 0.3);
+    background: linear-gradient(90deg, rgba(55, 146, 184, 0.15), rgba(59, 130, 246, 0.15));
+    border-bottom: 1px solid rgba(55, 146, 184, 0.3);
     padding: 0.6rem 2rem;
 }
 
@@ -335,7 +339,7 @@ body {
     display: inline-block;
     width: 14px;
     height: 14px;
-    border: 2px solid rgba(99, 102, 241, 0.3);
+    border: 2px solid rgba(55, 146, 184, 0.3);
     border-top-color: var(--accent-light);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
@@ -359,6 +363,14 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: 1.5rem;
+}
+
+/* A .section used only as a grouping wrapper — its children are the cards. */
+.section.section-bare {
+    background: none;
+    border: none;
+    border-radius: 0;
+    padding: 0;
 }
 
 @keyframes fadeIn {
@@ -738,6 +750,32 @@ body {
 }
 .color-pip.white { background: #dde4ef; }
 .color-pip.black { background: #2a3548; }
+/* Both colors combined */
+.color-pip.all {
+    background: linear-gradient(135deg, #dde4ef 0 50%, #2a3548 50% 100%);
+}
+
+/* Show all / show fewer toggle under the opening table */
+.openings-toggle {
+    display: block;
+    width: 100%;
+    margin-top: 0.5rem;
+    padding: 0.45rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.openings-toggle:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
 
 .win-bar {
     display: flex;
@@ -1235,9 +1273,19 @@ body.compare-mode #layer-1-right {
     min-width: 0;
 }
 
-.analytics-grid .chart-container {
-    aspect-ratio: 3 / 2;
-    max-height: 460px;
+/* Charts whose x-axis needs the full width (time series, per-move lines) */
+.analytics-grid > .analytic-row.span-full {
+    grid-column: 1 / -1;
+}
+
+/* Fixed height rather than aspect-ratio: charts in a row have different
+   widths (the time charts give up 110px to their side stats), so an
+   aspect ratio would render them at mismatched heights. */
+.analytics-grid .chart-container,
+.analytics-grid .time-chart-row .chart-container {
+    aspect-ratio: auto;
+    height: 300px;
+    max-height: none;
 }
 
 body.compare-mode .analytics-grid {
@@ -1248,10 +1296,68 @@ body.compare-mode .analytics-grid > .analytic-row {
     margin-bottom: 3rem;
 }
 
-.more-data-row {
+/* ── Analytics sections (Game Outcomes / Time Usage / Form) ── */
+
+/* Each section is its own panel, matching Rating History / Opening Overview */
+.analytics-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    /* Matches .dashboard's gap so these sit level with the other top-level blocks */
+    margin-bottom: 2rem;
+}
+
+.analytics-section:last-child {
+    margin-bottom: 0;
+}
+
+/* Full-width click target so the whole header row toggles the section. */
+.analytics-section-header {
     display: flex;
-    justify-content: flex-end;
-    margin-top: 1.5rem;
+    align-items: center;
+    gap: 0.7rem;
+    width: 100%;
+    padding: 0 0 0.6rem;
+    margin-bottom: 1.5rem;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 0.74rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    text-align: left;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.analytics-section-header:hover {
+    color: var(--text-primary);
+    border-bottom-color: var(--border-light);
+}
+
+.analytics-section-chevron {
+    flex-shrink: 0;
+    /* inline-block: transforms don't apply to non-replaced inline elements */
+    display: inline-block;
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+}
+
+.analytics-section.collapsed .analytics-section-chevron {
+    transform: rotate(-90deg);
+}
+
+.analytics-section.collapsed .analytics-section-body {
+    display: none;
+}
+
+.analytics-section.collapsed .analytics-section-header {
+    margin-bottom: 0;
 }
 
 .rating-diff-stats-row {
