@@ -111,13 +111,25 @@ def make_game(
     return g
 
 
+_seed_calls = 0
+
+
 def seed_band(db, lo, n_players, games_each=1, move_time=5.0, **kwargs):
     """Seed n_players distinct players in the [lo, lo+99] band, each playing
-    `games_each` games as white against a shared throwaway opponent."""
-    filler = make_player(db, f"filler-{lo}")
+    `games_each` games as white against a shared throwaway opponent.
+
+    Usernames carry a call counter, not just the band: some tests seed the same
+    band twice (e.g. one time control that is dense and one that is sparse), and
+    players.username is UNIQUE.
+    """
+    global _seed_calls
+    _seed_calls += 1
+    tag = f"{lo}-{_seed_calls}"
+
+    filler = make_player(db, f"filler-{tag}")
     players = []
     for i in range(n_players):
-        p = make_player(db, f"p{lo}-{i}")
+        p = make_player(db, f"p{tag}-{i}")
         players.append(p)
         for gi in range(games_each):
             # The filler's Elo is parked far below any band under test: it plays
