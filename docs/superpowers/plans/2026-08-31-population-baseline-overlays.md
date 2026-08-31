@@ -1044,12 +1044,39 @@ def test_game_length_baseline_computes_population_winrate(db):
     bucket = next(b for b in result if b["bucket"] == "31–40")
     assert bucket["total_games"] > 0
     assert bucket["win_rate"] == 100.0
+
+
+def test_clock_advantage_baseline_buckets_by_clock_difference(db):
+    """The only test that exercises clock data, so it builds games directly
+    rather than through seed_band: 40 players x 13 games = 520, clearing both
+    the player and game floors. In every game the tracked player runs ~60s
+    ahead and wins, so far_ahead must be the only populated bucket."""
+    foil = make_player(db, "clock-foil")
+    for i in range(40):
+        p = make_player(db, f"clock-p{i}")
+        for _ in range(13):
+            make_game(
+                db, p, foil, white_elo=1550, black_elo=100,
+                white_clocks=[300.0, 290.0, 280.0],
+                black_clocks=[240.0, 230.0, 220.0],
+            )
+    db.commit()
+
+    band = baselines.resolve_band(db, foil.player_id, time_class="rapid",
+                                  selected_band=1500)
+    result = baselines.clock_advantage_baseline(db, foil.player_id, band,
+                                                time_class="rapid")
+
+    far_ahead = next(b for b in result if b["clock_bucket"] == "far_ahead")
+    assert far_ahead["total_games"] == 520
+    assert far_ahead["win_rate"] == 100.0
+    assert all(b["total_games"] == 0 for b in result if b["clock_bucket"] != "far_ahead")
 ```
 
 - [ ] **Step 2: Run and confirm failure**
 
 ```bash
-uv run pytest tests/test_baselines.py::test_game_length_baseline_computes_population_winrate -q
+uv run pytest tests/test_baselines.py -k "game_length or clock_advantage" -q
 ```
 
 Expected: FAIL — no attribute `game_length_baseline`.
@@ -1248,7 +1275,7 @@ def clock_advantage_baseline(
 uv run pytest tests/test_baselines.py -q
 ```
 
-Expected: 10 passed.
+Expected: 11 passed.
 
 - [ ] **Step 5: Add the three endpoints**
 
@@ -1512,7 +1539,7 @@ from zoneinfo import ZoneInfo
 uv run pytest tests/test_baselines.py -q
 ```
 
-Expected: 11 passed.
+Expected: 12 passed.
 
 - [ ] **Step 5: Add the endpoint**
 
@@ -2056,7 +2083,7 @@ git commit -m "feat: population overlay on streak reaction"
 uv run pytest tests/ -v
 ```
 
-Expected: 11 passed.
+Expected: 12 passed.
 
 - [ ] **Step 2: Run every linter**
 
