@@ -132,13 +132,39 @@ or `black_elo` of whichever side they played) across the *filtered* game set,
 floored to the nearest 100. A player therefore compares against the bracket they
 actually played in, not a bracket derived from their opponents.
 
-**Adaptive band widening.** A flat 100-point band is too thin in the
-mid-brackets. Start at the player's 100-band; if the set falls below the minimum
-(at least 30 distinct players **and** at least 500 games), widen to +/-100, then
-+/-200, then stop. The band actually used is returned in the response and shown
-in the chart label, so the comparison group is never hidden from the user. Below
-the floor at maximum width, the baseline is `null` and the overlay does not
-render — a missing line rather than a noisy one.
+**Band selection.** The band defaults to the player's own bucket, and a dropdown
+lets them compare against any other eligible band — "how do I stack up against
+the average 2000-2099 player". One band at a time; each chart holds exactly two
+datasets, the player and one reference line.
+
+**Minimum sample.** A band is eligible when it holds at least 30 distinct
+players **and** at least 500 games after capping. Below that the baseline is
+`null` and the overlay does not render — a missing line rather than a noisy one.
+
+**Adaptive widening applies to the default only.** A flat 100-point band is too
+thin in the mid-brackets, so a *derived* default band that falls below the
+minimum widens to +/-100, then +/-200, then gives up. An *explicitly selected*
+band never widens: if the user asks for 2000-2099, showing them 1900-2199
+without saying so would be a lie. They get that band or an empty state. The band
+actually used is returned in `meta` and shown in the chart label either way.
+
+**Band availability.** The dropdown is populated from a query counting capped
+games and distinct players per 100-band, so it only ever offers bands that will
+actually render, each labelled with its sample size. Measured at 0.1s, returning
+18 eligible bands for `time_control='180'` on the current database:
+
+```
+800 900 1000 1100 1200 1300 1400 · [1500-1900 absent] · 2000 2100 · [2200 absent] · 2300...3100
+```
+
+The absences are the thin mid-bands. Surfacing them as gaps in a labelled
+dropdown turns a mysteriously missing overlay into visible information about the
+corpus.
+
+Availability mirrors the active filters, so the list stays honest when the user
+filters to an opening. Selection is sticky: if the selected band drops below the
+floor under a new filter, it stays selected and the chart shows an explicit
+empty state rather than silently reverting to the default band.
 
 **Time control.** Exact `time_control` for the time-based charts (move-time
 distribution, move-time by move number, clock advantage), since 3+0 and 10+0
@@ -180,6 +206,11 @@ payloads stay byte-identical, the frontend can fetch player and baseline data in
 parallel, and a baseline failure degrades to a normal chart rather than breaking
 it.
 
+Each accepts the same filter params as its player-side counterpart, plus an
+optional `elo_band` (the band's lower bound, e.g. `2000`). Omitted means "derive
+from the player and widen if needed"; supplied means "this band exactly, or
+nothing".
+
 Each returns its data plus:
 
 ```json
@@ -188,15 +219,30 @@ Each returns its data plus:
   "time_control": "180",
   "n_players": 412,
   "n_games": 5340,
-  "widened": false
+  "widened": false,
+  "source": "derived"
 }
 ```
+
+`source` is `"derived"` or `"selected"`, so the frontend can distinguish "your
+band" from an explicit comparison in the chart label.
+
+One additional endpoint, `/api/players/{username}/analytics/baseline-bands`,
+returns the eligible bands for the current filters — `[{elo_band, n_players,
+n_games}]` — to populate the dropdown. Shared across all charts, fetched once
+per filter change rather than per chart.
 
 ### 6. Frontend
 
 - Each supported chart gains a second, muted, dashed dataset, labelled from
-  `meta` — e.g. *Average · 1500–1599 · 3+0 · 412 players*.
-- A global overlay toggle, defaulting to on.
+  `meta` — e.g. *Average · 1500–1599 · 3+0 · 412 players* when derived, or
+  *Compared to 2000–2099 · 828 players* when explicitly selected.
+- A global overlay toggle, defaulting to on, and a band dropdown populated from
+  `baseline-bands`. The dropdown defaults to the player's own band, marks it as
+  such, and is shared across all charts so switching bands moves every overlay
+  at once.
+- When the selected band has no data under the current filters, the chart shows
+  an explicit empty state naming the band, not a blank space.
 - Baseline fetched in parallel with the player data. A `null` baseline or a
   failed request renders the chart alone, with no error surfaced.
 - **The logistic fit is removed** from move-time-by-move-number. It was a
@@ -215,8 +261,12 @@ Against a small seeded fixture database:
 - The cap actually caps — capped and uncapped means differ on seeded data where
   one player is over-represented.
 - The searched player is absent from their own baseline.
-- Band widening escalates through +/-100 and +/-200 and reports the widened band
-  in `meta.widened` and `meta.elo_band`.
+- A derived band widens through +/-100 and +/-200 and reports it in
+  `meta.widened` and `meta.elo_band`.
+- An explicitly selected band never widens — a thin selected band returns `null`
+  rather than a quietly broadened one.
+- `baseline-bands` omits every band below the min-sample floor, and its list
+  responds to filter changes.
 - The min-sample floor returns `null` rather than a thin, noisy line.
 - Filter mirroring: an opening or color filter changes the baseline; a date
   filter does not.
