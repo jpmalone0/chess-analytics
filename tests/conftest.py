@@ -27,13 +27,29 @@ def make_player(db, username):
     return p
 
 
+_next_end_time = 1700000000
+
+
 def make_game(
     db, white, black, white_elo, black_elo,
     time_control="600", time_class="rapid", result="1-0",
-    end_time=1700000000, opening_name="Sicilian Defense", total_moves=40,
+    end_time=None, opening_name="Sicilian Defense", total_moves=40,
     white_move_times=None, black_move_times=None,
+    white_clocks=None, black_clocks=None,
 ):
-    """Create one game plus its moves. Move time lists default to a flat 5s."""
+    """Create one game plus its moves. Move time lists default to a flat 5s.
+
+    end_time defaults to a monotonically increasing counter (mirroring
+    `_seed_calls` below) so that repeated calls for the same pair of players
+    don't collide on the UNIQUE `chess_com_url`, which is derived from
+    (white, black, end_time). Pass end_time explicitly to control
+    chronological ordering — an explicit value is always honored as-is.
+    """
+    global _next_end_time
+    if end_time is None:
+        end_time = _next_end_time
+        _next_end_time += 1
+
     g = Game(
         white_player_id=white.player_id, black_player_id=black.player_id,
         result=result, time_control=time_control, time_class=time_class,
@@ -47,15 +63,27 @@ def make_game(
     white_move_times = white_move_times if white_move_times is not None else [5.0] * 3
     black_move_times = black_move_times if black_move_times is not None else [5.0] * 3
 
+    assert abs(len(white_move_times) - len(black_move_times)) <= 1, (
+        "white and black move counts must not differ by more than one ply — "
+        "white always moves first, so black can trail by at most one move; a "
+        "larger gap would make the interleaving below emit two consecutive "
+        "same-colour plies, silently producing an illegal move sequence"
+    )
+
     ply = 0
     for i in range(max(len(white_move_times), len(black_move_times))):
-        for color, times in (("white", white_move_times), ("black", black_move_times)):
+        for color, times, clocks in (
+            ("white", white_move_times, white_clocks),
+            ("black", black_move_times, black_clocks),
+        ):
             if i >= len(times):
                 continue
             ply += 1
             db.add(Move(
                 game_id=g.game_id, ply=ply, move_number=i + 1, color=color,
-                move_san="e4", clock_seconds=None, time_spent_seconds=times[i],
+                move_san="e4",
+                clock_seconds=clocks[i] if clocks is not None else None,
+                time_spent_seconds=times[i],
             ))
     db.flush()
     return g
