@@ -6,7 +6,7 @@
 ## Goal
 
 Give the analytics charts a population reference line, so a user can tell whether
-their own number is unusual. Several charts — most importantly the time-per-move
+their own number is unusual. Several charts — like the time-per-move
 distribution — have no natural anchor: seeing "3.7s per move" answers nothing
 without knowing what comparable players do. Add an "average player" overlay,
 bucketed by Elo, computed from the games already in the database and grown over
@@ -67,6 +67,40 @@ This shape is inherent to the ingest path: a *searched* player contributes
 thousands of games, an *opponent* contributes exactly one. Two independent fixes
 follow — crawl opponents to widen the corpus, and cap per-player contribution so
 no single account defines a bracket.
+
+### Rapid is the strongest case, not the weakest
+
+The skew above is a blitz artifact. Titled players grind 3+0; they do not grind
+10+0. For `time_control='600'`:
+
+| Band | Players | Games | | Band | Players | Games |
+|---|---|---|---|---|---|---|
+| 700 | 466 | 527 | | 1400 | 1,408 | 1,505 |
+| 800 | 564 | 641 | | 1500 | 1,361 | 1,426 |
+| 900 | 767 | 805 | | 1600 | 1,392 | 1,494 |
+| 1000 | 680 | 741 | | 1700 | 2,317 | 2,836 |
+| 1100 | 846 | 879 | | 1800 | 1,943 | 2,619 |
+| 1200 | 1,087 | 1,153 | | 1900 | 783 | 1,007 |
+| 1300 | 1,370 | 1,461 | | | | |
+
+Thirteen contiguous eligible bands from 700 to 1900, no gaps, with a
+players-to-games ratio near 1:1 — close to ideal independent sampling, a
+thousand different people contributing roughly one game each. The 1500-1900 hole
+that afflicts blitz does not exist here. Rapid's empty region is 2000+, the
+mirror image of blitz, which matters far less for the intended audience.
+
+The practical consequence: the feature is useful in rapid on day one across the
+whole amateur range, and needs the crawl mainly to fill in blitz.
+
+Rapid is, however, fragmented across time controls in a way blitz is not:
+
+```
+600 -> 16,722    900+10 -> 511    600+2 -> 255    600+5 -> 145    900+2 -> 119
+```
+
+Blitz concentrates into `180` (54,338) and `60` (32,373), so exact time-control
+keying costs nothing there. In rapid it would mean 10+0 works and every other
+rapid control is dead. Hence the time-control fallback below.
 
 Capping is not cosmetic. For blitz 3+0, Elo 3000–3099:
 
@@ -150,16 +184,19 @@ actually used is returned in `meta` and shown in the chart label either way.
 
 **Band availability.** The dropdown is populated from a query counting capped
 games and distinct players per 100-band, so it only ever offers bands that will
-actually render, each labelled with its sample size. Measured at 0.1s, returning
-18 eligible bands for `time_control='180'` on the current database:
+actually render, each labelled with its sample size. Measured at 0.04-0.07s warm, on the
+current database:
 
 ```
-800 900 1000 1100 1200 1300 1400 · [1500-1900 absent] · 2000 2100 · [2200 absent] · 2300...3100
+180 (blitz 3+0), 18 bands:  800...1400 · [1500-1900 absent] · 2000 2100 · [2200 absent] · 2300...3100
+600 (rapid 10+0), 13 bands: 700...1900 · [2000+ absent]
 ```
 
-The absences are the thin mid-bands. Surfacing them as gaps in a labelled
-dropdown turns a mysteriously missing overlay into visible information about the
-corpus.
+The absences differ by time control and are informative in themselves.
+Surfacing them as gaps in a labelled dropdown turns a mysteriously missing
+overlay into visible information about the corpus. No index on `time_control` is
+needed; the initial 0.72s reading for rapid was a cold-cache artifact and does
+not reproduce.
 
 Availability mirrors the active filters, so the list stays honest when the user
 filters to an opening. Selection is sticky: if the selected band drops below the
@@ -170,6 +207,19 @@ empty state rather than silently reverting to the default band.
 distribution, move-time by move number, clock advantage), since 3+0 and 10+0
 have nothing to say to each other. `time_class` for the win-rate charts, where
 sample size matters more than precision.
+
+**Time-control fallback.** Exact keying strands the long tail — a 15+10 player
+would never see an overlay. So when the exact `time_control` falls below the
+min-sample floor, widen to the whole `time_class` and say so in the label
+("Average rapid" rather than "Average 10+0"). Same escalation pattern as Elo
+widening, and it reuses that machinery.
+
+**Escalation precedence: time control widens before Elo band.** When both are
+thin, the Elo comparison is the point of the feature and the time control is
+context, so the context blurs first. A user sees "your band, averaged over all
+rapid" before they see "all of rapid 10+0, averaged over a 300-point band".
+Fallback applies to explicitly selected bands too — the user chose a band, not a
+time control; the time control comes from their existing chart filter.
 
 **Filter mirroring.** Elo, time control, color, and opening mirror the player's
 active chart filters, so the overlay stays apples-to-apples when the user
@@ -267,6 +317,10 @@ Against a small seeded fixture database:
   rather than a quietly broadened one.
 - `baseline-bands` omits every band below the min-sample floor, and its list
   responds to filter changes.
+- A sparse time control falls back to its `time_class` and reports the fallback
+  in `meta`; a dense one does not fall back.
+- Escalation precedence: given a set thin in both dimensions, the time control
+  widens before the Elo band.
 - The min-sample floor returns `null` rather than a thin, noisy line.
 - Filter mirroring: an opening or color filter changes the baseline; a date
   filter does not.
