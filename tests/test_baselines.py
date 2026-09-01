@@ -128,3 +128,25 @@ def test_available_bands_omits_bands_below_floor(db):
     entry = next(b for b in bands if b["elo_lo"] == 1500)
     assert entry["elo_hi"] == 1599
     assert entry["n_players"] >= baselines.MIN_PLAYERS
+
+
+def test_move_time_baseline_reflects_population_not_target(db):
+    # Population thinks 8s per move; the target thinks 1s. The baseline must
+    # report the population's number, unaffected by the target's games.
+    seed_band(db, 1500, n_players=300, games_each=2, move_time=8.0)
+    target = make_player(db, "target")
+    foil = make_player(db, "foil")
+    for i in range(50):
+        # foil sits far below the band: at 1550 it would be a legitimate
+        # population member and its default 5s moves would drag the mean.
+        make_game(db, target, foil, white_elo=1550, black_elo=100,
+                  end_time=1700009000 + i, white_move_times=[1.0] * 3)
+    db.commit()
+
+    band = baselines.resolve_band(db, target.player_id, time_class="rapid")
+    result = baselines.move_time_baseline(db, target.player_id, band, time_class="rapid")
+
+    assert result["mean"] == 8.0
+    assert result["total_moves"] > 0
+    assert len(result["buckets"]) == 7
+    assert result["by_move_number"][0]["avg_seconds"] == 8.0

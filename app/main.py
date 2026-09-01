@@ -388,3 +388,20 @@ def baseline_bands(
         "player_band": (median // 100) * 100 if median is not None else None,
         "time_control": tc,
     }
+
+
+@app.get("/api/players/{username}/analytics/move-time/baseline")
+def move_time_baseline_route(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    elo_band: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    return _baseline_response(
+        db, username, baselines.move_time_baseline,
+        time_class=time_class, start_date=start_date, end_date=end_date,
+        player_color=player_color, opening_names=opening_names, elo_band=elo_band)

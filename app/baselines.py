@@ -8,6 +8,7 @@ at PER_PLAYER_CAP games. The cap matters: without it a single heavily-synced
 account defines its whole bracket.
 """
 
+import statistics as _stats
 from datetime import date
 from typing import Any, Optional
 
@@ -325,4 +326,95 @@ def band_meta(band: dict) -> dict:
         "widened": band["widened"],
         "tc_fallback": band["tc_fallback"],
         "source": band["source"],
+    }
+
+
+def _move_time_buckets(time_class: Optional[str]) -> list[tuple[str, float, float]]:
+    """Bucket edges, identical to crud.move_time_stats so the overlay lines up
+    with the player's own histogram bar for bar."""
+    if time_class == "bullet":
+        return [
+            ("0–0.5s", 0, 0.5), ("0.5–1s", 0.5, 1),
+            ("1–1.5s", 1, 1.5), ("1.5–2s", 1.5, 2),
+            ("2–2.5s", 2, 2.5), ("2.5–3s", 2.5, 3),
+            ("3s+", 3, 9999),
+        ]
+    if time_class == "blitz":
+        return [
+            ("0–2s", 0, 2), ("2–4s", 2, 4), ("4–6s", 4, 6),
+            ("6–8s", 6, 8), ("8–10s", 8, 10), ("10–12s", 10, 12),
+            ("12s+", 12, 9999),
+        ]
+    return [
+        ("0–5s", 0, 5), ("5–10s", 5, 10), ("10–15s", 10, 15),
+        ("15–20s", 15, 20), ("20–25s", 20, 25), ("25–30s", 25, 30),
+        ("30s+", 30, 9999),
+    ]
+
+
+def move_time_baseline(
+    db: Session,
+    player_id: int,
+    band: Optional[dict],
+    time_class: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+) -> Optional[dict]:
+    """Population time-per-move distribution and mean-by-move-number.
+
+    Percentages, not counts: the population has far more moves than any one
+    player, so only the shape is comparable.
+    """
+    if band is None:
+        return None
+
+    cte, params = _population_cte(
+        band["elo_lo"], band["elo_hi"], player_id,
+        band["time_control"], time_class, player_color, opening_names,
+    )
+    rows = db.execute(text(f"""
+        WITH {cte}
+        SELECT m.move_number, m.time_spent_seconds
+        FROM   moves m
+        JOIN   pop ON m.game_id = pop.game_id AND m.color = pop.side
+        WHERE  m.time_spent_seconds IS NOT NULL
+          AND  m.time_spent_seconds >= 0
+    """), params).mappings().all()
+
+    if not rows:
+        return None
+
+    all_times: list[float] = []
+    by_move: dict[int, list[float]] = {}
+    for row in rows:
+        t = float(row["time_spent_seconds"])
+        all_times.append(t)
+        by_move.setdefault(int(row["move_number"]), []).append(t)
+
+    bucket_defs = _move_time_buckets(time_class)
+    counts = {label: 0 for label, _, _ in bucket_defs}
+    for t in all_times:
+        for label, lo, hi in bucket_defs:
+            if lo <= t < hi:
+                counts[label] += 1
+                break
+
+    total = len(all_times)
+    return {
+        "buckets": [
+            {"label": label, "count": counts[label], "pct": round(counts[label] / total * 100, 1)}
+            for label, _, _ in bucket_defs
+        ],
+        "mean": round(_stats.mean(all_times), 2),
+        "median": round(_stats.median(all_times), 2),
+        "std_dev": round(_stats.stdev(all_times) if total > 1 else 0.0, 2),
+        "total_moves": total,
+        "by_move_number": [
+            {
+                "move_number": mn,
+                "avg_seconds": round(_stats.mean(by_move[mn]), 2),
+                "count": len(by_move[mn]),
+            }
+            for mn in sorted(by_move) if mn <= 100
+        ],
     }
