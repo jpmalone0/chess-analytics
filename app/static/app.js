@@ -1348,10 +1348,29 @@ async function loadWinrateByColor(username, loadId, suffix = '') {
 // Feature 1: Rating Differential (10pt buckets within ±50)
 // ═══════════════════════════════════════════════════════════
 
+/** Push the population line onto an already-built win-rate bar chart.
+ *  Joins on the bucket label and matches the player's own line, which plots
+ *  win_rate_no_draws — comparing against win_rate would mix two measures. */
+function attachWinRateBaseline(chartKey, playerBuckets, popBuckets, meta, labelKey) {
+    if (!popBuckets || !charts[chartKey]) return;
+    const byBucket = new Map(popBuckets.map(b => [b[labelKey], b.win_rate_no_draws]));
+    charts[chartKey].data.datasets.push(baselineLineStyle({
+        type: 'line',
+        label: baselineLabel(meta),
+        data: playerBuckets.map(b => byBucket.get(b[labelKey]) ?? null),
+        yAxisID: 'y2',
+        spanGaps: true,
+    }));
+    charts[chartKey].update();
+}
+
 async function loadRatingDiff(username, color, op, loadId, suffix = '') {
     const chartKey = "loadRatingDiff" + suffix;
     try {
-        const data = await fetchJSON(`/api/players/${username}/analytics/rating-diff${colorParams(color, op)}`);
+        const [data, baseline] = await Promise.all([
+            fetchJSON(`/api/players/${username}/analytics/rating-diff${colorParams(color, op)}`),
+            fetchBaseline(username, 'rating-diff', color, op),
+        ]);
         if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
         if (charts[chartKey]) charts[chartKey].destroy();
 
@@ -1397,6 +1416,7 @@ async function loadRatingDiff(username, color, op, loadId, suffix = '') {
                 }
             }
         });
+        attachWinRateBaseline(chartKey, buckets, baseline && baseline.data, baseline && baseline.meta, 'bucket');
 
     } catch (e) { console.error('Rating diff error:', e); }
 }
@@ -1409,7 +1429,10 @@ async function loadRatingDiff(username, color, op, loadId, suffix = '') {
 async function loadGameLength(username, color, op, loadId, suffix = '') {
     const chartKey = "loadGameLength" + suffix;
     try {
-        const data = await fetchJSON(`/api/players/${username}/analytics/game-length${colorParams(color, op)}`);
+        const [data, baseline] = await Promise.all([
+            fetchJSON(`/api/players/${username}/analytics/game-length${colorParams(color, op)}`),
+            fetchBaseline(username, 'game-length', color, op),
+        ]);
         if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
         if (charts[chartKey]) charts[chartKey].destroy();
 
@@ -1454,6 +1477,7 @@ async function loadGameLength(username, color, op, loadId, suffix = '') {
                 }
             }
         });
+        attachWinRateBaseline(chartKey, data, baseline && baseline.data, baseline && baseline.meta, 'bucket');
     } catch (e) { console.error('Game length error:', e); }
 }
 
@@ -1464,7 +1488,7 @@ async function loadGameLength(username, color, op, loadId, suffix = '') {
 // Win Rate After a Streak
 // ═══════════════════════════════════════════════════════════
 
-function renderStreakChart(chartKey, canvasId, buckets, singular, plural) {
+function renderStreakChart(chartKey, canvasId, buckets, singular, plural, popBuckets = null, meta = null) {
     if (charts[chartKey]) charts[chartKey].destroy();
     const el = document.getElementById(canvasId);
     if (!el) return;
@@ -1510,15 +1534,22 @@ function renderStreakChart(chartKey, canvasId, buckets, singular, plural) {
             }
         }
     });
+    attachWinRateBaseline(chartKey, buckets, popBuckets, meta, 'bucket');
 }
 
 async function loadStreakReaction(username, loadId, suffix = '') {
     try {
-        const data = await fetchJSON(`/api/players/${username}/analytics/streak-reaction${buildFilterParams()}`);
+        const [data, baseline] = await Promise.all([
+            fetchJSON(`/api/players/${username}/analytics/streak-reaction${buildFilterParams()}`),
+            fetchBaseline(username, 'streak-reaction', null, ''),
+        ]);
         if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
 
-        renderStreakChart('loadStreakLoss' + suffix, 'streak-loss-chart' + suffix, data.after_loss, 'Loss', 'Losses');
-        renderStreakChart('loadStreakWin' + suffix, 'streak-win-chart' + suffix, data.after_win, 'Win', 'Wins');
+        const meta = baseline ? baseline.meta : null;
+        renderStreakChart('loadStreakLoss' + suffix, 'streak-loss-chart' + suffix, data.after_loss, 'Loss', 'Losses',
+                          baseline && baseline.data.after_loss, meta);
+        renderStreakChart('loadStreakWin' + suffix, 'streak-win-chart' + suffix, data.after_win, 'Win', 'Wins',
+                          baseline && baseline.data.after_win, meta);
     } catch (e) { console.error('Streak reaction error:', e); }
 }
 
@@ -1530,7 +1561,10 @@ async function loadStreakReaction(username, loadId, suffix = '') {
 async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
     const chartKey = "loadClockAdvantage" + suffix;
     try {
-        const data = await fetchJSON(`/api/players/${username}/analytics/clock-advantage${colorParams(color, op)}`);
+        const [data, baseline] = await Promise.all([
+            fetchJSON(`/api/players/${username}/analytics/clock-advantage${colorParams(color, op)}`),
+            fetchBaseline(username, 'clock-advantage', color, op),
+        ]);
         if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
         if (charts[chartKey]) charts[chartKey].destroy();
 
@@ -1584,6 +1618,7 @@ async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
                 }
             }
         });
+        attachWinRateBaseline(chartKey, data, baseline && baseline.data, baseline && baseline.meta, 'clock_bucket');
     } catch (e) { console.error('Clock advantage error:', e); }
 }
 
@@ -1593,60 +1628,14 @@ async function loadClockAdvantage(username, color, op, loadId, suffix = '') {
 // ═══════════════════════════════════════════════════════════
 
 
-function fitLogLogistic(moveNums, avgTimes) {
-    if (avgTimes.reduce((a, b) => a + b, 0) === 0 || moveNums.length < 3) return null;
-    const n = avgTimes.length;
-    let bestRss = Infinity, bestAlpha = 3, bestBeta = 20, bestA = 1, bestB = 0;
-
-    // Grid search over (alpha, beta); for each pair solve for (A, b) analytically.
-    // Model: y = A·pdf(x; α, β) + b  →  2×2 normal equations
-    for (let ai = 0; ai <= 59; ai++) {
-        const alpha = 1.5 + ai * (6.5 / 59);   // 1.5 – 8
-        for (let bi = 0; bi <= 59; bi++) {
-            const beta = 8 + bi * (52 / 59);    // 8 – 60
-            const pdfs = moveNums.map(x => {
-                const r = x / beta;
-                return (alpha / beta) * Math.pow(r, alpha - 1) / Math.pow(1 + Math.pow(r, alpha), 2);
-            });
-            const sum_p  = pdfs.reduce((s, p) => s + p, 0);
-            const sum_p2 = pdfs.reduce((s, p) => s + p * p, 0);
-            const sum_y  = avgTimes.reduce((s, y) => s + y, 0);
-            const sum_py = avgTimes.reduce((s, y, i) => s + y * pdfs[i], 0);
-            const det = n * sum_p2 - sum_p * sum_p;
-            if (det === 0) continue;
-            const A = (n * sum_py - sum_p * sum_y) / det;
-            const b = (sum_p2 * sum_y - sum_p * sum_py) / det;
-            if (A <= 0) continue;
-            const rss = avgTimes.reduce((s, y, i) => s + Math.pow(y - A * pdfs[i] - b, 2), 0);
-            if (rss < bestRss) { bestRss = rss; bestAlpha = alpha; bestBeta = beta; bestA = A; bestB = b; }
-        }
-    }
-
-    // Mode (peak): β·((α−1)/(α+1))^(1/α)  for α > 1
-    const peakMove = bestAlpha > 1
-        ? Math.round(bestBeta * Math.pow((bestAlpha - 1) / (bestAlpha + 1), 1 / bestAlpha))
-        : 1;
-    // Mean: β·π/α / sin(π/α)  for α > 1
-    const meanMove = Math.round(bestBeta * Math.PI / bestAlpha / Math.sin(Math.PI / bestAlpha));
-    const rmse = Math.sqrt(bestRss / n);
-
-    return {
-        peakMove,
-        meanMove,
-        rmse,
-        curve: moveNums.map(x => {
-            const r = x / bestBeta;
-            const v = bestA * (bestAlpha / bestBeta) * Math.pow(r, bestAlpha - 1) / Math.pow(1 + Math.pow(r, bestAlpha), 2) + bestB;
-            return Math.round(Math.max(0, v) * 100) / 100;
-        }),
-    };
-}
-
 async function loadMoveTime(username, color, op, loadId, suffix = '') {
     const distKey = "loadMoveTimeDist" + suffix;
     const moveKey = "loadMoveTimeByMove" + suffix;
     try {
-        const data = await fetchJSON(`/api/players/${username}/analytics/move-time${colorParams(color, op)}`);
+        const [data, baseline] = await Promise.all([
+            fetchJSON(`/api/players/${username}/analytics/move-time${colorParams(color, op)}`),
+            fetchBaseline(username, 'move-time', color, op),
+        ]);
         if (loadId !== (suffix ? compareLoadId : analyticsLoadId)) return;
 
         if (charts[distKey]) charts[distKey].destroy();
@@ -1659,6 +1648,14 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
             backgroundColor: 'rgba(111, 188, 216, 0.7)',
             borderRadius: 4,
         }];
+        if (baseline) {
+            distDatasets.push(baselineLineStyle({
+                type: 'line',
+                label: baselineLabel(baseline.meta),
+                data: baseline.data.buckets.map(b => b.pct),
+                yAxisID: 'yPct',
+            }));
+        }
         charts[distKey] = new Chart(document.getElementById("move-time-dist-chart" + suffix).getContext('2d'), {
             type: 'bar',
             data: {
@@ -1668,7 +1665,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
             options: {
                 responsive: true, maintainAspectRatio: false, animation: false,
                 plugins: {
-                    legend: { display: false },
+                    legend: { display: !!baseline, position: 'top', labels: { boxWidth: 20, font: { size: 11 } } },
                     tooltip: {
                         callbacks: {
                             label: (item) => {
@@ -1676,7 +1673,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                                     const b = data.buckets[item.dataIndex];
                                     return `${b.count.toLocaleString()} moves (${b.pct}%)`;
                                 }
-                                return `${item.dataset.label}: ${item.formattedValue}`;
+                                return `${item.dataset.label}: ${item.formattedValue}% of moves`;
                             }
                         }
                     }
@@ -1684,6 +1681,13 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                 scales: {
                     x: { grid: { display: false } },
                     y: { grid: { color: 'rgba(42, 53, 72, 0.5)' }, title: { display: true, text: 'Moves', color: '#5a6a85' } },
+                    yPct: {
+                        display: !!baseline,
+                        position: 'right',
+                        grid: { display: false },
+                        title: { display: true, text: '% of moves', color: '#5a6a85' },
+                        ticks: { callback: v => v + '%' },
+                    },
                 }
             }
         });
@@ -1708,7 +1712,6 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
 
         // ── Avg think time by move number ──
         const byMove = data.by_move_number;
-        const fit = fitLogLogistic(byMove.map(d => d.move_number), byMove.map(d => d.avg_seconds));
         const datasets = [{
             label: 'Avg seconds',
             data: byMove.map(d => d.avg_seconds),
@@ -1720,19 +1723,18 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
             pointHitRadius: 20,
             borderWidth: 2,
         }];
-        if (fit) {
-            datasets.push({
-                label: 'Log-logistic fit',
-                data: fit.curve,
-                borderColor: 'rgba(251, 146, 60, 0.8)',
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0.4,
-                pointRadius: 0,
-                pointHitRadius: 20,
-                borderWidth: 2,
-                borderDash: [5, 4],
-            });
+        // Align the population curve to the player's move-number axis; the two
+        // series can end at different moves.
+        let baselineByMove = null;
+        if (baseline) {
+            const popByMove = new Map(
+                baseline.data.by_move_number.map(d => [d.move_number, d.avg_seconds]));
+            baselineByMove = byMove.map(d => popByMove.get(d.move_number) ?? null);
+            datasets.push(baselineLineStyle({
+                label: baselineLabel(baseline.meta),
+                data: baselineByMove,
+                spanGaps: true,
+            }));
         }
         charts[moveKey] = new Chart(document.getElementById("move-time-by-move-chart" + suffix).getContext('2d'), {
             type: 'line',
@@ -1743,7 +1745,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
             options: {
                 responsive: true, maintainAspectRatio: false, animation: false,
                 plugins: {
-                    legend: { display: !!fit, position: 'top', labels: { boxWidth: 20, font: { size: 11 } } },
+                    legend: { display: !!baseline, position: 'top', labels: { boxWidth: 20, font: { size: 11 } } },
                     tooltip: {
                         callbacks: {
                             title: (items) => `Move ${items[0].label}`,
@@ -1752,7 +1754,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                                     const d = byMove[item.dataIndex];
                                     return `Avg: ${d.avg_seconds}s  (${d.count} moves)`;
                                 }
-                                return `Fitted: ${item.formattedValue}s`;
+                                return `${item.dataset.label}: ${item.formattedValue}s`;
                             }
                         }
                     }
@@ -1763,9 +1765,6 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                 }
             }
         });
-
-        const rmseEl = document.getElementById("move-time-rmse" + suffix);
-        if (rmseEl) rmseEl.textContent = fit ? `RMSE ${fit.rmse.toFixed(2)}s` : '';
 
         const statsEl = document.getElementById("move-time-by-move-stats" + suffix);
         if (statsEl) {
@@ -1780,6 +1779,19 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                 cumulative += d.avg_seconds * d.count;
                 if (cumulative >= totalWeighted * 0.5) { medianEffortMove = d.move_number; break; }
             }
+            // Peak think move: where the curve actually peaks, for each series.
+            const peakOf = (pairs) => {
+                let best = null, bestVal = -Infinity;
+                for (const [mn, v] of pairs) {
+                    if (v !== null && v > bestVal) { bestVal = v; best = mn; }
+                }
+                return best;
+            };
+            const playerPeak = peakOf(byMove.map(d => [d.move_number, d.avg_seconds]));
+            const popPeak = baselineByMove
+                ? peakOf(byMove.map((d, i) => [d.move_number, baselineByMove[i]]))
+                : null;
+
             const mins = Math.floor(totalSec / 60);
             const secs = Math.round(totalSec % 60);
             const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
@@ -1789,15 +1801,15 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                         <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Avg time per game</div>
                         <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${timeStr}</div>
                     </div>
-                    ${fit ? `
                     <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                         <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Mean effort move</div>
                         <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">move ${medianEffortMove}</div>
                     </div>
                     <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                         <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Peak think move</div>
-                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">move ${fit.peakMove}</div>
-                    </div>` : ''}
+                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">move ${playerPeak}</div>
+                        ${popPeak !== null ? `<div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.15rem;">average: move ${popPeak}</div>` : ''}
+                    </div>
                 </div>
             `;
         }
