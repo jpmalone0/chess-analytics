@@ -405,3 +405,54 @@ def move_time_baseline_route(
         db, username, baselines.move_time_baseline,
         time_class=time_class, start_date=start_date, end_date=end_date,
         player_color=player_color, opening_names=opening_names, elo_band=elo_band)
+
+
+@app.get("/api/players/{username}/analytics/game-length/baseline")
+def game_length_baseline_route(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    elo_band: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    return _baseline_response(
+        db, username, baselines.game_length_baseline,
+        time_class=time_class, start_date=start_date, end_date=end_date,
+        player_color=player_color, opening_names=opening_names, elo_band=elo_band)
+
+
+@app.get("/api/players/{username}/analytics/rating-diff/baseline")
+def rating_diff_baseline_route(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    elo_band: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    return _baseline_response(
+        db, username, baselines.rating_diff_baseline,
+        time_class=time_class, start_date=start_date, end_date=end_date,
+        player_color=player_color, opening_names=opening_names, elo_band=elo_band)
+
+
+@app.get("/api/players/{username}/analytics/clock-advantage/baseline")
+def clock_advantage_baseline_route(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    elo_band: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    return _baseline_response(
+        db, username, baselines.clock_advantage_baseline,
+        time_class=time_class, start_date=start_date, end_date=end_date,
+        player_color=player_color, opening_names=opening_names, elo_band=elo_band)

@@ -418,3 +418,214 @@ def move_time_baseline(
             for mn in sorted(by_move) if mn <= 100
         ],
     }
+
+
+_LENGTH_BUCKETS = [
+    ("1–10", 1, 10), ("11–20", 11, 20), ("21–30", 21, 30), ("31–40", 31, 40),
+    ("41–50", 41, 50), ("51–60", 51, 60), ("61–80", 61, 80), ("80+", 81, 9999),
+]
+
+# Same 14 buckets and same predicates as crud.rating_differential — the overlay
+# must land on the player's own bars, so the labels are the join key.
+_RATING_DIFF_BUCKETS: list[tuple[str, Any]] = [
+    ("> +100",      lambda d: d >= 100),
+    ("+50 to +100", lambda d: 50 <= d < 100),
+    ("+40 to +50",  lambda d: 40 <= d < 50),
+    ("+30 to +40",  lambda d: 30 <= d < 40),
+    ("+20 to +30",  lambda d: 20 <= d < 30),
+    ("+10 to +20",  lambda d: 10 <= d < 20),
+    ("0 to +10",    lambda d: 0 <= d < 10),
+    ("-10 to 0",    lambda d: -10 <= d < 0),
+    ("-20 to -10",  lambda d: -20 <= d < -10),
+    ("-30 to -20",  lambda d: -30 <= d < -20),
+    ("-40 to -30",  lambda d: -40 <= d < -30),
+    ("-50 to -40",  lambda d: -50 <= d < -40),
+    ("-100 to -50", lambda d: -100 <= d < -50),
+    ("< -100",      lambda d: d < -100),
+]
+
+_CLOCK_BUCKETS = ["far_behind", "behind", "even", "ahead", "far_ahead"]
+
+
+def _outcome_case() -> str:
+    """SQL expression giving the population player's outcome in their own game."""
+    return """
+        CASE
+            WHEN (pop.side = 'white' AND g.result = '1-0')
+              OR (pop.side = 'black' AND g.result = '0-1') THEN 'win'
+            WHEN g.result = '1/2-1/2'                      THEN 'draw'
+            ELSE 'loss'
+        END
+    """
+
+
+def _tally(buckets: dict, label: str, outcome: str) -> None:
+    key = {"win": "wins", "loss": "losses"}.get(outcome, "draws")
+    buckets[label][key] += 1
+
+
+def _rates(label_field: str, label: str, b: dict) -> dict:
+    total = b["wins"] + b["losses"] + b["draws"]
+    decisive = b["wins"] + b["losses"]
+    return {
+        label_field: label,
+        "total_games": total,
+        "wins": b["wins"], "losses": b["losses"], "draws": b["draws"],
+        "win_rate": round(b["wins"] / total * 100, 1) if total else 0,
+        "win_rate_no_draws": round(b["wins"] / decisive * 100, 1) if decisive else 0,
+        "draw_rate": round(b["draws"] / total * 100, 1) if total else 0,
+    }
+
+
+def _pre_game_diff(diff_post: float, score: float) -> float:
+    """Undo the post-game rating update, identically to crud.rating_differential.
+
+    Chess.com PGN Elos are POST-game, so each result is baked into its own
+    stored gap. The player's chart corrects for this; the baseline must apply
+    the same correction or the two curves are measured on different x-axes.
+    """
+    d = diff_post
+    for _ in range(3):
+        expected = 1 / (1 + 10 ** (-d / 400))
+        d = diff_post - 32 * (score - expected)
+    return d
+
+
+def game_length_baseline(
+    db: Session,
+    player_id: int,
+    band: Optional[dict],
+    time_class: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+) -> Optional[list[dict]]:
+    """Population win rate bucketed by total game length."""
+    if band is None:
+        return None
+
+    cte, params = _population_cte(
+        band["elo_lo"], band["elo_hi"], player_id,
+        band["time_control"], time_class, player_color, opening_names,
+    )
+    rows = db.execute(text(f"""
+        WITH {cte}
+        SELECT g.total_moves, {_outcome_case()} AS outcome
+        FROM   pop JOIN games g ON g.game_id = pop.game_id
+        WHERE  g.total_moves IS NOT NULL
+    """), params).mappings().all()
+
+    if not rows:
+        return None
+
+    buckets = {label: {"wins": 0, "losses": 0, "draws": 0} for label, _, _ in _LENGTH_BUCKETS}
+    for row in rows:
+        for label, lo, hi in _LENGTH_BUCKETS:
+            if lo <= row["total_moves"] <= hi:
+                _tally(buckets, label, row["outcome"])
+                break
+
+    return [_rates("bucket", label, buckets[label]) for label, _, _ in _LENGTH_BUCKETS]
+
+
+def rating_diff_baseline(
+    db: Session,
+    player_id: int,
+    band: Optional[dict],
+    time_class: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+) -> Optional[list[dict]]:
+    """Population win rate bucketed by estimated PRE-game Elo gap."""
+    if band is None:
+        return None
+
+    cte, params = _population_cte(
+        band["elo_lo"], band["elo_hi"], player_id,
+        band["time_control"], time_class, player_color, opening_names,
+    )
+    rows = db.execute(text(f"""
+        WITH {cte}
+        SELECT CASE WHEN pop.side = 'white'
+                    THEN g.white_elo - g.black_elo
+                    ELSE g.black_elo - g.white_elo END AS elo_diff,
+               {_outcome_case()} AS outcome
+        FROM   pop JOIN games g ON g.game_id = pop.game_id
+        WHERE  g.white_elo IS NOT NULL AND g.black_elo IS NOT NULL
+    """), params).mappings().all()
+
+    if not rows:
+        return None
+
+    score_for = {"win": 1.0, "draw": 0.5, "loss": 0.0}
+    buckets = {label: {"wins": 0, "losses": 0, "draws": 0} for label, _ in _RATING_DIFF_BUCKETS}
+    for row in rows:
+        outcome = row["outcome"]
+        diff = _pre_game_diff(float(row["elo_diff"]), score_for[outcome])
+        for label, predicate in _RATING_DIFF_BUCKETS:
+            if predicate(diff):
+                _tally(buckets, label, outcome)
+                break
+
+    return [_rates("bucket", label, buckets[label]) for label, _ in _RATING_DIFF_BUCKETS]
+
+
+def _clock_bucket(avg_diff: float) -> str:
+    """Absolute seconds, matching the CASE in crud.analyze_clock_advantage.
+    These are NOT scaled by base time — the overlay must use identical cut
+    points or it describes different bars than the player's."""
+    if avg_diff < -30:
+        return "far_behind"
+    if avg_diff < -15:
+        return "behind"
+    if avg_diff <= 15:
+        return "even"
+    if avg_diff <= 30:
+        return "ahead"
+    return "far_ahead"
+
+
+def clock_advantage_baseline(
+    db: Session,
+    player_id: int,
+    band: Optional[dict],
+    time_class: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+) -> Optional[list[dict]]:
+    """Population win rate bucketed by average clock difference through the game."""
+    if band is None:
+        return None
+
+    cte, params = _population_cte(
+        band["elo_lo"], band["elo_hi"], player_id,
+        band["time_control"], time_class, player_color, opening_names,
+    )
+    rows = db.execute(text(f"""
+        WITH {cte},
+        diffs AS (
+            -- Grouped by game AND side: when both players of a game fall in the
+            -- band, each is a separate observation with a mirrored advantage.
+            SELECT pop.game_id, pop.side,
+                   AVG(mine.clock_seconds - theirs.clock_seconds) AS avg_diff
+            FROM   pop
+            JOIN   moves mine   ON mine.game_id   = pop.game_id AND mine.color   = pop.side
+            JOIN   moves theirs ON theirs.game_id = pop.game_id
+                               AND theirs.color  != pop.side
+                               AND theirs.move_number = mine.move_number
+            WHERE  mine.clock_seconds IS NOT NULL AND theirs.clock_seconds IS NOT NULL
+            GROUP  BY pop.game_id, pop.side
+        )
+        SELECT d.avg_diff, {_outcome_case()} AS outcome
+        FROM   diffs d
+        JOIN   pop ON pop.game_id = d.game_id AND pop.side = d.side
+        JOIN   games g ON g.game_id = d.game_id
+    """), params).mappings().all()
+
+    if not rows:
+        return None
+
+    buckets = {label: {"wins": 0, "losses": 0, "draws": 0} for label in _CLOCK_BUCKETS}
+    for row in rows:
+        _tally(buckets, _clock_bucket(float(row["avg_diff"])), row["outcome"])
+
+    return [_rates("clock_bucket", label, buckets[label]) for label in _CLOCK_BUCKETS]

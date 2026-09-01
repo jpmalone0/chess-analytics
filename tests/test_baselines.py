@@ -150,3 +150,46 @@ def test_move_time_baseline_reflects_population_not_target(db):
     assert result["total_moves"] > 0
     assert len(result["buckets"]) == 7
     assert result["by_move_number"][0]["avg_seconds"] == 8.0
+
+
+def test_game_length_baseline_computes_population_winrate(db):
+    # Every seeded game is a white win at 40 moves, so the 31-40 bucket should
+    # be 100% and the population's win rate should not include the target.
+    seed_band(db, 1500, n_players=300, games_each=2, total_moves=40, result="1-0")
+    target = make_player(db, "target")
+    db.commit()
+
+    band = baselines.resolve_band(db, target.player_id, time_class="rapid",
+                                  selected_band=1500)
+    result = baselines.game_length_baseline(db, target.player_id, band, time_class="rapid")
+
+    bucket = next(b for b in result if b["bucket"] == "31–40")
+    assert bucket["total_games"] > 0
+    assert bucket["win_rate"] == 100.0
+
+
+def test_clock_advantage_baseline_buckets_by_clock_difference(db):
+    """The only test that exercises clock data, so it builds games directly
+    rather than through seed_band: 40 players x 13 games = 520, clearing both
+    the player and game floors. In every game the tracked player runs ~60s
+    ahead and wins, so far_ahead must be the only populated bucket."""
+    foil = make_player(db, "clock-foil")
+    for i in range(40):
+        p = make_player(db, f"clock-p{i}")
+        for _ in range(13):
+            make_game(
+                db, p, foil, white_elo=1550, black_elo=100,
+                white_clocks=[300.0, 290.0, 280.0],
+                black_clocks=[240.0, 230.0, 220.0],
+            )
+    db.commit()
+
+    band = baselines.resolve_band(db, foil.player_id, time_class="rapid",
+                                  selected_band=1500)
+    result = baselines.clock_advantage_baseline(db, foil.player_id, band,
+                                                time_class="rapid")
+
+    far_ahead = next(b for b in result if b["clock_bucket"] == "far_ahead")
+    assert far_ahead["total_games"] == 520
+    assert far_ahead["win_rate"] == 100.0
+    assert all(b["total_games"] == 0 for b in result if b["clock_bucket"] != "far_ahead")
