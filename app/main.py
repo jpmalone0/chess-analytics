@@ -456,3 +456,18 @@ def clock_advantage_baseline_route(
         db, username, baselines.clock_advantage_baseline,
         time_class=time_class, start_date=start_date, end_date=end_date,
         player_color=player_color, opening_names=opening_names, elo_band=elo_band)
+
+
+@app.get("/api/players/{username}/analytics/streak-reaction/baseline")
+def streak_baseline_route(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    elo_band: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    return _baseline_response(
+        db, username, baselines.streak_baseline,
+        time_class=time_class, start_date=start_date, end_date=end_date,
+        player_color=None, opening_names=None, elo_band=elo_band)

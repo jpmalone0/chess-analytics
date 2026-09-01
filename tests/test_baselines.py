@@ -193,3 +193,16 @@ def test_clock_advantage_baseline_buckets_by_clock_difference(db):
     assert far_ahead["total_games"] == 520
     assert far_ahead["win_rate"] == 100.0
     assert all(b["total_games"] == 0 for b in result if b["clock_bucket"] != "far_ahead")
+
+
+def test_streak_baseline_requires_deep_players(db):
+    # 300 players with one game each: plenty of games, no streak depth.
+    seed_band(db, 1500, n_players=300, games_each=2)
+    target = make_player(db, "target")
+    db.commit()
+
+    band = baselines.resolve_band(db, target.player_id, time_class="rapid",
+                                  selected_band=1500)
+    result = baselines.streak_baseline(db, target.player_id, band, time_class="rapid")
+
+    assert result is None

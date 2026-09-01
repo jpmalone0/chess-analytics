@@ -9,8 +9,9 @@ account defines its whole bracket.
 """
 
 import statistics as _stats
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -629,3 +630,114 @@ def clock_advantage_baseline(
         _tally(buckets, _clock_bucket(float(row["avg_diff"])), row["outcome"])
 
     return [_rates("clock_bucket", label, buckets[label]) for label in _CLOCK_BUCKETS]
+
+
+# A streak is undefined for a player with only a handful of games in the DB.
+STREAK_MIN_GAMES_PER_PLAYER = 30
+
+
+def _build_streak_buckets(buckets: dict) -> list[dict]:
+    """Bucket labels 1/2/3/4+, matching crud.streak_reaction's _build."""
+    return [
+        _rates("bucket", f"{n}" if n < 4 else "4+", buckets[n])
+        for n in (1, 2, 3, 4)
+    ]
+
+
+def streak_baseline(
+    db: Session,
+    player_id: int,
+    band: Optional[dict],
+    time_class: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+) -> Optional[dict]:
+    """
+    Population win rate by preceding win/loss streak.
+
+    Mirrors crud.streak_reaction exactly: separate after_loss and after_win
+    tallies, streaks reset at each new US-Eastern calendar day, and draws carry
+    both streaks through unchanged rather than breaking them.
+
+    Restricted to players with STREAK_MIN_GAMES_PER_PLAYER games in the
+    database — a streak computed over two games is noise. Returns None when too
+    few such players exist, which is the expected state until the opponent
+    crawl has run.
+    """
+    if band is None:
+        return None
+
+    cte, params = _population_cte(
+        band["elo_lo"], band["elo_hi"], player_id,
+        band["time_control"], time_class, player_color, opening_names,
+    )
+    params["min_games_per_player"] = STREAK_MIN_GAMES_PER_PLAYER
+
+    rows = db.execute(text(f"""
+        WITH {cte},
+        deep AS (
+            SELECT pid FROM pop GROUP BY pid HAVING COUNT(*) >= :min_games_per_player
+        )
+        SELECT pop.pid, g.date_played, g.end_time, {_outcome_case()} AS outcome
+        FROM   pop
+        JOIN   deep ON deep.pid = pop.pid
+        JOIN   games g ON g.game_id = pop.game_id
+        ORDER  BY pop.pid, g.date_played ASC, g.end_time ASC, g.game_id ASC
+    """), params).mappings().all()
+
+    if not rows:
+        return None
+
+    eastern = ZoneInfo("America/New_York")
+
+    def _to_date(v) -> date:
+        return v if isinstance(v, date) else datetime.strptime(str(v), "%Y-%m-%d").date()
+
+    def _local_day(row) -> Optional[date]:
+        if row["end_time"] is not None:
+            return datetime.fromtimestamp(row["end_time"], tz=eastern).date()
+        return _to_date(row["date_played"]) if row["date_played"] else None
+
+    loss_buckets = {n: {"wins": 0, "losses": 0, "draws": 0} for n in (1, 2, 3, 4)}
+    win_buckets = {n: {"wins": 0, "losses": 0, "draws": 0} for n in (1, 2, 3, 4)}
+
+    current_pid = None
+    loss_streak = win_streak = 0
+    prev_day: Optional[date] = None
+
+    for row in rows:
+        if row["pid"] != current_pid:
+            current_pid = row["pid"]
+            loss_streak = win_streak = 0
+            prev_day = None
+
+        day = _local_day(row)
+        if day != prev_day:
+            loss_streak = win_streak = 0
+        prev_day = day
+
+        outcome = row["outcome"]
+        key = {"win": "wins", "loss": "losses"}.get(outcome, "draws")
+        if loss_streak >= 1:
+            loss_buckets[min(loss_streak, 4)][key] += 1
+        if win_streak >= 1:
+            win_buckets[min(win_streak, 4)][key] += 1
+
+        if outcome == "loss":
+            loss_streak += 1
+            win_streak = 0
+        elif outcome == "win":
+            win_streak += 1
+            loss_streak = 0
+        # draw: both streaks carry through unchanged
+
+    counted = sum(
+        sum(b.values()) for b in list(loss_buckets.values()) + list(win_buckets.values())
+    )
+    if counted == 0:
+        return None
+
+    return {
+        "after_loss": _build_streak_buckets(loss_buckets),
+        "after_win": _build_streak_buckets(win_buckets),
+    }
