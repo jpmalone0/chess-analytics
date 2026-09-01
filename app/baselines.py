@@ -8,6 +8,7 @@ at PER_PLAYER_CAP games. The cap matters: without it a single heavily-synced
 account defines its whole bracket.
 """
 
+from datetime import date
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -110,3 +111,149 @@ def population_counts(
         params,
     ).mappings().one()
     return {"n_players": row["n_players"], "n_games": row["n_games"]}
+
+
+# Half-widths tried in order when a derived band is too thin.
+BAND_WIDENING = [0, 100, 200]
+
+
+def _player_filter_sql(
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+) -> tuple[str, dict]:
+    """WHERE clause over the searched player's own games. Mirrors
+    crud._build_game_filters but is duplicated deliberately: this module must
+    stay free of crud's per-player concerns, and the two will diverge."""
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+
+    if player_color == "white":
+        clauses.append("g.white_player_id = :player_id")
+    elif player_color == "black":
+        clauses.append("g.black_player_id = :player_id")
+    else:
+        clauses.append("(g.white_player_id = :player_id OR g.black_player_id = :player_id)")
+
+    if time_class:
+        clauses.append("g.time_class = :time_class")
+        params["time_class"] = time_class
+    if start_date:
+        clauses.append("g.date_played >= :start_date")
+        params["start_date"] = start_date
+    if end_date:
+        clauses.append("g.date_played <= :end_date")
+        params["end_date"] = end_date
+    if opening_names:
+        ops = [o.strip() for o in opening_names.split("|") if o.strip()]
+        if ops:
+            likes = [f"g.opening_name LIKE :pop_{i}" for i in range(len(ops))]
+            clauses.append("(" + " OR ".join(likes) + ")")
+            for i, op in enumerate(ops):
+                params[f"pop_{i}"] = op + "%"
+
+    return " AND ".join(clauses), params
+
+
+def dominant_time_control(db: Session, player_id: int, **filters) -> Optional[str]:
+    """The player's modal time_control under the current filters.
+
+    The UI only exposes time_class, but time-based baselines need an exact
+    control — 3+0 and 10+0 have nothing to say to each other. So we derive it.
+    """
+    where, params = _player_filter_sql(**filters)
+    params["player_id"] = player_id
+    row = db.execute(text(f"""
+        SELECT g.time_control, COUNT(*) AS n
+        FROM   games g
+        WHERE  {where} AND g.time_control IS NOT NULL
+        GROUP  BY g.time_control
+        ORDER  BY n DESC
+        LIMIT  1
+    """), params).mappings().first()
+    return row["time_control"] if row else None
+
+
+def player_median_elo(db: Session, player_id: int, **filters) -> Optional[int]:
+    """Median of the player's OWN Elo across their filtered games."""
+    where, params = _player_filter_sql(**filters)
+    params["player_id"] = player_id
+    rows = db.execute(text(f"""
+        SELECT CASE WHEN g.white_player_id = :player_id THEN g.white_elo ELSE g.black_elo END AS elo
+        FROM   games g
+        WHERE  {where}
+        ORDER  BY elo
+    """), params).scalars().all()
+    elos = [e for e in rows if e is not None]
+    if not elos:
+        return None
+    return int(elos[len(elos) // 2])
+
+
+def _band_is_viable(counts: dict) -> bool:
+    return counts["n_players"] >= MIN_PLAYERS and counts["n_games"] >= MIN_GAMES
+
+
+def resolve_band(
+    db: Session,
+    player_id: int,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    selected_band: Optional[int] = None,
+) -> Optional[dict]:
+    """
+    Decide which population slice to compare against.
+
+    Escalation order, per spec: exact time control -> time class, and only then
+    widen the Elo band. Blurring the context beats blurring the comparison.
+    A selected band never widens; a derived one may.
+
+    Returns None when nothing viable exists — the caller renders no overlay.
+    """
+    player_filters = dict(
+        time_class=time_class, start_date=start_date, end_date=end_date,
+        player_color=player_color, opening_names=opening_names,
+    )
+
+    if selected_band is not None:
+        base_lo = selected_band
+        source = "selected"
+    else:
+        median = player_median_elo(db, player_id, **player_filters)
+        if median is None:
+            return None
+        base_lo = (median // 100) * 100
+        source = "derived"
+
+    exact_tc = dominant_time_control(db, player_id, **player_filters)
+    widths = [0] if source == "selected" else BAND_WIDENING
+
+    # Time control blurs first, then the band widens.
+    for tc, tc_fallback in ((exact_tc, False), (None, True)):
+        if tc is None and not tc_fallback:
+            continue
+        for width in widths:
+            lo, hi = base_lo - width, base_lo + 99 + width
+            counts = population_counts(
+                db, elo_lo=lo, elo_hi=hi, exclude_player_id=player_id,
+                time_control=tc, time_class=time_class,
+                player_color=player_color, opening_names=opening_names,
+            )
+            if _band_is_viable(counts):
+                return {
+                    "elo_lo": lo,
+                    "elo_hi": hi,
+                    "time_control": tc,
+                    "time_class": time_class,
+                    "n_players": counts["n_players"],
+                    "n_games": counts["n_games"],
+                    "widened": width > 0,
+                    "tc_fallback": tc_fallback,
+                    "source": source,
+                }
+    return None

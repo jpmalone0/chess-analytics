@@ -43,3 +43,71 @@ def test_population_counts_caps_per_player(db):
 
     assert counts["n_players"] == 1
     assert counts["n_games"] == baselines.PER_PLAYER_CAP
+
+
+def test_derived_band_widens_when_thin(db):
+    # 1500 band alone is far below MIN_GAMES; neighbours make the widened band viable.
+    seed_band(db, 1500, n_players=10, games_each=2)
+    seed_band(db, 1400, n_players=200, games_each=2)
+    seed_band(db, 1600, n_players=200, games_each=2)
+    target = make_player(db, "target")
+    foil = make_player(db, "foil")
+    for i in range(10):
+        make_game(db, target, foil, white_elo=1550, black_elo=1550, end_time=1700009000 + i)
+    db.commit()
+
+    band = baselines.resolve_band(
+        db, player_id=target.player_id, time_class="rapid", selected_band=None)
+
+    assert band is not None
+    assert band["widened"] is True
+    assert band["elo_lo"] < 1500 and band["elo_hi"] > 1599
+    assert band["source"] == "derived"
+
+
+def test_selected_band_never_widens(db):
+    seed_band(db, 1500, n_players=10, games_each=2)   # below the floor
+    seed_band(db, 1400, n_players=200, games_each=2)  # would rescue it if widened
+    target = make_player(db, "target")
+    foil = make_player(db, "foil")
+    make_game(db, target, foil, white_elo=1550, black_elo=1550, end_time=1700009999)
+    db.commit()
+
+    band = baselines.resolve_band(
+        db, player_id=target.player_id, time_class="rapid", selected_band=1500)
+
+    assert band is None
+
+
+def test_sparse_time_control_falls_back_to_time_class(db):
+    # 900+10 is too thin to stand alone; the rapid class as a whole is not.
+    seed_band(db, 1500, n_players=300, games_each=2, time_control="600", time_class="rapid")
+    seed_band(db, 1500, n_players=5, games_each=1, time_control="900+10", time_class="rapid")
+    target = make_player(db, "target")
+    foil = make_player(db, "foil")
+    for i in range(10):
+        make_game(db, target, foil, white_elo=1550, black_elo=1550,
+                  time_control="900+10", time_class="rapid", end_time=1700009000 + i)
+    db.commit()
+
+    band = baselines.resolve_band(
+        db, player_id=target.player_id, time_class="rapid", selected_band=None)
+
+    assert band is not None
+    assert band["tc_fallback"] is True
+    assert band["time_control"] is None
+    assert band["widened"] is False   # time control blurred first, band stayed put
+
+
+def test_dominant_time_control_is_the_modal_one(db):
+    target = make_player(db, "target")
+    foil = make_player(db, "foil")
+    for i in range(7):
+        make_game(db, target, foil, white_elo=1550, black_elo=1550,
+                  time_control="600", end_time=1700000000 + i)
+    for i in range(2):
+        make_game(db, target, foil, white_elo=1550, black_elo=1550,
+                  time_control="900+10", end_time=1700100000 + i)
+    db.commit()
+
+    assert baselines.dominant_time_control(db, target.player_id, time_class="rapid") == "600"
