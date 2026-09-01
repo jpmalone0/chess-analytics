@@ -25,6 +25,9 @@ let openingsExpanded = false;
 let lastTopOpenings = null;           // cached so the toggle can re-render
 let winrateMode = 'color';
 let winrateWindow = 30;
+let baselineEnabled = true;
+let selectedBaselineBand = '';   // '' means "derive from the player"
+let lastBaselineMeta = null;     // drives the empty-state notice
 
 // Chart.js defaults
 Chart.defaults.color = '#8b9ab8';
@@ -39,6 +42,119 @@ const DEFAULT_COLOR = '#3792b8';
 const ACCENT_LIGHT = '#6fbcd8';
 const Y_AXIS_STEP = 20;
 const PROJECTION_STEPS = 80;
+
+
+// ═══════════════════════════════════════════════════════════
+// Population Baseline Overlays
+// ═══════════════════════════════════════════════════════════
+
+function baselineParams(color, op) {
+    const ext = {};
+    if (color && color !== 'global') ext.player_color = color;
+    if (op) ext.opening_names = op;
+    if (selectedBaselineBand) ext.elo_band = selectedBaselineBand;
+    return buildFilterParamsExtra(ext);
+}
+
+/**
+ * Fetch one chart's baseline. Always resolves — a failure or an empty band
+ * yields null so the caller renders the player's chart alone.
+ */
+async function fetchBaseline(username, chart, color, op) {
+    if (!baselineEnabled) { lastBaselineMeta = null; renderBaselineNotice(); return null; }
+    try {
+        const r = await fetchJSON(
+            `/api/players/${username}/analytics/${chart}/baseline${baselineParams(color, op)}`);
+        const result = r && r.data ? r : null;
+        lastBaselineMeta = result ? result.meta : null;
+        renderBaselineNotice();
+        return result;
+    } catch (e) {
+        console.warn(`Baseline unavailable for ${chart}:`, e);
+        lastBaselineMeta = null;
+        renderBaselineNotice();
+        return null;
+    }
+}
+
+/** Chart.js dataset styling shared by every overlay: muted, dashed, behind. */
+function baselineLineStyle(extra = {}) {
+    return {
+        borderColor: 'rgba(148, 163, 184, 0.85)',
+        backgroundColor: 'transparent',
+        fill: false,
+        tension: 0.3,
+        pointRadius: 0,
+        pointHitRadius: 20,
+        borderWidth: 2,
+        borderDash: [6, 4],
+        order: 10,
+        ...extra,
+    };
+}
+
+function baselineLabel(meta) {
+    if (!meta) return 'Average';
+    const [lo, hi] = meta.elo_band;
+    const tc = meta.tc_fallback ? (meta.time_class || 'all') : meta.time_control;
+    const who = meta.source === 'selected' ? `Compared to ${lo}–${hi}` : `Average ${lo}–${hi}`;
+    return `${who} · ${tc} · ${meta.n_players.toLocaleString()} players`;
+}
+
+/** Explicit empty state: a selected band with no data must say so, rather
+ *  than silently showing no line. */
+function renderBaselineNotice() {
+    const el = document.getElementById('baseline-notice');
+    if (!el) return;
+    if (baselineEnabled && selectedBaselineBand && !lastBaselineMeta) {
+        const lo = Number(selectedBaselineBand);
+        el.textContent = `No baseline for ${lo}–${lo + 99} under the current filters.`;
+        el.style.display = '';
+    } else {
+        el.style.display = 'none';
+    }
+}
+
+async function loadBaselineBands(username) {
+    const sel = document.getElementById('baseline-band');
+    if (!sel) return;
+    try {
+        const r = await fetchJSON(
+            `/api/players/${username}/analytics/baseline-bands${buildFilterParams()}`);
+        const previous = selectedBaselineBand;
+        sel.innerHTML = '<option value="">Your rating band</option>';
+        for (const b of r.bands) {
+            const opt = document.createElement('option');
+            opt.value = b.elo_lo;
+            opt.textContent = `${b.elo_lo}–${b.elo_hi}  (${b.n_players.toLocaleString()} players)`
+                + (b.elo_lo === r.player_band ? '  ·  you' : '');
+            sel.appendChild(opt);
+        }
+        // Selection is sticky across filter changes, even if the band just
+        // dropped below the floor — the chart says so rather than reverting.
+        sel.value = previous;
+        if (previous && sel.value !== previous) {
+            const opt = document.createElement('option');
+            opt.value = previous;
+            opt.textContent = `${previous}–${Number(previous) + 99}  (no data here)`;
+            sel.appendChild(opt);
+            sel.value = previous;
+        }
+    } catch (e) {
+        console.warn('Baseline bands unavailable:', e);
+    }
+}
+
+async function onBaselineBandChange() {
+    selectedBaselineBand = document.getElementById('baseline-band').value;
+    await refreshAll();
+}
+
+async function toggleBaseline() {
+    baselineEnabled = !baselineEnabled;
+    document.getElementById('baseline-toggle').classList.toggle('active', baselineEnabled);
+    await refreshAll();
+}
 
 
 // ═══════════════════════════════════════════════════════════
@@ -360,6 +476,7 @@ async function refreshAll() {
         loadStats(currentUsername),
         loadEloChart(currentUsername),
         loadGames(currentUsername),
+        loadBaselineBands(currentUsername),
         initRepertoireTabs(currentUsername),
     ];
     if (compareMode && currentCompareUsername) {

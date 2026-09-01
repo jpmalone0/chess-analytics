@@ -1523,3 +1523,35 @@ body.compare-mode #stat-winrate     { order: 8; }
     line-height: 1;
 }
 .compare-exit-btn:hover { color: var(--red); }
+/* ── Population baseline picker ─────────────────────────── */
+
+.baseline-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.baseline-picker select {
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.85rem;
+    font-family: inherit;
+}
+
+.baseline-toggle {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.baseline-toggle.active {
+    color: var(--text-primary);
+    border-color: rgba(148, 163, 184, 0.85);
+}
