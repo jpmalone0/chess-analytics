@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session  # noqa: F401 — used via Depends(get_db)
 
-from app import crud, schemas
+from app import baselines, crud, schemas
 from app.database import get_db, init_db
 
 app = FastAPI(title="Chess Analytics", version="1.0.0")
@@ -333,3 +333,58 @@ def top_openings(
         db, player.player_id, time_class,
         start_date, end_date, limit=10
     )
+
+
+# ── Population Baselines ─────────────────────────────────
+
+def _baseline_response(db, username, fn, *, time_class, start_date, end_date,
+                       player_color, opening_names, elo_band):
+    player = crud.get_player(db, username)
+    if not player:
+        raise HTTPException(404, f"Player '{username}' not found")
+    band = baselines.resolve_band(
+        db, player.player_id, time_class=time_class,
+        start_date=start_date, end_date=end_date,
+        player_color=player_color, opening_names=opening_names,
+        selected_band=elo_band,
+    )
+    data = fn(db, player.player_id, band, time_class, player_color, opening_names)
+    if data is None:
+        return {"data": None, "meta": None}
+    return {"data": data, "meta": baselines.band_meta(band)}
+
+
+@app.get("/api/players/{username}/analytics/baseline-bands")
+def baseline_bands(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Elo bands with enough data to serve as a baseline under these filters."""
+    player = crud.get_player(db, username)
+    if not player:
+        raise HTTPException(404, f"Player '{username}' not found")
+
+    tc = baselines.dominant_time_control(
+        db, player.player_id, time_class=time_class,
+        start_date=start_date, end_date=end_date,
+        player_color=player_color, opening_names=opening_names,
+    )
+    bands = baselines.available_bands(
+        db, player.player_id, time_class=time_class, time_control=tc,
+        player_color=player_color, opening_names=opening_names,
+    )
+    median = baselines.player_median_elo(
+        db, player.player_id, time_class=time_class,
+        start_date=start_date, end_date=end_date,
+        player_color=player_color, opening_names=opening_names,
+    )
+    return {
+        "bands": bands,
+        "player_band": (median // 100) * 100 if median is not None else None,
+        "time_control": tc,
+    }

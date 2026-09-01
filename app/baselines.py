@@ -257,3 +257,72 @@ def resolve_band(
                     "source": source,
                 }
     return None
+
+
+def available_bands(
+    db: Session,
+    player_id: int,
+    time_class: Optional[str] = None,
+    time_control: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+) -> list[dict]:
+    """
+    Every 100-band that clears the min-sample floor, for the dropdown.
+
+    One grouped pass rather than a probe per band. Bands below the floor are
+    omitted entirely, so the dropdown can never offer a band that renders empty
+    — and the resulting gaps are themselves informative about the corpus.
+
+    The cap here applies across all bands for a player rather than within each
+    band, so counts can only understate what resolve_band would find. That is
+    the safe direction: the dropdown never offers a band that then comes back
+    empty.
+    """
+    cte, params = _population_cte(
+        elo_lo=0, elo_hi=4000, exclude_player_id=player_id,
+        time_control=time_control, time_class=time_class,
+        player_color=player_color, opening_names=opening_names,
+    )
+    params["min_players"] = MIN_PLAYERS
+    params["min_games"] = MIN_GAMES
+
+    rows = db.execute(text(f"""
+        WITH {cte},
+        banded AS (
+            SELECT pop.pid,
+                   (CASE WHEN pop.side = 'white' THEN g.white_elo ELSE g.black_elo END / 100) * 100 AS elo_lo
+            FROM   pop JOIN games g ON g.game_id = pop.game_id
+        )
+        SELECT elo_lo,
+               COUNT(DISTINCT pid) AS n_players,
+               COUNT(*)            AS n_games
+        FROM   banded
+        GROUP  BY elo_lo
+        HAVING n_players >= :min_players AND n_games >= :min_games
+        ORDER  BY elo_lo
+    """), params).mappings().all()
+
+    return [
+        {
+            "elo_lo": int(r["elo_lo"]),
+            "elo_hi": int(r["elo_lo"]) + 99,
+            "n_players": r["n_players"],
+            "n_games": r["n_games"],
+        }
+        for r in rows
+    ]
+
+
+def band_meta(band: dict) -> dict:
+    """The band description the frontend puts in the chart label."""
+    return {
+        "elo_band": [band["elo_lo"], band["elo_hi"]],
+        "time_control": band["time_control"],
+        "time_class": band["time_class"],
+        "n_players": band["n_players"],
+        "n_games": band["n_games"],
+        "widened": band["widened"],
+        "tc_fallback": band["tc_fallback"],
+        "source": band["source"],
+    }

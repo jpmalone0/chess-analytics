@@ -111,3 +111,20 @@ def test_dominant_time_control_is_the_modal_one(db):
     db.commit()
 
     assert baselines.dominant_time_control(db, target.player_id, time_class="rapid") == "600"
+
+
+def test_available_bands_omits_bands_below_floor(db):
+    seed_band(db, 1500, n_players=300, games_each=2)  # viable
+    seed_band(db, 1700, n_players=5, games_each=1)    # too thin
+    target = make_player(db, "target")
+    db.commit()
+
+    bands = baselines.available_bands(
+        db, player_id=target.player_id, time_class="rapid", time_control="600")
+
+    los = [b["elo_lo"] for b in bands]
+    assert 1500 in los
+    assert 1700 not in los
+    entry = next(b for b in bands if b["elo_lo"] == 1500)
+    assert entry["elo_hi"] == 1599
+    assert entry["n_players"] >= baselines.MIN_PLAYERS
