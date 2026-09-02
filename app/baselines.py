@@ -70,22 +70,30 @@ def _population_cte(
     sides: list[str] = []
     if player_color != "black":
         sides.append(f"""
-            SELECT g.game_id, g.white_player_id AS pid, 'white' AS side, g.end_time
+            SELECT g.game_id, g.white_player_id AS pid, 'white' AS side,
+                   g.date_played, g.end_time
             FROM   games g
             WHERE  g.white_elo >= :elo_lo AND g.white_elo <= :elo_hi
               AND  g.white_player_id != :exclude_pid{shared_sql}""")
     if player_color != "white":
         sides.append(f"""
-            SELECT g.game_id, g.black_player_id AS pid, 'black' AS side, g.end_time
+            SELECT g.game_id, g.black_player_id AS pid, 'black' AS side,
+                   g.date_played, g.end_time
             FROM   games g
             WHERE  g.black_elo >= :elo_lo AND g.black_elo <= :elo_hi
               AND  g.black_player_id != :exclude_pid{shared_sql}""")
 
+    # Order by date_played first: end_time is NULL on ~92% of rows, so ordering
+    # on it alone left the cap picking an arbitrary 100 games rather than the
+    # most recent ones. game_id breaks remaining ties so the set is stable.
     cte = f"""
         sides AS ({" UNION ALL ".join(sides)}),
         capped AS (
             SELECT game_id, pid, side,
-                   ROW_NUMBER() OVER (PARTITION BY pid ORDER BY end_time DESC) AS rn
+                   ROW_NUMBER() OVER (
+                       PARTITION BY pid
+                       ORDER BY date_played DESC, end_time DESC, game_id DESC
+                   ) AS rn
             FROM   sides
         ),
         pop AS (SELECT game_id, pid, side FROM capped WHERE rn <= :cap)
@@ -178,6 +186,24 @@ def dominant_time_control(db: Session, player_id: int, **filters) -> Optional[st
     return row["time_control"] if row else None
 
 
+def dominant_time_class(db: Session, player_id: int, **filters) -> Optional[str]:
+    """The player's modal time_class, used when the exact time control is too
+    thin AND the user has not picked a class. Falling back to no time filter at
+    all would pool bullet with rapid, which is meaningless for anything
+    time-based."""
+    where, params = _player_filter_sql(**filters)
+    params["player_id"] = player_id
+    row = db.execute(text(f"""
+        SELECT g.time_class, COUNT(*) AS n
+        FROM   games g
+        WHERE  {where} AND g.time_class IS NOT NULL
+        GROUP  BY g.time_class
+        ORDER  BY n DESC
+        LIMIT  1
+    """), params).mappings().first()
+    return row["time_class"] if row else None
+
+
 def player_median_elo(db: Session, player_id: int, **filters) -> Optional[int]:
     """Median of the player's OWN Elo across their filtered games."""
     where, params = _player_filter_sql(**filters)
@@ -242,10 +268,20 @@ def resolve_band(
     exact_tc = dominant_time_control(db, player_id, **player_filters)
     widths = [0] if source in ("selected", "all") else BAND_WIDENING
 
+    # The class the fallback arm uses. When the user filtered to a class it is
+    # theirs; when they chose "All" we derive their dominant one rather than
+    # pooling every class together.
+    fallback_class = time_class or dominant_time_class(db, player_id, **player_filters)
+
     # Time control blurs first, then the band widens.
-    for tc, tc_fallback in ((exact_tc, False), (None, True)):
+    for tc, tc_class, tc_fallback in (
+        (exact_tc, time_class, False),
+        (None, fallback_class, True),
+    ):
         if tc is None and not tc_fallback:
             continue
+        if tc is None and tc_class is None:
+            continue  # refuse an unconstrained pool: no overlay beats a wrong one
         for width in widths:
             if source == "all":
                 lo, hi = base_lo, base_hi
@@ -253,7 +289,7 @@ def resolve_band(
                 lo, hi = base_lo - width, base_lo + 99 + width
             counts = population_counts(
                 db, elo_lo=lo, elo_hi=hi, exclude_player_id=player_id,
-                time_control=tc, time_class=time_class,
+                time_control=tc, time_class=tc_class,
                 player_color=player_color, opening_names=opening_names,
             )
             if _band_is_viable(counts):
@@ -261,7 +297,7 @@ def resolve_band(
                     "elo_lo": lo,
                     "elo_hi": hi,
                     "time_control": tc,
-                    "time_class": time_class,
+                    "time_class": tc_class,
                     "n_players": counts["n_players"],
                     "n_games": counts["n_games"],
                     "widened": width > 0,
@@ -381,7 +417,7 @@ def move_time_baseline(
 
     cte, params = _population_cte(
         band["elo_lo"], band["elo_hi"], player_id,
-        band["time_control"], time_class, player_color, opening_names,
+        band["time_control"], band["time_class"], player_color, opening_names,
     )
     rows = db.execute(text(f"""
         WITH {cte}
@@ -516,7 +552,7 @@ def game_length_baseline(
 
     cte, params = _population_cte(
         band["elo_lo"], band["elo_hi"], player_id,
-        band["time_control"], time_class, player_color, opening_names,
+        band["time_control"], band["time_class"], player_color, opening_names,
     )
     rows = db.execute(text(f"""
         WITH {cte}
@@ -552,7 +588,7 @@ def rating_diff_baseline(
 
     cte, params = _population_cte(
         band["elo_lo"], band["elo_hi"], player_id,
-        band["time_control"], time_class, player_color, opening_names,
+        band["time_control"], band["time_class"], player_color, opening_names,
     )
     rows = db.execute(text(f"""
         WITH {cte}
@@ -609,7 +645,7 @@ def clock_advantage_baseline(
 
     cte, params = _population_cte(
         band["elo_lo"], band["elo_hi"], player_id,
-        band["time_control"], time_class, player_color, opening_names,
+        band["time_control"], band["time_class"], player_color, opening_names,
     )
     rows = db.execute(text(f"""
         WITH {cte},
@@ -679,7 +715,7 @@ def streak_baseline(
 
     cte, params = _population_cte(
         band["elo_lo"], band["elo_hi"], player_id,
-        band["time_control"], time_class, player_color, opening_names,
+        band["time_control"], band["time_class"], player_color, opening_names,
     )
     params["min_games_per_player"] = STREAK_MIN_GAMES_PER_PLAYER
 
