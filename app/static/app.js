@@ -129,8 +129,7 @@ function defaultBandOptionText(r) {
     if (r.resolved.widened) notes.push('widened');
     if (r.resolved.tc_fallback) notes.push(`all ${r.resolved.time_class || 'time controls'}`);
     return `${lo}–${hi}  (${r.resolved.n_players.toLocaleString()} players)`
-        + (notes.length ? `  ·  ${notes.join(', ')}` : '')
-        + '  ·  you';
+        + (notes.length ? `  ·  ${notes.join(', ')}` : '');
 }
 
 async function loadBaselineBands(username) {
