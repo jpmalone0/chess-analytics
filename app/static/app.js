@@ -25,9 +25,12 @@ let openingsExpanded = false;
 let lastTopOpenings = null;           // cached so the toggle can re-render
 let winrateMode = 'color';
 let winrateWindow = 30;
+// Below this many population games, a bucket's win rate is not reported.
+// At n=100 the standard error on a win rate is about 5 points.
+const BASELINE_MIN_BUCKET_GAMES = 100;
 let baselineEnabled = true;
 let selectedBaselineBand = '';   // '' means "derive from the player"
-let lastBaselineMeta = null;     // drives the empty-state notice
+const baselineResults = {};      // chart -> meta|null, drives the empty-state notice
 
 // Chart.js defaults
 Chart.defaults.color = '#8b9ab8';
@@ -61,17 +64,17 @@ function baselineParams(color, op) {
  * yields null so the caller renders the player's chart alone.
  */
 async function fetchBaseline(username, chart, color, op) {
-    if (!baselineEnabled) { lastBaselineMeta = null; renderBaselineNotice(); return null; }
+    if (!baselineEnabled) { baselineResults[chart] = null; renderBaselineNotice(); return null; }
     try {
         const r = await fetchJSON(
             `/api/players/${username}/analytics/${chart}/baseline${baselineParams(color, op)}`);
         const result = r && r.data ? r : null;
-        lastBaselineMeta = result ? result.meta : null;
+        baselineResults[chart] = result ? result.meta : null;
         renderBaselineNotice();
         return result;
     } catch (e) {
         console.warn(`Baseline unavailable for ${chart}:`, e);
-        lastBaselineMeta = null;
+        baselineResults[chart] = null;
         renderBaselineNotice();
         return null;
     }
@@ -108,7 +111,12 @@ function baselineLabel(meta) {
 function renderBaselineNotice() {
     const el = document.getElementById('baseline-notice');
     if (!el) return;
-    if (baselineEnabled && selectedBaselineBand && !lastBaselineMeta) {
+    // Only when NO chart resolved a baseline. Charts resolve independently —
+    // streak-reaction in particular can come back empty while the rest are
+    // fine — so one null must not speak for the page.
+    const results = Object.values(baselineResults);
+    const noneResolved = results.length > 0 && results.every(m => m === null);
+    if (baselineEnabled && selectedBaselineBand && noneResolved) {
         const lo = Number(selectedBaselineBand);
         const which = selectedBaselineBand === 'all'
             ? 'all players'
@@ -193,6 +201,7 @@ async function refreshBaselineOverlays() {
     for (const k of Object.keys(requestCache)) {
         if (k.includes('/baseline')) delete requestCache[k];
     }
+    for (const k of Object.keys(baselineResults)) delete baselineResults[k];
     loadColorAnalytics(currentUsername, currentOpeningColor, currentOpeningFilter);
 }
 
@@ -1404,11 +1413,21 @@ async function loadWinrateByColor(username, loadId, suffix = '') {
  *  win_rate_no_draws — comparing against win_rate would mix two measures. */
 function attachWinRateBaseline(chartKey, playerBuckets, popBuckets, meta, labelKey) {
     if (!popBuckets || !charts[chartKey]) return;
-    const byBucket = new Map(popBuckets.map(b => [b[labelKey], b.win_rate_no_draws]));
+    // A win rate off a handful of games is noise, not a baseline. Thin buckets
+    // become gaps in the line rather than misleading points — most visible on
+    // streak reaction and the extreme rating-differential buckets.
+    const byBucket = new Map(popBuckets
+        .filter(b => b.total_games >= BASELINE_MIN_BUCKET_GAMES)
+        .map(b => [b[labelKey], b.win_rate_no_draws]));
+    const data = playerBuckets.map(b => byBucket.get(b[labelKey]) ?? null);
+    // Every bucket gated out means there is nothing to draw; adding the dataset
+    // would put a legend entry against an invisible line.
+    if (data.every(v => v === null)) return;
+
     charts[chartKey].data.datasets.push(baselineLineStyle({
         type: 'line',
         label: baselineLabel(meta),
-        data: playerBuckets.map(b => byBucket.get(b[labelKey]) ?? null),
+        data,
         yAxisID: 'y2',
         spanGaps: true,
     }));
@@ -1858,7 +1877,7 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
                     </div>
                     <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
                         <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.15rem;">Peak think move</div>
-                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">move ${playerPeak}</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${playerPeak === null ? '—' : 'move ' + playerPeak}</div>
                         ${popPeak !== null ? `<div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.15rem;">average: move ${popPeak}</div>` : ''}
                     </div>
                 </div>
