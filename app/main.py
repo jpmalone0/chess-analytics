@@ -346,7 +346,8 @@ def _baseline_response(db, username, fn, *, time_class, start_date, end_date,
         db, player.player_id, time_class=time_class,
         start_date=start_date, end_date=end_date,
         player_color=player_color, opening_names=opening_names,
-        selected_band=elo_band,
+        selected_band=None if elo_band in (None, "", "all") else int(elo_band),
+        whole_population=(elo_band == "all"),
     )
     data = fn(db, player.player_id, band, time_class, player_color, opening_names)
     if data is None:
@@ -383,10 +384,23 @@ def baseline_bands(
         start_date=start_date, end_date=end_date,
         player_color=player_color, opening_names=opening_names,
     )
+    # The band the charts will actually use when no band is picked. Returned so
+    # the dropdown's default entry can name a concrete range rather than a
+    # placeholder — it may be widened or class-level, which the label reflects.
+    resolved = baselines.resolve_band(
+        db, player.player_id, time_class=time_class,
+        start_date=start_date, end_date=end_date,
+        player_color=player_color, opening_names=opening_names,
+    )
     return {
         "bands": bands,
         "player_band": (median // 100) * 100 if median is not None else None,
         "time_control": tc,
+        "resolved": baselines.band_meta(resolved) if resolved else None,
+        "all_players": baselines.whole_population_counts(
+            db, player.player_id, time_class=time_class, time_control=tc,
+            player_color=player_color, opening_names=opening_names,
+        ),
     }
 
 
@@ -398,7 +412,7 @@ def move_time_baseline_route(
     end_date: Optional[date] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
-    elo_band: Optional[int] = None,
+    elo_band: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     return _baseline_response(
@@ -415,7 +429,7 @@ def game_length_baseline_route(
     end_date: Optional[date] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
-    elo_band: Optional[int] = None,
+    elo_band: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     return _baseline_response(
@@ -432,7 +446,7 @@ def rating_diff_baseline_route(
     end_date: Optional[date] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
-    elo_band: Optional[int] = None,
+    elo_band: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     return _baseline_response(
@@ -449,7 +463,7 @@ def clock_advantage_baseline_route(
     end_date: Optional[date] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
-    elo_band: Optional[int] = None,
+    elo_band: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     return _baseline_response(
@@ -464,7 +478,7 @@ def streak_baseline_route(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    elo_band: Optional[int] = None,
+    elo_band: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     return _baseline_response(

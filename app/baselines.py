@@ -207,6 +207,7 @@ def resolve_band(
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
     selected_band: Optional[int] = None,
+    whole_population: bool = False,
 ) -> Optional[dict]:
     """
     Decide which population slice to compare against.
@@ -222,7 +223,13 @@ def resolve_band(
         player_color=player_color, opening_names=opening_names,
     )
 
-    if selected_band is not None:
+    if whole_population:
+        # Every rated player at this time control, pooled. Elo stops being a
+        # control here, which is the point: it is the least noisy line
+        # available, at the cost of no longer being like-for-like.
+        base_lo, base_hi = 0, 4000
+        source = "all"
+    elif selected_band is not None:
         base_lo = selected_band
         source = "selected"
     else:
@@ -233,14 +240,17 @@ def resolve_band(
         source = "derived"
 
     exact_tc = dominant_time_control(db, player_id, **player_filters)
-    widths = [0] if source == "selected" else BAND_WIDENING
+    widths = [0] if source in ("selected", "all") else BAND_WIDENING
 
     # Time control blurs first, then the band widens.
     for tc, tc_fallback in ((exact_tc, False), (None, True)):
         if tc is None and not tc_fallback:
             continue
         for width in widths:
-            lo, hi = base_lo - width, base_lo + 99 + width
+            if source == "all":
+                lo, hi = base_lo, base_hi
+            else:
+                lo, hi = base_lo - width, base_lo + 99 + width
             counts = population_counts(
                 db, elo_lo=lo, elo_hi=hi, exclude_player_id=player_id,
                 time_control=tc, time_class=time_class,
@@ -741,3 +751,19 @@ def streak_baseline(
         "after_loss": _build_streak_buckets(loss_buckets),
         "after_win": _build_streak_buckets(win_buckets),
     }
+
+
+def whole_population_counts(
+    db: Session,
+    player_id: int,
+    time_class: Optional[str] = None,
+    time_control: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+) -> dict:
+    """Size of the every-band pool, for the 'All players' dropdown entry."""
+    return population_counts(
+        db, elo_lo=0, elo_hi=4000, exclude_player_id=player_id,
+        time_control=time_control, time_class=time_class,
+        player_color=player_color, opening_names=opening_names,
+    )

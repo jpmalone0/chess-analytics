@@ -97,7 +97,9 @@ function baselineLabel(meta) {
     if (!meta) return 'Average';
     const [lo, hi] = meta.elo_band;
     const tc = meta.tc_fallback ? (meta.time_class || 'all') : meta.time_control;
-    const who = meta.source === 'selected' ? `Compared to ${lo}–${hi}` : `Average ${lo}–${hi}`;
+    const who = meta.source === 'all' ? 'All players'
+        : meta.source === 'selected' ? `Compared to ${lo}–${hi}`
+        : `Average ${lo}–${hi}`;
     return `${who} · ${tc} · ${meta.n_players.toLocaleString()} players`;
 }
 
@@ -108,11 +110,27 @@ function renderBaselineNotice() {
     if (!el) return;
     if (baselineEnabled && selectedBaselineBand && !lastBaselineMeta) {
         const lo = Number(selectedBaselineBand);
-        el.textContent = `No baseline for ${lo}–${lo + 99} under the current filters.`;
+        const which = selectedBaselineBand === 'all'
+            ? 'all players'
+            : `${lo}–${lo + 99}`;
+        el.textContent = `No baseline for ${which} under the current filters.`;
         el.style.display = '';
     } else {
         el.style.display = 'none';
     }
+}
+
+/** Text for the default (auto) entry: the band the charts actually resolved to,
+ *  named concretely. It may be widened or class-level, so say which. */
+function defaultBandOptionText(r) {
+    if (!r.resolved) return 'No baseline available';
+    const [lo, hi] = r.resolved.elo_band;
+    const notes = [];
+    if (r.resolved.widened) notes.push('widened');
+    if (r.resolved.tc_fallback) notes.push(`all ${r.resolved.time_class || 'time controls'}`);
+    return `${lo}–${hi}  (${r.resolved.n_players.toLocaleString()} players)`
+        + (notes.length ? `  ·  ${notes.join(', ')}` : '')
+        + '  ·  you';
 }
 
 async function loadBaselineBands(username) {
@@ -122,12 +140,32 @@ async function loadBaselineBands(username) {
         const r = await fetchJSON(
             `/api/players/${username}/analytics/baseline-bands${buildFilterParams()}`);
         const previous = selectedBaselineBand;
-        sel.innerHTML = '<option value="">Your rating band</option>';
+
+        // The default entry stands in for the player's own band, so listing that
+        // band again below would duplicate it. Only skip it when the resolver
+        // landed on exactly that band — a widened default is a different range.
+        const coveredByDefault = r.resolved && !r.resolved.widened && !r.resolved.tc_fallback
+            ? r.resolved.elo_band[0]
+            : null;
+
+        sel.innerHTML = '';
+        const auto = document.createElement('option');
+        auto.value = '';
+        auto.textContent = defaultBandOptionText(r);
+        sel.appendChild(auto);
+
+        if (r.all_players && r.all_players.n_players) {
+            const all = document.createElement('option');
+            all.value = 'all';
+            all.textContent = `All players  (${r.all_players.n_players.toLocaleString()} players)`;
+            sel.appendChild(all);
+        }
+
         for (const b of r.bands) {
+            if (b.elo_lo === coveredByDefault) continue;
             const opt = document.createElement('option');
             opt.value = b.elo_lo;
-            opt.textContent = `${b.elo_lo}–${b.elo_hi}  (${b.n_players.toLocaleString()} players)`
-                + (b.elo_lo === r.player_band ? '  ·  you' : '');
+            opt.textContent = `${b.elo_lo}–${b.elo_hi}  (${b.n_players.toLocaleString()} players)`;
             sel.appendChild(opt);
         }
         // Selection is sticky across filter changes, even if the band just
@@ -145,15 +183,25 @@ async function loadBaselineBands(username) {
     }
 }
 
+/** Redraw only what the baseline affects. refreshAll() would also refetch
+ *  stats, Elo history, games and openings — none of which depend on the band,
+ *  and the ~900ms it costs makes the control feel unresponsive. */
+async function refreshBaselineOverlays() {
+    for (const k of Object.keys(requestCache)) {
+        if (k.includes('/baseline')) delete requestCache[k];
+    }
+    loadColorAnalytics(currentUsername, currentOpeningColor, currentOpeningFilter);
+}
+
 async function onBaselineBandChange() {
     selectedBaselineBand = document.getElementById('baseline-band').value;
-    await refreshAll();
+    await refreshBaselineOverlays();
 }
 
 async function toggleBaseline() {
     baselineEnabled = !baselineEnabled;
     document.getElementById('baseline-toggle').classList.toggle('active', baselineEnabled);
-    await refreshAll();
+    await refreshBaselineOverlays();
 }
 
 
