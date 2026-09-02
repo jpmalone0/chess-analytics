@@ -153,19 +153,23 @@ async function loadBaselineBands(username) {
         auto.textContent = defaultBandOptionText(r);
         sel.appendChild(auto);
 
-        if (r.all_players && r.all_players.n_players) {
-            const all = document.createElement('option');
-            all.value = 'all';
-            all.textContent = `All players  (${r.all_players.n_players.toLocaleString()} players)`;
-            sel.appendChild(all);
-        }
-
-        for (const b of r.bands) {
+        // Descending: the strongest bands sit nearest the default entry, which
+        // is where a player looking to compare upward will reach first.
+        for (const b of [...r.bands].reverse()) {
             if (b.elo_lo === coveredByDefault) continue;
             const opt = document.createElement('option');
             opt.value = b.elo_lo;
             opt.textContent = `${b.elo_lo}–${b.elo_hi}  (${b.n_players.toLocaleString()} players)`;
             sel.appendChild(opt);
+        }
+
+        // Last: it is the fallback for when sample size matters more than a
+        // like-for-like comparison, not a band anyone scans the list for.
+        if (r.all_players && r.all_players.n_players) {
+            const all = document.createElement('option');
+            all.value = 'all';
+            all.textContent = `All players  (${r.all_players.n_players.toLocaleString()} players)`;
+            sel.appendChild(all);
         }
         // Selection is sticky across filter changes, even if the band just
         // dropped below the floor — the chart says so rather than reverting.
