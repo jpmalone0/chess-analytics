@@ -1445,9 +1445,8 @@ function attachWinRateBaseline(chartKey, playerBuckets, popBuckets, meta, labelK
             label: BASELINE_VOLUME_LABEL,
             data: playerBuckets.map(b =>
                 Math.round((byCount.get(b[labelKey]) ?? 0) * playerTotal / popTotal)),
-            backgroundColor: 'rgba(148, 163, 184, 0.22)',
-            borderColor: 'rgba(148, 163, 184, 0.75)',
-            borderWidth: 1,
+            backgroundColor: 'rgba(148, 163, 184, 0.85)',
+            borderWidth: 0,
             borderRadius: 2,
             // grouped:false overlays it on the player's stack instead of
             // splitting the category, which would halve the bars underneath.
