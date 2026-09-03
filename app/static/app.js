@@ -214,6 +214,10 @@ async function refreshBaselineOverlays() {
         if (k.includes('/baseline')) delete requestCache[k];
     }
     for (const k of Object.keys(baselineResults)) delete baselineResults[k];
+    // Reload the ladder alongside the charts: the dropdown's player counts and
+    // the overlay labels describe the same population, so refreshing one
+    // without the other lets them drift apart as the database grows.
+    await loadBaselineBands(currentUsername);
     loadColorAnalytics(currentUsername, currentOpeningColor, currentOpeningFilter);
 }
 
