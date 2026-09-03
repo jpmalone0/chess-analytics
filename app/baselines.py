@@ -316,11 +316,14 @@ def available_bands(
     opening_names: Optional[str] = None,
 ) -> list[dict]:
     """
-    Every 100-band that clears the min-sample floor, for the dropdown.
+    The band ladder for the dropdown: every 100-band from the lowest viable one
+    to the highest, each flagged for whether it clears the min-sample floor.
 
-    One grouped pass rather than a probe per band. Bands below the floor are
-    omitted entirely, so the dropdown can never offer a band that renders empty
-    — and the resulting gaps are themselves informative about the corpus.
+    Interior bands that fall short are returned rather than dropped — a gap in
+    the ladder is information about the corpus, and omitting it makes the range
+    look continuous when it is not. The frontend greys them out. Bands outside
+    the viable span are omitted entirely: a tail of unusable entries above the
+    strongest real band is noise, not information.
 
     The cap here applies across all bands for a player rather than within each
     band, so counts can only understate what resolve_band would find. That is
@@ -332,8 +335,6 @@ def available_bands(
         time_control=time_control, time_class=time_class,
         player_color=player_color, opening_names=opening_names,
     )
-    params["min_players"] = MIN_PLAYERS
-    params["min_games"] = MIN_GAMES
 
     rows = db.execute(text(f"""
         WITH {cte},
@@ -347,18 +348,29 @@ def available_bands(
                COUNT(*)            AS n_games
         FROM   banded
         GROUP  BY elo_lo
-        HAVING n_players >= :min_players AND n_games >= :min_games
         ORDER  BY elo_lo
     """), params).mappings().all()
 
+    if not rows:
+        return []
+
+    counts = {int(r["elo_lo"]): (r["n_players"], r["n_games"]) for r in rows}
+    viable = [
+        lo for lo, (p, g) in counts.items()
+        if p >= MIN_PLAYERS and g >= MIN_GAMES
+    ]
+    if not viable:
+        return []
+
     return [
         {
-            "elo_lo": int(r["elo_lo"]),
-            "elo_hi": int(r["elo_lo"]) + 99,
-            "n_players": r["n_players"],
-            "n_games": r["n_games"],
+            "elo_lo": lo,
+            "elo_hi": lo + 99,
+            "n_players": counts.get(lo, (0, 0))[0],
+            "n_games": counts.get(lo, (0, 0))[1],
+            "eligible": lo in viable,
         }
-        for r in rows
+        for lo in range(min(viable), max(viable) + 100, 100)
     ]
 
 

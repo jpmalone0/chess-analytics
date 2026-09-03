@@ -1555,3 +1555,8 @@ body.compare-mode #stat-winrate     { order: 8; }
     color: var(--text-primary);
     border-color: rgba(148, 163, 184, 0.85);
 }
+
+.baseline-picker select option:disabled {
+    color: var(--text-muted);
+    font-style: italic;
+}

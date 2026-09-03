@@ -167,7 +167,17 @@ async function loadBaselineBands(username) {
             if (b.elo_lo === coveredByDefault) continue;
             const opt = document.createElement('option');
             opt.value = b.elo_lo;
-            opt.textContent = `${b.elo_lo}–${b.elo_hi}  (${b.n_players.toLocaleString()} players)`;
+            if (b.eligible) {
+                opt.textContent = `${b.elo_lo}–${b.elo_hi}  (${b.n_players.toLocaleString()} players)`;
+            } else {
+                // A gap inside the ladder. Shown, but unselectable — the range
+                // exists, we just don't have enough of it to draw a line from.
+                opt.disabled = true;
+                opt.textContent = `${b.elo_lo}–${b.elo_hi}  `
+                    + (b.n_games
+                        ? `(${b.n_players.toLocaleString()} players · too few)`
+                        : '(no data)');
+            }
             sel.appendChild(opt);
         }
 
