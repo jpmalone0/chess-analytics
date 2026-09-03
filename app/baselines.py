@@ -17,11 +17,49 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 # A band is usable only above both floors.
+#
+# The player floor is the real guard: it is what makes a band an estimate over
+# many people rather than a few. The games floor only rules out bands too sparse
+# to say anything at all — domination by one account is already handled by
+# PER_PLAYER_CAP, and thin per-bucket rates by the frontend's own gate — so it
+# sits well below the player floor's implied game count on purpose.
 MIN_PLAYERS = 30
-MIN_GAMES = 500
+MIN_GAMES = 150
 
 # No single player may contribute more than this to a band.
 PER_PLAYER_CAP = 100
+
+
+def _population_shared_filters(
+    time_control: Optional[str] = None,
+    time_class: Optional[str] = None,
+    opening_names: Optional[str] = None,
+) -> tuple[str, dict]:
+    """The AND-clauses common to every population query, so the band ladder and
+    the per-chart population cannot drift apart in what they filter on.
+
+    time_control wins over time_class when both are given — exact keying first,
+    class-level fallback second.
+    """
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+
+    if time_control:
+        clauses.append("g.time_control = :time_control")
+        params["time_control"] = time_control
+    elif time_class:
+        clauses.append("g.time_class = :time_class")
+        params["time_class"] = time_class
+
+    if opening_names:
+        ops = [o.strip() for o in opening_names.split("|") if o.strip()]
+        if ops:
+            likes = [f"g.opening_name LIKE :bop_{i}" for i in range(len(ops))]
+            clauses.append("(" + " OR ".join(likes) + ")")
+            for i, op in enumerate(ops):
+                params[f"bop_{i}"] = op + "%"
+
+    return (" AND " + " AND ".join(clauses)) if clauses else "", params
 
 
 def _population_cte(
@@ -47,23 +85,9 @@ def _population_cte(
         "cap": PER_PLAYER_CAP,
     }
 
-    shared: list[str] = []
-    if time_control:
-        shared.append("g.time_control = :time_control")
-        params["time_control"] = time_control
-    elif time_class:
-        shared.append("g.time_class = :time_class")
-        params["time_class"] = time_class
-
-    if opening_names:
-        ops = [o.strip() for o in opening_names.split("|") if o.strip()]
-        if ops:
-            likes = [f"g.opening_name LIKE :bop_{i}" for i in range(len(ops))]
-            shared.append("(" + " OR ".join(likes) + ")")
-            for i, op in enumerate(ops):
-                params[f"bop_{i}"] = op + "%"
-
-    shared_sql = (" AND " + " AND ".join(shared)) if shared else ""
+    shared_sql, shared_params = _population_shared_filters(
+        time_control, time_class, opening_names)
+    params.update(shared_params)
 
     # player_color mirrors the player's own filter: if they are looking at their
     # games as white, the population is other people's white games.
@@ -330,25 +354,48 @@ def available_bands(
     the safe direction: the dropdown never offers a band that then comes back
     empty.
     """
-    cte, params = _population_cte(
-        elo_lo=0, elo_hi=4000, exclude_player_id=player_id,
-        time_control=time_control, time_class=time_class,
-        player_color=player_color, opening_names=opening_names,
-    )
+    # Capped per band, not across all bands. resolve_band caps within one
+    # band, so sharing _population_cte here would understate every count and
+    # leave the dropdown disagreeing with the overlay label it describes.
+    shared_sql, params = _population_shared_filters(
+        time_control, time_class, opening_names)
+    params.update({"exclude_pid": player_id, "cap": PER_PLAYER_CAP})
+
+    sides: list[str] = []
+    if player_color != "black":
+        sides.append(f"""
+            SELECT g.white_player_id AS pid,
+                   (g.white_elo / 100) * 100 AS band,
+                   g.date_played, g.end_time, g.game_id
+            FROM   games g
+            WHERE  g.white_elo IS NOT NULL
+              AND  g.white_player_id != :exclude_pid{shared_sql}""")
+    if player_color != "white":
+        sides.append(f"""
+            SELECT g.black_player_id AS pid,
+                   (g.black_elo / 100) * 100 AS band,
+                   g.date_played, g.end_time, g.game_id
+            FROM   games g
+            WHERE  g.black_elo IS NOT NULL
+              AND  g.black_player_id != :exclude_pid{shared_sql}""")
 
     rows = db.execute(text(f"""
-        WITH {cte},
-        banded AS (
-            SELECT pop.pid,
-                   (CASE WHEN pop.side = 'white' THEN g.white_elo ELSE g.black_elo END / 100) * 100 AS elo_lo
-            FROM   pop JOIN games g ON g.game_id = pop.game_id
+        WITH sides AS ({" UNION ALL ".join(sides)}),
+        capped AS (
+            SELECT pid, band,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY pid, band
+                       ORDER BY date_played DESC, end_time DESC, game_id DESC
+                   ) AS rn
+            FROM   sides
         )
-        SELECT elo_lo,
+        SELECT band AS elo_lo,
                COUNT(DISTINCT pid) AS n_players,
                COUNT(*)            AS n_games
-        FROM   banded
-        GROUP  BY elo_lo
-        ORDER  BY elo_lo
+        FROM   capped
+        WHERE  rn <= :cap
+        GROUP  BY band
+        ORDER  BY band
     """), params).mappings().all()
 
     if not rows:

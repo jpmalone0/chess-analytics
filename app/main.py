@@ -8,7 +8,7 @@ import os
 from datetime import date
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session  # noqa: F401 — used via Depends(get_db)
@@ -22,6 +22,17 @@ app = FastAPI(title="Chess Analytics", version="1.0.0")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def no_store_api_responses(request: Request, call_next):
+    """Analytics answers change whenever the database grows, so a browser
+    holding a heuristically-cached copy will show stale player counts against a
+    freshly-loaded dropdown. Nothing under /api is cacheable."""
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.on_event("startup")
