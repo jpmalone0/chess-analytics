@@ -25,9 +25,11 @@ let openingsExpanded = false;
 let lastTopOpenings = null;           // cached so the toggle can re-render
 let winrateMode = 'color';
 let winrateWindow = 30;
-// Below this many population games, a bucket's win rate is not reported.
-// At n=100 the standard error on a win rate is about 5 points.
-const BASELINE_MIN_BUCKET_GAMES = 100;
+// Below this many population games, a bucket's win rate is not reported and
+// its volume bar is drawn faint. At n=50 the standard error on a win rate is
+// about 7 points — loose enough to keep the shoulders of a distribution,
+// tight enough to drop the 10-game tails.
+const BASELINE_MIN_BUCKET_GAMES = 50;
 let baselineEnabled = true;
 let selectedBaselineBand = '';   // '' means "derive from the player"
 const baselineResults = {};      // chart -> meta|null, drives the empty-state notice
@@ -1482,7 +1484,9 @@ function attachWinRateBaseline(chartKey, playerBuckets, popBuckets, meta, labelK
             label: baselineLabel(meta),
             data,
             yAxisID: 'y2',
-            spanGaps: true,
+            // Break rather than bridge: drawing straight across a bucket we
+            // just faded for being too thin would undo the signal.
+            spanGaps: false,
         }));
     }
 
