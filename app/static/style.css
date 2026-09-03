@@ -1543,26 +1543,20 @@ body.compare-mode #stat-winrate     { order: 8; }
 
 .baseline-toggle {
     background: transparent;
-    color: var(--text-secondary);
+    color: var(--text-muted);
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 0.35rem 0.6rem;
     font-size: 0.8rem;
     cursor: pointer;
-    transition: all 0.2s;
 }
 
-.baseline-toggle:hover {
-    color: var(--text-primary);
-    background: var(--bg-card-hover);
-}
-
-/* Filled when on, matching .tc-btn.active — the previous state was a slightly
-   brighter label on a transparent ground, which read as off while on. */
+/* Highlighted when the overlay is OFF, because the button advertises what
+   pressing it will do rather than the state you are already in: blank while
+   the average is showing, lit when pressing it would bring the average back. */
 .baseline-toggle.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: white;
+    color: var(--text-primary);
+    border-color: rgba(148, 163, 184, 0.85);
 }
 
 .baseline-picker select option:disabled {
