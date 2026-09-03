@@ -17,8 +17,14 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 # A band is usable only above both floors.
+#
+# The player floor is the real guard: it is what makes a band an estimate over
+# many people rather than a few. The games floor only rules out bands too sparse
+# to say anything at all — domination by one account is already handled by
+# PER_PLAYER_CAP, and thin per-bucket rates by the frontend's own gate — so it
+# sits well below the player floor's implied game count on purpose.
 MIN_PLAYERS = 30
-MIN_GAMES = 500
+MIN_GAMES = 150
 
 # No single player may contribute more than this to a band.
 PER_PLAYER_CAP = 100
