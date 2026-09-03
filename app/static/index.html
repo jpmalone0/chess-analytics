@@ -64,6 +64,17 @@
                         title="Reset to all time">✕</button>
                 </div>
             </div>
+            <div class="filter-group" id="baseline-group">
+                <label>Compare To</label>
+                <div class="baseline-picker">
+                    <select id="baseline-band" onchange="onBaselineBandChange()">
+                        <option value="">Loading…</option>
+                    </select>
+                    <button class="baseline-toggle active" id="baseline-toggle"
+                        onclick="toggleBaseline()" title="Show or hide the average-player overlay">Overlay</button>
+                </div>
+                <div id="baseline-notice" style="display:none;font-size:0.78rem;color:var(--text-muted);margin-top:0.25rem;"></div>
+            </div>
         </div>
     </div>
 
@@ -291,7 +302,6 @@
                                         <div class="time-chart-row">
                                             <div class="chart-container">
                                                 <canvas id="move-time-by-move-chart"></canvas>
-                                                <span id="move-time-rmse" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);pointer-events:none;"></span>
                                             </div>
                                             <div class="time-side-stats" id="move-time-by-move-stats"></div>
                                         </div>
@@ -300,7 +310,6 @@
                                         <div class="time-chart-row">
                                             <div class="chart-container">
                                                 <canvas id="move-time-by-move-chart-compare"></canvas>
-                                                <span id="move-time-rmse-compare" style="position:absolute;top:4px;right:6px;font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono);pointer-events:none;"></span>
                                             </div>
                                             <div class="time-side-stats" id="move-time-by-move-stats-compare"></div>
                                         </div>
@@ -465,7 +474,7 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=49"></script>
+    <script src="/static/app.js?v=56"></script>
 </body>
 
 </html>
