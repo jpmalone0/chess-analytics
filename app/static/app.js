@@ -1421,8 +1421,46 @@ async function loadWinrateByColor(username, loadId, suffix = '') {
 /** Push the population line onto an already-built win-rate bar chart.
  *  Joins on the bucket label and matches the player's own line, which plots
  *  win_rate_no_draws — comparing against win_rate would mix two measures. */
+// Marked so it can be kept out of the legend: one baseline entry is enough.
+const BASELINE_VOLUME_LABEL = 'Population games (scaled to your total)';
+
+/** Push the population line onto an already-built win-rate bar chart, plus a
+ *  thin volume bar so the distribution is visible and not just the rate.
+ *  Joins on the bucket label and matches the player's own line, which plots
+ *  win_rate_no_draws — comparing against win_rate would mix two measures. */
 function attachWinRateBaseline(chartKey, playerBuckets, popBuckets, meta, labelKey) {
     if (!popBuckets || !charts[chartKey]) return;
+    const chart = charts[chartKey];
+
+    // Volume, rescaled to the player's own game count so both sit on one axis:
+    // the population has far more games, so raw counts would dwarf the bars.
+    // These are counts rather than rates, so the per-bucket gate does not
+    // apply — a thin bucket is a short bar, which is exactly the truth.
+    const popTotal = popBuckets.reduce((sum, b) => sum + b.total_games, 0);
+    const playerTotal = playerBuckets.reduce((sum, b) => sum + b.total_games, 0);
+    if (popTotal > 0 && playerTotal > 0) {
+        const byCount = new Map(popBuckets.map(b => [b[labelKey], b.total_games]));
+        chart.data.datasets.push({
+            type: 'bar',
+            label: BASELINE_VOLUME_LABEL,
+            data: playerBuckets.map(b =>
+                Math.round((byCount.get(b[labelKey]) ?? 0) * playerTotal / popTotal)),
+            backgroundColor: 'rgba(148, 163, 184, 0.22)',
+            borderColor: 'rgba(148, 163, 184, 0.75)',
+            borderWidth: 1,
+            borderRadius: 2,
+            // grouped:false overlays it on the player's stack instead of
+            // splitting the category, which would halve the bars underneath.
+            grouped: false,
+            stack: 'baseline',
+            barPercentage: 0.3,
+            order: 5,
+        });
+        const legend = chart.options.plugins.legend || (chart.options.plugins.legend = {});
+        const labels = legend.labels || (legend.labels = {});
+        labels.filter = (item) => item.text !== BASELINE_VOLUME_LABEL;
+    }
+
     // A win rate off a handful of games is noise, not a baseline. Thin buckets
     // become gaps in the line rather than misleading points — most visible on
     // streak reaction and the extreme rating-differential buckets.
@@ -1430,18 +1468,21 @@ function attachWinRateBaseline(chartKey, playerBuckets, popBuckets, meta, labelK
         .filter(b => b.total_games >= BASELINE_MIN_BUCKET_GAMES)
         .map(b => [b[labelKey], b.win_rate_no_draws]));
     const data = playerBuckets.map(b => byBucket.get(b[labelKey]) ?? null);
-    // Every bucket gated out means there is nothing to draw; adding the dataset
-    // would put a legend entry against an invisible line.
-    if (data.every(v => v === null)) return;
 
-    charts[chartKey].data.datasets.push(baselineLineStyle({
-        type: 'line',
-        label: baselineLabel(meta),
-        data,
-        yAxisID: 'y2',
-        spanGaps: true,
-    }));
-    charts[chartKey].update();
+    // Every bucket gated out means there is nothing to draw; adding the dataset
+    // would put a legend entry against an invisible line. The volume bars above
+    // still stand on their own.
+    if (!data.every(v => v === null)) {
+        chart.data.datasets.push(baselineLineStyle({
+            type: 'line',
+            label: baselineLabel(meta),
+            data,
+            yAxisID: 'y2',
+            spanGaps: true,
+        }));
+    }
+
+    chart.update();
 }
 
 async function loadRatingDiff(username, color, op, loadId, suffix = '') {
