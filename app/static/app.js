@@ -1440,12 +1440,17 @@ function attachWinRateBaseline(chartKey, playerBuckets, popBuckets, meta, labelK
     const playerTotal = playerBuckets.reduce((sum, b) => sum + b.total_games, 0);
     if (popTotal > 0 && playerTotal > 0) {
         const byCount = new Map(popBuckets.map(b => [b[labelKey], b.total_games]));
+        // Buckets too thin for a rate are drawn faint, so a bar with no line
+        // over it reads as "not enough here" rather than as a missing line.
+        const faded = playerBuckets.map(b =>
+            (byCount.get(b[labelKey]) ?? 0) < BASELINE_MIN_BUCKET_GAMES);
         chart.data.datasets.push({
             type: 'bar',
             label: BASELINE_VOLUME_LABEL,
             data: playerBuckets.map(b =>
                 Math.round((byCount.get(b[labelKey]) ?? 0) * playerTotal / popTotal)),
-            backgroundColor: 'rgba(125, 147, 184, 0.97)',
+            backgroundColor: faded.map(f =>
+                f ? 'rgba(125, 147, 184, 0.32)' : 'rgba(125, 147, 184, 0.97)'),
             borderWidth: 0,
             borderRadius: 2,
             // grouped:false overlays it on the player's stack instead of
