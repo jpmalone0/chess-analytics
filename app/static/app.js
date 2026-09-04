@@ -146,8 +146,12 @@ async function loadBaselineBands(username) {
     const sel = document.getElementById('baseline-band');
     if (!sel) return;
     try {
-        const r = await fetchJSON(
-            `/api/players/${username}/analytics/baseline-bands${buildFilterParams()}`);
+        // Same filters the charts send, colour and opening included. Sending
+        // only time_class here made the ladder describe a different population
+        // than the labels beside it — with Black Pieces selected the dropdown
+        // counted both sides while every overlay counted one.
+        const r = await fetchJSON(`/api/players/${username}/analytics/baseline-bands`
+            + colorParams(currentOpeningColor, currentOpeningFilter));
         const previous = selectedBaselineBand;
 
         // The default entry stands in for the player's own band, so listing that
@@ -214,10 +218,8 @@ async function refreshBaselineOverlays() {
         if (k.includes('/baseline')) delete requestCache[k];
     }
     for (const k of Object.keys(baselineResults)) delete baselineResults[k];
-    // Reload the ladder alongside the charts: the dropdown's player counts and
-    // the overlay labels describe the same population, so refreshing one
-    // without the other lets them drift apart as the database grows.
-    await loadBaselineBands(currentUsername);
+    // loadColorAnalytics rebuilds the ladder too, so the dropdown's counts and
+    // the overlay labels beside them always describe the same population.
     loadColorAnalytics(currentUsername, currentOpeningColor, currentOpeningFilter);
 }
 
@@ -553,7 +555,6 @@ async function refreshAll() {
         loadStats(currentUsername),
         loadEloChart(currentUsername),
         loadGames(currentUsername),
-        loadBaselineBands(currentUsername),
         initRepertoireTabs(currentUsername),
     ];
     if (compareMode && currentCompareUsername) {
@@ -1255,6 +1256,11 @@ function loadColorAnalytics(username, color, op) {
 
     syncOpeningFilterUI(op);
     syncTimeUsageAvailability();
+
+    // The ladder is filtered by colour and opening just like the overlays, so
+    // it has to be rebuilt whenever those change — otherwise it keeps counting
+    // a population the charts are no longer using.
+    loadBaselineBands(username);
 
     ++analyticsLoadId;
     if (compareMode && currentCompareUsername) ++compareLoadId;
