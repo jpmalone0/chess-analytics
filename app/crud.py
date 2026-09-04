@@ -227,8 +227,12 @@ def get_player_stats(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
 ):
-    where, params = _build_game_filters(player_id, time_class, start_date, end_date)
+    where, params = _build_game_filters(
+        player_id, time_class, start_date, end_date, player_color, opening_names
+    )
 
     # Overall totals via CTE
     sql = text(f"""

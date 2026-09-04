@@ -636,7 +636,8 @@ function exitCompareMode() {
 
 async function loadCompareStats(username) {
     try {
-        const data = await fetchJSON(`/api/players/${username}/stats${buildFilterParams()}`);
+        const data = await fetchJSON(`/api/players/${username}/stats`
+            + colorParams(currentOpeningColor, currentOpeningFilter));
         let stats = data;
 
         if (currentTimeClass && data.by_time_class[currentTimeClass]) {
@@ -671,7 +672,8 @@ async function loadCompareStats(username) {
 
 async function loadStats(username) {
     try {
-        const data = await fetchJSON(`/api/players/${username}/stats${buildFilterParams()}`);
+        const data = await fetchJSON(`/api/players/${username}/stats`
+            + colorParams(currentOpeningColor, currentOpeningFilter));
         let stats = data;
 
         if (currentTimeClass && data.by_time_class[currentTimeClass]) {
@@ -1300,6 +1302,12 @@ function loadColorAnalytics(username, color, op) {
     // it has to be rebuilt whenever those change — otherwise it keeps counting
     // a population the charts are no longer using.
     loadBaselineBands(username);
+
+    // Player Overview reads the same filters, so it has to follow them too:
+    // a card still totalling every game while the charts below show one
+    // opening is the same kind of contradiction.
+    loadStats(username);
+    if (compareMode && currentCompareUsername) loadCompareStats(currentCompareUsername);
 
     ++analyticsLoadId;
     if (compareMode && currentCompareUsername) ++compareLoadId;

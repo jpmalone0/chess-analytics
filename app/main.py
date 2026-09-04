@@ -73,6 +73,8 @@ def player_stats(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     player = crud.get_player(db, username)
@@ -81,6 +83,7 @@ def player_stats(
     return crud.get_player_stats(
         db, player.player_id,
         time_class=time_class, start_date=start_date, end_date=end_date,
+        player_color=player_color, opening_names=opening_names,
     )
 
 
