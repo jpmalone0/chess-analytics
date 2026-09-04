@@ -828,6 +828,7 @@ def elo_history(
     sql = text(f"""
         SELECT
             g.date_played,
+            g.end_time,
             CASE WHEN g.white_player_id = :player_id
                  THEN g.white_elo ELSE g.black_elo
             END AS elo,
@@ -838,12 +839,22 @@ def elo_history(
           AND CASE WHEN g.white_player_id = :player_id
                    THEN g.white_elo ELSE g.black_elo
               END IS NOT NULL
-        ORDER BY g.date_played ASC, g.game_id ASC
+        ORDER BY g.date_played ASC, g.end_time ASC, g.game_id ASC
     """)
     rows = db.execute(sql, params).mappings().all()
 
+    # Plot against the viewer's calendar day, not the PGN's UTC date, or an
+    # evening game lands on tomorrow's tick and the axis runs past the end of
+    # the range the user selected.
+    zone = _zone_or_default(tz)
+
+    def _point_date(r) -> str:
+        if r["end_time"] is not None:
+            return datetime.fromtimestamp(r["end_time"], tz=zone).date().isoformat()
+        return str(r["date_played"])
+
     raw: list[dict[str, Any]] = [
-        {"date": str(r["date_played"]), "elo": r["elo"], "time_class": r["time_class"]}
+        {"date": _point_date(r), "elo": r["elo"], "time_class": r["time_class"]}
         for r in rows
     ]
 
@@ -894,18 +905,17 @@ def get_top_openings(
         win_case  = "result = '1-0'" if color == "white" else "result = '0-1'"
         loss_case = "result = '0-1'" if color == "white" else "result = '1-0'"
 
-        base_clauses = [f"{color}_player_id = :player_id"]
+        base_clauses = [f"g.{color}_player_id = :player_id"]
         params: dict[str, Any] = {"player_id": player_id}
 
         if time_class:
-            base_clauses.append("time_class = :time_class")
+            base_clauses.append("g.time_class = :time_class")
             params["time_class"] = time_class
-        if start_date:
-            base_clauses.append("date_played >= :start_date")
-            params["start_date"] = start_date
-        if end_date:
-            base_clauses.append("date_played <= :end_date")
-            params["end_date"] = end_date
+        # Same timezone-aware range as every other query. The clause is written
+        # against the alias "g", so both statements below alias games as g.
+        date_clause = _date_range_clause(start_date, end_date, tz, params)
+        if date_clause:
+            base_clauses.append(date_clause)
 
         # Total stats across all games for this color
         total_where = " AND ".join(base_clauses)
@@ -915,7 +925,7 @@ def get_top_openings(
                 SUM(CASE WHEN {win_case}          THEN 1 ELSE 0 END) AS wins,
                 SUM(CASE WHEN result = '1/2-1/2'  THEN 1 ELSE 0 END) AS draws,
                 SUM(CASE WHEN {loss_case}          THEN 1 ELSE 0 END) AS losses
-            FROM   games
+            FROM   games g
             WHERE  {total_where}
         """), params).mappings().first()
         if tot is not None:
@@ -924,7 +934,8 @@ def get_top_openings(
             )
 
         # Per-opening stats
-        opening_where = " AND ".join(base_clauses + ["opening_name IS NOT NULL", "opening_name != ''"])
+        opening_where = " AND ".join(
+            base_clauses + ["g.opening_name IS NOT NULL", "g.opening_name != ''"])
         rows = db.execute(text(f"""
             SELECT
                 opening_name,
@@ -932,7 +943,7 @@ def get_top_openings(
                 SUM(CASE WHEN {win_case}          THEN 1 ELSE 0 END) AS wins,
                 SUM(CASE WHEN result = '1/2-1/2'  THEN 1 ELSE 0 END) AS draws,
                 SUM(CASE WHEN {loss_case}          THEN 1 ELSE 0 END) AS losses
-            FROM   games
+            FROM   games g
             WHERE  {opening_where}
             GROUP BY opening_name
         """), params).mappings().all()

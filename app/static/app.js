@@ -41,6 +41,17 @@ Chart.defaults.font.family = "'Inter', sans-serif";
 Chart.defaults.font.size = 12;
 
 const toMs = s => Date.parse(s);
+
+/** Parse a date-input value (YYYY-MM-DD) as local midnight.
+ *
+ *  Date.parse treats a bare date as UTC but a bare date-time as local, so
+ *  mixing the two put the axis start four hours behind the selected day and
+ *  drew a point on the evening before it. */
+function localDateMs(value) {
+    if (!value) return null;
+    const [y, m, d] = value.split('-').map(Number);
+    return new Date(y, m - 1, d).getTime();
+}
 const fmtDate = ms => new Date(ms).toISOString().slice(0, 10);
 const TIME_CLASS_COLORS = { bullet: '#ef4444', blitz: '#eab308', rapid: '#22c55e' };
 const DEFAULT_COLOR = '#3792b8';
@@ -746,7 +757,7 @@ async function loadEloChart(username, suffix = '') {
         let xMax = actualXMax;
 
         // Honor the selected start date so the axis begins there even if data starts later
-        const selectedStart = getStartDate() ? Date.parse(getStartDate()) : null;
+        const selectedStart = localDateMs(getStartDate());
         const xMin = (selectedStart && selectedStart < dataXMin) ? selectedStart : dataXMin;
 
         const datasets = [];
