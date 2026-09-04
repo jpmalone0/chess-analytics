@@ -294,12 +294,18 @@ function hideSyncBanner() {
 // ═══════════════════════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Default to last 30 days
+    // Default to the last 30 days, in UTC.
+    //
+    // games.date_played comes from the PGN's UTCDate header, so the filter
+    // compares against UTC calendar dates. Defaulting the end to the browser's
+    // local date hid every game finished after 20:00 US Eastern — those carry
+    // the next day's UTC date, so they fell outside a range ending "today"
+    // until local midnight caught up.
     const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const today = now.toISOString().slice(0, 10);
     const monthAgo = new Date(now);
-    monthAgo.setMonth(monthAgo.getMonth() - 1);
-    const startDefault = `${monthAgo.getFullYear()}-${String(monthAgo.getMonth() + 1).padStart(2, '0')}-${String(monthAgo.getDate()).padStart(2, '0')}`;
+    monthAgo.setUTCMonth(monthAgo.getUTCMonth() - 1);
+    const startDefault = monthAgo.toISOString().slice(0, 10);
     document.getElementById('start-date').value = startDefault;
     document.getElementById('end-date').value = today;
 
