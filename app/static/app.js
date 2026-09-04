@@ -1116,10 +1116,11 @@ async function initRepertoireTabs(username) {
         // The rebuilt table may no longer list the active opening (e.g. it drops
         // out of the top N after a time-class change). Leaving the filter set
         // would strand it: nothing selectable to clear it, charts still filtered.
-        if (currentOpeningFilter && !visibleOpeningRow(currentOpeningFilter)) {
-            currentOpeningFilter = '';
+        const stillListed = openingList(currentOpeningFilter).filter(o => visibleOpeningRow(o));
+        if (stillListed.length !== openingList(currentOpeningFilter).length) {
+            currentOpeningFilter = openingFilterString(stillListed);
             gamesPage = 0;
-            loadColorAnalytics(username, currentOpeningColor, '');
+            loadColorAnalytics(username, currentOpeningColor, currentOpeningFilter);
             loadGames(username);
             if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
             return;
@@ -1129,6 +1130,17 @@ async function initRepertoireTabs(username) {
         // filter indicator so it survives the refresh.
         syncOpeningFilterUI(currentOpeningFilter);
     } catch (e) { console.error('Error loading top openings', e); }
+}
+
+/** The opening filter travels as a "|"-joined string, matching what
+ *  crud._build_game_filters already splits on, so every URL that carries it
+ *  needs no change. These two keep the string and the list in step. */
+function openingList(filter) {
+    return filter ? filter.split('|').filter(Boolean) : [];
+}
+
+function openingFilterString(list) {
+    return list.join('|');
 }
 
 /** The row for an opening in whichever stats table is currently shown. */
@@ -1167,9 +1179,12 @@ function applyOpeningColor(color) {
 function attachOpeningRowFilters(container) {
     container.querySelectorAll('tr[data-op]').forEach(tr => {
         tr.classList.add('opening-row-clickable');
-        tr.title = 'Filter charts and games by this opening';
+        tr.title = 'Add or remove this opening from the filter';
         tr.addEventListener('click', () => {
-            applyOpeningFilter(tr.dataset.op === currentOpeningFilter ? '' : tr.dataset.op);
+            const ops = openingList(currentOpeningFilter);
+            const at = ops.indexOf(tr.dataset.op);
+            if (at >= 0) ops.splice(at, 1); else ops.push(tr.dataset.op);
+            applyOpeningFilter(openingFilterString(ops));
         });
     });
 
@@ -1193,24 +1208,28 @@ function attachOpeningRowFilters(container) {
  * content that sits screens below the table you clicked.
  */
 function syncOpeningFilterUI(op) {
-    let label = op;
-    const selected = op && visibleOpeningRow(op);
-    if (selected) label = selected.dataset.name || op;
+    const ops = openingList(op);
+    const active = new Set(ops);
+    // Prefer each row's display name; fall back to the raw filter value for
+    // openings whose row is not currently on screen.
+    const label = ops
+        .map(o => (visibleOpeningRow(o)?.dataset.name) || o)
+        .join(', ');
 
     const row = document.getElementById('analytics-filter-row');
     if (row) {
-        row.classList.toggle('hidden', !op);
-        if (op) document.getElementById('analytics-filter-name').textContent = label;
+        row.classList.toggle('hidden', ops.length === 0);
+        if (ops.length) document.getElementById('analytics-filter-name').textContent = label;
     }
 
     const chip = document.getElementById('games-filter-chip');
     if (chip) {
-        chip.classList.toggle('hidden', !op);
-        if (op) document.getElementById('games-filter-name').textContent = label;
+        chip.classList.toggle('hidden', ops.length === 0);
+        if (ops.length) document.getElementById('games-filter-name').textContent = label;
     }
 
     document.querySelectorAll('.opening-stats-table tr[data-op]').forEach(tr => {
-        tr.classList.toggle('opening-row-active', !!op && tr.dataset.op === op);
+        tr.classList.toggle('opening-row-active', active.has(tr.dataset.op));
     });
 
     // With no perspective tabs, the highlighted summary row is the only cue for
@@ -1219,7 +1238,7 @@ function syncOpeningFilterUI(op) {
     document.querySelectorAll('.opening-stats-table tr[data-color-target]').forEach(tr => {
         const target = tr.dataset.colorTarget;
         const active = target === 'global'
-            ? (currentOpeningColor === 'global' && !op)
+            ? (currentOpeningColor === 'global' && ops.length === 0)
             : target === currentOpeningColor;
         tr.classList.toggle('opening-row-active', active);
     });

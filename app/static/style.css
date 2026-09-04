@@ -714,9 +714,43 @@ body {
     white-space: nowrap;
 }
 
+.filter-chip {
+    max-width: 100%;
+}
+
+/* The name list grows with each opening picked, so it scrolls sideways inside
+   the chip rather than pushing the clear button out of the layout. */
 .filter-chip strong {
     color: var(--accent-light);
     font-weight: 600;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    /* Grow with the list and only start scrolling once the chip has reached
+       the container's edge — min-width:0 is what lets a flex item shrink below
+       its content width, without it the chip would just overflow the card. */
+    flex: 0 1 auto;
+    min-width: 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent) transparent;
+}
+
+.filter-chip strong::-webkit-scrollbar {
+    height: 4px;
+}
+
+.filter-chip strong::-webkit-scrollbar-thumb {
+    background: var(--accent);
+    border-radius: 999px;
+}
+
+.filter-chip strong::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* The clear button must stay reachable no matter how long the list gets. */
+.filter-chip-clear {
+    flex: 0 0 auto;
 }
 
 .filter-chip-clear {
