@@ -698,7 +698,47 @@ body {
 
 /* "Filtered to X" chip shown wherever the opening filter is in effect */
 .filter-chip-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     margin-bottom: 0.9rem;
+    min-width: 0;
+}
+
+/* Plain text, deliberately outside the chips: it labels the row, it is not
+   one of the things being filtered on. */
+.filter-chip-label {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+/* Scrolls sideways once the chips reach the container edge, rather than
+   wrapping and pushing the charts down. */
+.filter-chip-list {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent) transparent;
+}
+
+.filter-chip-list::-webkit-scrollbar {
+    height: 4px;
+}
+
+.filter-chip-list::-webkit-scrollbar-thumb {
+    background: var(--accent);
+    border-radius: 999px;
+}
+
+.filter-chip-list::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 .filter-chip {
@@ -709,49 +749,14 @@ body {
     border: 1px solid var(--accent);
     border-radius: 999px;
     background: var(--accent-glow);
-    color: var(--text-secondary);
-    font-size: 0.8rem;
-    white-space: nowrap;
-}
-
-.filter-chip {
-    max-width: 100%;
-}
-
-/* The name list grows with each opening picked, so it scrolls sideways inside
-   the chip rather than pushing the clear button out of the layout. */
-.filter-chip strong {
     color: var(--accent-light);
+    font-size: 0.8rem;
     font-weight: 600;
-    overflow-x: auto;
-    overflow-y: hidden;
     white-space: nowrap;
-    /* Grow with the list and only start scrolling once the chip has reached
-       the container's edge — min-width:0 is what lets a flex item shrink below
-       its content width, without it the chip would just overflow the card. */
-    flex: 0 1 auto;
-    min-width: 0;
-    scrollbar-width: thin;
-    scrollbar-color: var(--accent) transparent;
-}
-
-.filter-chip strong::-webkit-scrollbar {
-    height: 4px;
-}
-
-.filter-chip strong::-webkit-scrollbar-thumb {
-    background: var(--accent);
-    border-radius: 999px;
-}
-
-.filter-chip strong::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-/* The clear button must stay reachable no matter how long the list gets. */
-.filter-chip-clear {
     flex: 0 0 auto;
 }
+
+
 
 .filter-chip-clear {
     display: inline-flex;

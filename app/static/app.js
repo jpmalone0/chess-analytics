@@ -1207,25 +1207,49 @@ function attachOpeningRowFilters(container) {
  * highlight on the selected row. Without these the filter only changes
  * content that sits screens below the table you clicked.
  */
+/** Drop a single opening from the filter, leaving the rest in place. */
+function removeOpeningFromFilter(op) {
+    applyOpeningFilter(openingFilterString(
+        openingList(currentOpeningFilter).filter(o => o !== op)));
+}
+
+/** One chip per opening, each removable on its own. Built as nodes rather
+ *  than markup so opening names go in as text and never as HTML. */
+function renderOpeningChips(container, ops) {
+    if (!container) return;
+    container.textContent = '';
+    for (const op of ops) {
+        const name = visibleOpeningRow(op)?.dataset.name || op;
+
+        const chip = document.createElement('span');
+        chip.className = 'filter-chip';
+        chip.appendChild(document.createTextNode(name));
+
+        const clear = document.createElement('button');
+        clear.className = 'filter-chip-clear';
+        clear.textContent = '✕';
+        clear.title = `Remove ${name} from the filter`;
+        clear.addEventListener('click', () => removeOpeningFromFilter(op));
+
+        chip.appendChild(clear);
+        container.appendChild(chip);
+    }
+}
+
 function syncOpeningFilterUI(op) {
     const ops = openingList(op);
     const active = new Set(ops);
-    // Prefer each row's display name; fall back to the raw filter value for
-    // openings whose row is not currently on screen.
-    const label = ops
-        .map(o => (visibleOpeningRow(o)?.dataset.name) || o)
-        .join(', ');
 
     const row = document.getElementById('analytics-filter-row');
     if (row) {
         row.classList.toggle('hidden', ops.length === 0);
-        if (ops.length) document.getElementById('analytics-filter-name').textContent = label;
+        renderOpeningChips(document.getElementById('analytics-filter-chips'), ops);
     }
 
     const chip = document.getElementById('games-filter-chip');
     if (chip) {
         chip.classList.toggle('hidden', ops.length === 0);
-        if (ops.length) document.getElementById('games-filter-name').textContent = label;
+        renderOpeningChips(document.getElementById('games-filter-chips'), ops);
     }
 
     document.querySelectorAll('.opening-stats-table tr[data-op]').forEach(tr => {
@@ -1253,10 +1277,6 @@ function syncTimeUsageAvailability() {
     document.getElementById('time-usage-note')?.classList.toggle('hidden', available);
     document.getElementById('time-usage-grid')?.classList.toggle('hidden', !available);
     return available;
-}
-
-function clearOpeningFilter() {
-    applyOpeningFilter('');
 }
 
 function loadColorAnalytics(username, color, op) {
