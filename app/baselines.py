@@ -16,6 +16,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app import crud
+
 # A band is usable only above both floors.
 #
 # The player floor is the real guard: it is what makes a band an estimate over
@@ -157,6 +159,7 @@ def _player_filter_sql(
     end_date: Optional[date] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
+    tz: Optional[str] = None,
 ) -> tuple[str, dict]:
     """WHERE clause over the searched player's own games. Mirrors
     crud._build_game_filters but is duplicated deliberately: this module must
@@ -174,12 +177,9 @@ def _player_filter_sql(
     if time_class:
         clauses.append("g.time_class = :time_class")
         params["time_class"] = time_class
-    if start_date:
-        clauses.append("g.date_played >= :start_date")
-        params["start_date"] = start_date
-    if end_date:
-        clauses.append("g.date_played <= :end_date")
-        params["end_date"] = end_date
+    date_clause = crud._date_range_clause(start_date, end_date, tz, params)
+    if date_clause:
+        clauses.append(date_clause)
     if opening_names:
         ops = [o.strip() for o in opening_names.split("|") if o.strip()]
         if ops:
@@ -258,6 +258,7 @@ def resolve_band(
     opening_names: Optional[str] = None,
     selected_band: Optional[int] = None,
     whole_population: bool = False,
+    tz: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Decide which population slice to compare against.
@@ -270,7 +271,7 @@ def resolve_band(
     """
     player_filters = dict(
         time_class=time_class, start_date=start_date, end_date=end_date,
-        player_color=player_color, opening_names=opening_names,
+        player_color=player_color, opening_names=opening_names, tz=tz,
     )
 
     if whole_population:

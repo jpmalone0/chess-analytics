@@ -73,6 +73,7 @@ def player_stats(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -83,7 +84,7 @@ def player_stats(
     return crud.get_player_stats(
         db, player.player_id,
         time_class=time_class, start_date=start_date, end_date=end_date,
-        player_color=player_color, opening_names=opening_names,
+        player_color=player_color, opening_names=opening_names, tz=tz,
     )
 
 
@@ -96,6 +97,7 @@ def sync_player(
     username: str,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -121,6 +123,7 @@ def list_games(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     opening_names: Optional[str] = None,
@@ -136,7 +139,7 @@ def list_games(
         start_date=start_date, end_date=end_date,
         limit=limit, offset=offset,
         opening_names=opening_names,
-        player_color=player_color,
+        player_color=player_color, tz=tz,
     )
 
     result = []
@@ -193,6 +196,7 @@ def rating_diff(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -202,7 +206,7 @@ def rating_diff(
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.rating_differential(
         db, player.player_id, time_class,
-        start_date, end_date, player_color, opening_names
+        start_date, end_date, player_color, opening_names, tz=tz,
     )
 
 
@@ -212,6 +216,7 @@ def game_length(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -221,7 +226,7 @@ def game_length(
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.game_length_vs_winrate(
         db, player.player_id, time_class,
-        start_date, end_date, player_color, opening_names
+        start_date, end_date, player_color, opening_names, tz=tz,
     )
 
 
@@ -232,6 +237,7 @@ def clock_advantage(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -241,7 +247,7 @@ def clock_advantage(
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.analyze_clock_advantage(
         db, player.player_id, time_class,
-        start_date, end_date, player_color, opening_names
+        start_date, end_date, player_color, opening_names, tz=tz,
     )
 
 
@@ -251,6 +257,7 @@ def elo_history(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     player = crud.get_player(db, username)
@@ -258,7 +265,7 @@ def elo_history(
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.elo_history(
         db, player.player_id, time_class,
-        start_date, end_date,
+        start_date, end_date, tz=tz,
     )
 
 
@@ -268,6 +275,7 @@ def move_time(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -277,7 +285,7 @@ def move_time(
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.move_time_stats(
         db, player.player_id, time_class,
-        start_date, end_date, player_color, opening_names
+        start_date, end_date, player_color, opening_names, tz=tz,
     )
 
 
@@ -287,6 +295,7 @@ def winrate_by_color(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     window_games: int = 30,
     db: Session = Depends(get_db),
 ):
@@ -294,7 +303,7 @@ def winrate_by_color(
     if not player:
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.winrate_by_color_rolling(
-        db, player.player_id, time_class, start_date, end_date, window_games=window_games,
+        db, player.player_id, time_class, start_date, end_date, window_games=window_games, tz=tz,
     )
 
 
@@ -304,6 +313,7 @@ def winrate_vs_opening(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     window_games: int = 30,
     db: Session = Depends(get_db),
 ):
@@ -311,7 +321,7 @@ def winrate_vs_opening(
     if not player:
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.winrate_vs_first_move_rolling(
-        db, player.player_id, time_class, start_date, end_date, window_games=window_games,
+        db, player.player_id, time_class, start_date, end_date, window_games=window_games, tz=tz,
     )
 
 
@@ -321,6 +331,7 @@ def streak_reaction(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     player = crud.get_player(db, username)
@@ -328,7 +339,7 @@ def streak_reaction(
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.streak_reaction(
         db, player.player_id, time_class,
-        start_date, end_date,
+        start_date, end_date, tz=tz,
     )
 
 
@@ -338,6 +349,7 @@ def top_openings(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     player = crud.get_player(db, username)
@@ -345,21 +357,21 @@ def top_openings(
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.get_top_openings(
         db, player.player_id, time_class,
-        start_date, end_date, limit=10
+        start_date, end_date, limit=10, tz=tz,
     )
 
 
 # ── Population Baselines ─────────────────────────────────
 
 def _baseline_response(db, username, fn, *, time_class, start_date, end_date,
-                       player_color, opening_names, elo_band):
+                       player_color, opening_names, elo_band, tz=None):
     player = crud.get_player(db, username)
     if not player:
         raise HTTPException(404, f"Player '{username}' not found")
     band = baselines.resolve_band(
         db, player.player_id, time_class=time_class,
         start_date=start_date, end_date=end_date,
-        player_color=player_color, opening_names=opening_names,
+        player_color=player_color, opening_names=opening_names, tz=tz,
         selected_band=None if elo_band in (None, "", "all") else int(elo_band),
         whole_population=(elo_band == "all"),
     )
@@ -375,6 +387,7 @@ def baseline_bands(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -387,7 +400,7 @@ def baseline_bands(
     tc = baselines.dominant_time_control(
         db, player.player_id, time_class=time_class,
         start_date=start_date, end_date=end_date,
-        player_color=player_color, opening_names=opening_names,
+        player_color=player_color, opening_names=opening_names, tz=tz,
     )
     bands = baselines.available_bands(
         db, player.player_id, time_class=time_class, time_control=tc,
@@ -396,7 +409,7 @@ def baseline_bands(
     median = baselines.player_median_elo(
         db, player.player_id, time_class=time_class,
         start_date=start_date, end_date=end_date,
-        player_color=player_color, opening_names=opening_names,
+        player_color=player_color, opening_names=opening_names, tz=tz,
     )
     # The band the charts will actually use when no band is picked. Returned so
     # the dropdown's default entry can name a concrete range rather than a
@@ -404,7 +417,7 @@ def baseline_bands(
     resolved = baselines.resolve_band(
         db, player.player_id, time_class=time_class,
         start_date=start_date, end_date=end_date,
-        player_color=player_color, opening_names=opening_names,
+        player_color=player_color, opening_names=opening_names, tz=tz,
     )
     return {
         "bands": bands,
@@ -424,6 +437,7 @@ def move_time_baseline_route(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
     elo_band: Optional[str] = None,
@@ -432,7 +446,7 @@ def move_time_baseline_route(
     return _baseline_response(
         db, username, baselines.move_time_baseline,
         time_class=time_class, start_date=start_date, end_date=end_date,
-        player_color=player_color, opening_names=opening_names, elo_band=elo_band)
+        player_color=player_color, opening_names=opening_names, elo_band=elo_band, tz=tz)
 
 
 @app.get("/api/players/{username}/analytics/game-length/baseline")
@@ -441,6 +455,7 @@ def game_length_baseline_route(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
     elo_band: Optional[str] = None,
@@ -449,7 +464,7 @@ def game_length_baseline_route(
     return _baseline_response(
         db, username, baselines.game_length_baseline,
         time_class=time_class, start_date=start_date, end_date=end_date,
-        player_color=player_color, opening_names=opening_names, elo_band=elo_band)
+        player_color=player_color, opening_names=opening_names, elo_band=elo_band, tz=tz)
 
 
 @app.get("/api/players/{username}/analytics/rating-diff/baseline")
@@ -458,6 +473,7 @@ def rating_diff_baseline_route(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
     elo_band: Optional[str] = None,
@@ -466,7 +482,7 @@ def rating_diff_baseline_route(
     return _baseline_response(
         db, username, baselines.rating_diff_baseline,
         time_class=time_class, start_date=start_date, end_date=end_date,
-        player_color=player_color, opening_names=opening_names, elo_band=elo_band)
+        player_color=player_color, opening_names=opening_names, elo_band=elo_band, tz=tz)
 
 
 @app.get("/api/players/{username}/analytics/clock-advantage/baseline")
@@ -475,6 +491,7 @@ def clock_advantage_baseline_route(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
     elo_band: Optional[str] = None,
@@ -483,7 +500,7 @@ def clock_advantage_baseline_route(
     return _baseline_response(
         db, username, baselines.clock_advantage_baseline,
         time_class=time_class, start_date=start_date, end_date=end_date,
-        player_color=player_color, opening_names=opening_names, elo_band=elo_band)
+        player_color=player_color, opening_names=opening_names, elo_band=elo_band, tz=tz)
 
 
 @app.get("/api/players/{username}/analytics/streak-reaction/baseline")
@@ -492,6 +509,7 @@ def streak_baseline_route(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     elo_band: Optional[str] = None,
     db: Session = Depends(get_db),
 ):

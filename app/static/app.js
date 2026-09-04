@@ -243,11 +243,21 @@ async function toggleBaseline() {
 function getStartDate() { return document.getElementById('start-date').value || ''; }
 function getEndDate() { return document.getElementById('end-date').value || ''; }
 
+/** The viewer's IANA zone, sent with every filtered request so date ranges are
+ *  resolved against their calendar rather than UTC. games.date_played is a UTC
+ *  date, so without this a game finished after local evening lands on the next
+ *  day and disappears from a range ending "today". */
+const VIEWER_TZ = (() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
+    catch { return ''; }
+})();
+
 function buildFilterParams() {
     const parts = [];
     if (currentTimeClass) parts.push(`time_class=${currentTimeClass}`);
     if (getStartDate()) parts.push(`start_date=${getStartDate()}`);
     if (getEndDate()) parts.push(`end_date=${getEndDate()}`);
+    if (VIEWER_TZ) parts.push(`tz=${encodeURIComponent(VIEWER_TZ)}`);
     return parts.length ? '?' + parts.join('&') : '';
 }
 
@@ -294,18 +304,17 @@ function hideSyncBanner() {
 // ═══════════════════════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Default to the last 30 days, in UTC.
-    //
-    // games.date_played comes from the PGN's UTCDate header, so the filter
-    // compares against UTC calendar dates. Defaulting the end to the browser's
-    // local date hid every game finished after 20:00 US Eastern — those carry
-    // the next day's UTC date, so they fell outside a range ending "today"
-    // until local midnight caught up.
+    // Default to the last 30 days on the viewer's calendar. The backend now
+    // resolves these dates in their timezone (see VIEWER_TZ), so local dates
+    // are the right thing to send.
+    const localDate = (d) => `${d.getFullYear()}-`
+        + `${String(d.getMonth() + 1).padStart(2, '0')}-`
+        + `${String(d.getDate()).padStart(2, '0')}`;
     const now = new Date();
-    const today = now.toISOString().slice(0, 10);
+    const today = localDate(now);
     const monthAgo = new Date(now);
-    monthAgo.setUTCMonth(monthAgo.getUTCMonth() - 1);
-    const startDefault = monthAgo.toISOString().slice(0, 10);
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    const startDefault = localDate(monthAgo);
     document.getElementById('start-date').value = startDefault;
     document.getElementById('end-date').value = today;
 

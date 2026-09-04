@@ -4,7 +4,8 @@ Database query functions — all queries written as explicit SQL using sqlalchem
 
 import statistics as _stats
 from collections import defaultdict, deque
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from datetime import time as dtime
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -65,6 +66,94 @@ def _family_display_name(family: str) -> str:
         return 'Sicilian: ' + sub
     return family
 
+def _zone_or_default(tz: Optional[str]) -> ZoneInfo:
+    """The viewer's zone, falling back to US Eastern — the app's historical
+    assumption — when the browser sent nothing usable."""
+    if tz:
+        try:
+            return ZoneInfo(tz)
+        except Exception:
+            pass
+    return ZoneInfo("America/New_York")
+
+
+def _local_day_bounds(
+    start_date: Optional[date],
+    end_date: Optional[date],
+    tz: str,
+) -> tuple[Optional[int], Optional[int]]:
+    """UTC epoch bounds for a range of calendar days in the viewer's zone.
+
+    end_date is inclusive, so the upper bound is the last second of that local
+    day. zoneinfo resolves each boundary against its own date, so a range
+    spanning a DST change gets the right offset at both ends.
+    """
+    try:
+        zone = ZoneInfo(tz)
+    except Exception:
+        return None, None
+
+    start_ts = end_ts = None
+    if start_date:
+        start_ts = int(datetime.combine(start_date, dtime.min, tzinfo=zone).timestamp())
+    if end_date:
+        next_day = datetime.combine(end_date + timedelta(days=1), dtime.min, tzinfo=zone)
+        end_ts = int(next_day.timestamp()) - 1
+    return start_ts, end_ts
+
+
+def _date_range_clause(
+    start_date: Optional[date],
+    end_date: Optional[date],
+    tz: Optional[str],
+    params: dict,
+) -> Optional[str]:
+    """Restrict to a date range, in the viewer's timezone when one is given.
+
+    games.date_played is the PGN's UTCDate, so comparing it to a local calendar
+    date drops anything played after local evening — those games carry the next
+    UTC day. end_time is a real instant and is what we filter on instead.
+
+    end_time is NULL on games loaded in bulk rather than synced (100% coverage
+    for a synced player, 12% across the whole table), so those rows fall back to
+    the UTC date comparison. Dropping them would silently hide history.
+    """
+    if not start_date and not end_date:
+        return None
+
+    start_ts, end_ts = _local_day_bounds(start_date, end_date, tz) if tz else (None, None)
+
+    if start_ts is None and end_ts is None:
+        # No usable zone: previous behaviour, UTC calendar dates.
+        parts = []
+        if start_date:
+            parts.append("g.date_played >= :start_date")
+            params["start_date"] = start_date
+        if end_date:
+            parts.append("g.date_played <= :end_date")
+            params["end_date"] = end_date
+        return " AND ".join(parts)
+
+    stamped, dated = [], []
+    if start_ts is not None:
+        stamped.append("g.end_time >= :start_ts")
+        params["start_ts"] = start_ts
+    if end_ts is not None:
+        stamped.append("g.end_time <= :end_ts")
+        params["end_ts"] = end_ts
+    if start_date:
+        dated.append("g.date_played >= :start_date")
+        params["start_date"] = start_date
+    if end_date:
+        dated.append("g.date_played <= :end_date")
+        params["end_date"] = end_date
+
+    return (
+        "((g.end_time IS NOT NULL AND " + " AND ".join(stamped) + ")"
+        " OR (g.end_time IS NULL AND " + " AND ".join(dated) + "))"
+    )
+
+
 def _build_game_filters(
     player_id: int,
     time_class: Optional[str] = None,
@@ -72,6 +161,7 @@ def _build_game_filters(
     end_date: Optional[date] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
+    tz: Optional[str] = None,
 ) -> tuple[str, dict]:
     """
     Build a SQL WHERE clause and parameter dict for player game queries.
@@ -90,12 +180,9 @@ def _build_game_filters(
     if time_class:
         clauses.append("g.time_class = :time_class")
         params["time_class"] = time_class
-    if start_date:
-        clauses.append("g.date_played >= :start_date")
-        params["start_date"] = start_date
-    if end_date:
-        clauses.append("g.date_played <= :end_date")
-        params["end_date"] = end_date
+    date_clause = _date_range_clause(start_date, end_date, tz, params)
+    if date_clause:
+        clauses.append(date_clause)
     if opening_names:
         ops = [o.strip() for o in opening_names.split("|") if o.strip()]
         if ops:
@@ -142,9 +229,10 @@ def get_games_for_player(
     limit: int = 50, offset: int = 0,
     opening_names: Optional[str] = None,
     player_color: Optional[str] = None,
+    tz: Optional[str] = None,
 ):
     where, params = _build_game_filters(
-        player_id, time_class, start_date, end_date, player_color, opening_names
+        player_id, time_class, start_date, end_date, player_color, opening_names, tz
     )
     params["limit"]  = limit
     params["offset"] = offset
@@ -229,9 +317,10 @@ def get_player_stats(
     end_date: Optional[date] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
+    tz: Optional[str] = None,
 ):
     where, params = _build_game_filters(
-        player_id, time_class, start_date, end_date, player_color, opening_names
+        player_id, time_class, start_date, end_date, player_color, opening_names, tz
     )
 
     # Overall totals via CTE
@@ -357,11 +446,12 @@ def rating_differential(
     end_date: Optional[date] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
+    tz: Optional[str] = None,
 ):
     """Win/loss/draw counts bucketed by estimated PRE-game Elo gap
     (player Elo − opponent Elo, with each game's own rating update undone)."""
     where, params = _build_game_filters(
-        player_id, time_class, start_date, end_date, player_color, opening_names
+        player_id, time_class, start_date, end_date, player_color, opening_names, tz
     )
     sql = text(f"""
         SELECT
@@ -464,10 +554,11 @@ def game_length_vs_winrate(
     end_date: Optional[date] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
+    tz: Optional[str] = None,
 ):
     """Win rate bucketed by total game length in moves."""
     where, params = _build_game_filters(
-        player_id, time_class, start_date, end_date, player_color, opening_names
+        player_id, time_class, start_date, end_date, player_color, opening_names, tz
     )
     sql = text(f"""
         SELECT
@@ -535,13 +626,14 @@ def analyze_clock_advantage(
     end_date: Optional[date] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
+    tz: Optional[str] = None,
 ):
     """
     Per-game average clock difference (player time − opponent time).
     Buckets games by whether the player was consistently ahead or behind.
     """
     where, params = _build_game_filters(
-        player_id, time_class, start_date, end_date, player_color, opening_names
+        player_id, time_class, start_date, end_date, player_color, opening_names, tz
     )
     sql = text(f"""
         WITH player_games AS (
@@ -636,9 +728,10 @@ def move_time_stats(
     end_date: Optional[date] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
+    tz: Optional[str] = None,
 ):
     where, params = _build_game_filters(
-        player_id, time_class, start_date, end_date, player_color, opening_names
+        player_id, time_class, start_date, end_date, player_color, opening_names, tz
     )
     sql = text(f"""
         WITH player_games AS (
@@ -728,9 +821,10 @@ def elo_history(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
 ):
     """Player Elo over time, with IQR outlier filtering and same-day spreading."""
-    where, params = _build_game_filters(player_id, time_class, start_date, end_date)
+    where, params = _build_game_filters(player_id, time_class, start_date, end_date, tz=tz)
     sql = text(f"""
         SELECT
             g.date_played,
@@ -779,6 +873,7 @@ def get_top_openings(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     limit: int = 8,
+    tz: Optional[str] = None,
 ):
     """Top N opening families for the player, split by color, with win/draw/loss stats and color totals."""
     result: dict = {"white": [], "black": [], "totals": {}}
@@ -869,6 +964,7 @@ def winrate_by_color_rolling(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     window_games: int = 30,
+    tz: Optional[str] = None,
 ):
     """
     For each date that has games, the player's win rate and draw rate over
@@ -885,8 +981,11 @@ def winrate_by_color_rolling(
         clauses.append("g.time_class = :time_class")
         params["time_class"] = time_class
     if end_date:
-        clauses.append("g.date_played <= :end_date")
-        params["end_date"] = end_date
+        # Upper bound only: the streak needs games before start_date to know
+        # its state entering the window. Timezone-aware like every other range.
+        upper = _date_range_clause(None, end_date, tz, params)
+        if upper:
+            clauses.append(upper)
 
     where = " AND ".join(clauses)
     sql = text(f"""
@@ -965,6 +1064,7 @@ def winrate_vs_first_move_rolling(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     window_games: int = 30,
+    tz: Optional[str] = None,
 ):
     """
     For each date with games, the player's win rate and draw rate as black
@@ -1053,6 +1153,7 @@ def streak_reaction(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    tz: Optional[str] = None,
 ):
     """
     Win/loss/draw outcomes bucketed by how many consecutive losses (or wins)
@@ -1102,11 +1203,12 @@ def streak_reaction(
             return v
         return datetime.strptime(str(v), "%Y-%m-%d").date()
 
-    eastern = ZoneInfo("America/New_York")
+    # Streaks reset on the viewer's calendar day, not a fixed one.
+    zone = _zone_or_default(tz)
 
     def _local_day(row) -> date:
         if row["end_time"] is not None:
-            return datetime.fromtimestamp(row["end_time"], tz=eastern).date()
+            return datetime.fromtimestamp(row["end_time"], tz=zone).date()
         return _to_date(row["date_played"])
 
     loss_buckets = {n: {"wins": 0, "losses": 0, "draws": 0} for n in (1, 2, 3, 4)}
@@ -1117,7 +1219,7 @@ def streak_reaction(
     prev_day: Optional[date] = None
     for row in rows:
         outcome = row["outcome"]
-        in_range = not start_date or _to_date(row["date_played"]) >= start_date
+        in_range = not start_date or (_local_day(row) or _to_date(row["date_played"])) >= start_date
 
         day = _local_day(row)
         if day != prev_day:
