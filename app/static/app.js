@@ -517,6 +517,7 @@ async function loadPlayer() {
     gamesPage = 0;
     currentOpeningFilter = '';
     currentOpeningFilterColor = '';
+    openingSort = { key: '', dir: 0 };
     winrateMode = 'color';
     document.getElementById('winrate-mode-color').classList.add('active');
     document.getElementById('winrate-mode-opening').classList.remove('active');
@@ -1048,22 +1049,81 @@ function renderOpeningRow(o, showColorPip = false, totalRow = false) {
         </tr>`;
 }
 
+// Header cells, in column order. `key` marks a column as sortable; the win-bar
+// column has no header text and nothing to sort by.
+const OPENING_COLUMNS = [
+    { key: 'name',              label: 'Opening' },
+    { key: 'games',             label: 'Games' },
+    { key: null,                label: '' },
+    { key: 'win_rate',          label: 'Win%' },
+    { key: 'draw_rate',         label: 'Draw%' },
+    { key: 'decisive_win_rate', label: 'Decisive%' },
+    { key: 'exp_elo',           label: 'Exp. Elo',
+      title: 'Expected Elo per game: +8 per win, -8 per loss, 0 per draw' },
+];
+
+// '' means "as the API ordered them", which is most-played first. Clicking a
+// column cycles descending → ascending → back to that default.
+let openingSort = { key: '', dir: 0 };
+
+function openingSortValue(o, key) {
+    if (key === 'name') return (o.name || '').toLowerCase();
+    if (key === 'exp_elo') return o.games ? 8 * (o.wins - o.losses) / o.games : 0;
+    return o[key] ?? 0;
+}
+
+/** A sorted copy; the input order is the tie-break, so equal rows keep the
+ *  most-played-first ordering they arrived in. */
+function sortOpenings(openings) {
+    if (!openingSort.key || !openingSort.dir) return openings;
+    const { key, dir } = openingSort;
+    return openings.map((o, i) => ({ o, i })).sort((a, b) => {
+        const av = openingSortValue(a.o, key), bv = openingSortValue(b.o, key);
+        if (av < bv) return -dir;
+        if (av > bv) return dir;
+        return a.i - b.i;
+    }).map(x => x.o);
+}
+
+function cycleOpeningSort(key) {
+    // desc → asc → off. Descending first: for every column here the
+    // interesting end is the top one.
+    if (openingSort.key !== key) openingSort = { key, dir: -1 };
+    else if (openingSort.dir === -1) openingSort = { key, dir: 1 };
+    else openingSort = { key: '', dir: 0 };
+    renderOpeningTables();
+    syncOpeningFilterUI(currentOpeningFilter);
+}
+
+function attachOpeningSortHandlers(container) {
+    container.querySelectorAll('th[data-sort-key]').forEach(th => {
+        const sort = () => cycleOpeningSort(th.dataset.sortKey);
+        th.addEventListener('click', sort);
+        th.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sort(); }
+        });
+    });
+}
+
+function openingHeaderCell(col) {
+    const title = col.title ? ` title="${escapeHtml(col.title)}"` : '';
+    if (!col.key) return `<th${title}>${col.label}</th>`;
+    const active = openingSort.key === col.key && openingSort.dir !== 0;
+    const arrow = !active ? '↕' : (openingSort.dir === -1 ? '↓' : '↑');
+    const aria = !active ? 'none' : (openingSort.dir === -1 ? 'descending' : 'ascending');
+    const hint = col.title || `Sort by ${col.label}`;
+    return `<th class="sortable${active ? ' sorted' : ''}" data-sort-key="${col.key}"`
+         + ` aria-sort="${aria}" title="${escapeHtml(hint)}" tabindex="0">`
+         + `${col.label}<span class="sort-arrow">${arrow}</span></th>`;
+}
+
 function buildOpeningTable(openings, showColorPip = false, footerRows = []) {
     const rows   = openings.map(o => renderOpeningRow(o, showColorPip)).join('');
     const footer = footerRows.map(o => renderOpeningRow(o, false, true)).join('');
+    const head   = OPENING_COLUMNS.map(openingHeaderCell).join('');
     return `
         <table class="opening-stats-table">
-            <thead>
-                <tr>
-                    <th>Opening</th>
-                    <th>Games</th>
-                    <th></th>
-                    <th>Win%</th>
-                    <th>Draw%</th>
-                    <th>Decisive%</th>
-                    <th title="Expected Elo per game: +8 per win, -8 per loss, 0 per draw">Exp. Elo</th>
-                </tr>
-            </thead>
+            <thead><tr>${head}</tr></thead>
             <tbody>${footer}${rows}</tbody>
         </table>`;
 }
@@ -1110,7 +1170,10 @@ function renderOpeningTables() {
             el.innerHTML = '<div class="table-empty">No games for this filter.</div>';
             return;
         }
-        const shown = openingsExpanded ? openings : openings.slice(0, OPENINGS_PREVIEW_COUNT);
+        // Sort before slicing, so the preview shows the top rows by whatever
+        // the user sorted on rather than the top rows by games, re-ordered.
+        const sorted = sortOpenings(openings);
+        const shown = openingsExpanded ? sorted : sorted.slice(0, OPENINGS_PREVIEW_COUNT);
         let html = buildOpeningTable(shown, showColorPip, summaryRows);
         if (openings.length > OPENINGS_PREVIEW_COUNT) {
             const hint = openingsExpanded ? 'Show fewer openings' : `Show all ${openings.length} openings`;
@@ -1120,6 +1183,7 @@ function renderOpeningTables() {
         el.innerHTML = html;
         attachWinBarTooltips(el);
         attachOpeningRowFilters(el);
+        attachOpeningSortHandlers(el);
     };
 
     for (const color of ['white', 'black']) {

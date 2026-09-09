@@ -633,6 +633,38 @@ body {
     text-align: right;
 }
 
+/* Sortable headers: the arrow is always present so the columns that sort are
+   obvious before anyone hovers, and the header doesn't reflow on click. */
+.opening-stats-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s;
+}
+
+.opening-stats-table th.sortable:hover,
+.opening-stats-table th.sortable:focus-visible {
+    color: var(--text-primary);
+}
+
+.opening-stats-table th.sortable.sorted {
+    color: var(--accent-light);
+}
+
+.opening-stats-table th .sort-arrow {
+    display: inline-block;
+    margin-left: 0.3rem;
+    font-size: 0.85em;
+    opacity: 0.35;
+}
+
+.opening-stats-table th.sortable:hover .sort-arrow {
+    opacity: 0.7;
+}
+
+.opening-stats-table th.sortable.sorted .sort-arrow {
+    opacity: 1;
+}
+
 .opening-stats-table td {
     padding: 0.45rem 0.75rem;
     border-bottom: 1px solid var(--border);
