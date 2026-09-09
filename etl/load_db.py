@@ -72,6 +72,7 @@ def load_games(pgn_directory: str, batch_size: int = 500):
                 termination=game_dict["termination"],
                 chess_com_url=game_dict["chess_com_url"],
                 total_moves=game_dict["total_moves"],
+                variant=game_dict.get("variant"),
             )
             db.add(game)
             db.flush()  # get game_id

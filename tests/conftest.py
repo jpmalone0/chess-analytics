@@ -35,7 +35,7 @@ def make_game(
     time_control="600", time_class="rapid", result="1-0",
     end_time=None, opening_name="Sicilian Defense", total_moves=40,
     white_move_times=None, black_move_times=None,
-    white_clocks=None, black_clocks=None,
+    white_clocks=None, black_clocks=None, variant=None, date_played=None,
 ):
     """Create one game plus its moves. Move time lists default to a flat 5s.
 
@@ -54,7 +54,8 @@ def make_game(
         white_player_id=white.player_id, black_player_id=black.player_id,
         result=result, time_control=time_control, time_class=time_class,
         white_elo=white_elo, black_elo=black_elo, end_time=end_time,
-        opening_name=opening_name, total_moves=total_moves,
+        opening_name=opening_name, total_moves=total_moves, variant=variant,
+        date_played=date_played,
         chess_com_url=f"https://example.test/{white.username}/{black.username}/{end_time}",
     )
     db.add(g)

@@ -17,6 +17,7 @@ from etl.parse_pgn import (
     _classify_time_class,
     _end_time_epoch,
     _extract_opening_name,
+    _extract_variant,
     _parse_clock,
     _parse_time_control,
     _safe_int,
@@ -101,6 +102,7 @@ def _parse_pgn_text(pgn_text: str):
             "opening_name":   _extract_opening_name(eco_url),
             "termination":    headers.get("Termination"),
             "chess_com_url":  headers.get("Link"),
+            "variant":        _extract_variant(headers),
         }
 
         moves_list = []
@@ -256,6 +258,7 @@ def sync_player(
                     termination=game_dict["termination"],
                     chess_com_url=game_dict["chess_com_url"],
                     total_moves=game_dict["total_moves"],
+                    variant=game_dict["variant"],
                 )
                 db.add(game)
                 db.flush()

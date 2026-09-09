@@ -41,6 +41,10 @@ class Game(Base):
     termination      = Column(String(255))
     chess_com_url    = Column(String(255), unique=True)
     total_moves      = Column(Integer)
+    # NULL for standard chess; a slug ("chess960", "bughouse") otherwise.
+    # NULL-means-standard keeps every already-loaded row valid without a
+    # backfill — only variant games need writing.
+    variant          = Column(String(30))
     created_at       = Column(DateTime, default=datetime.utcnow)
 
     white_player = relationship("Player", foreign_keys=[white_player_id], back_populates="white_games")

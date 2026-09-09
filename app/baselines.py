@@ -43,7 +43,7 @@ def _population_shared_filters(
     time_control wins over time_class when both are given — exact keying first,
     class-level fallback second.
     """
-    clauses: list[str] = []
+    clauses: list[str] = [crud.STANDARD_CHESS_CLAUSE]
     params: dict[str, Any] = {}
 
     if time_control:
@@ -173,6 +173,7 @@ def _player_filter_sql(
         clauses.append("g.black_player_id = :player_id")
     else:
         clauses.append("(g.white_player_id = :player_id OR g.black_player_id = :player_id)")
+    clauses.append(crud.STANDARD_CHESS_CLAUSE)
 
     if time_class:
         clauses.append("g.time_class = :time_class")

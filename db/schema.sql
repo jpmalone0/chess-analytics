@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS games (
     termination         VARCHAR(255),                -- e.g. 'ballasack6 won by resignation'
     chess_com_url       VARCHAR(255) UNIQUE,          -- dedup key
     total_moves         INT,
+    variant             VARCHAR(30),                 -- NULL = standard chess, else 'chess960' etc.
     created_at          TIMESTAMP DEFAULT NOW()
 );
 

@@ -76,6 +76,33 @@ def _end_time_epoch(headers: dict) -> int | None:
     return None
 
 
+# chess.com's monthly archive mixes variants in with standard games, and it
+# reports a 3+1 Chess960 game as time_class "blitz" like any other. The rating
+# on those games comes from the variant's own pool — a top player can be 3100
+# at blitz and 2350 at Chess960 blitz — so plotting them on one rating line
+# produces spikes that look like data corruption. The PGN says which is which.
+STANDARD_START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+
+def _extract_variant(headers: dict) -> str | None:
+    """
+    The game's variant as a lowercase slug, or None for standard chess.
+
+    Standard chess.com games carry no Variant header and no SetUp/FEN; every
+    variant carries both. The FEN check is a backstop for archives that set up
+    a non-standard position without naming a variant.
+    """
+    variant = (headers.get("Variant") or "").strip()
+    if variant:
+        # "Chess960" -> chess960, "King of the Hill" -> kingofthehill
+        return re.sub(r"[^a-z0-9]", "", variant.lower()) or None
+
+    fen = (headers.get("FEN") or "").strip()
+    if headers.get("SetUp") == "1" and fen and fen != STANDARD_START_FEN:
+        return "unknown"
+    return None
+
+
 def _extract_opening_name(eco_url: str | None) -> str | None:
     """Extract human-friendly opening name from chess.com ECO URL."""
     if not eco_url:
@@ -132,6 +159,7 @@ def parse_pgn_file(filepath: str) -> Generator[tuple[dict, list[dict]], None, No
             "opening_name":   _extract_opening_name(eco_url),
             "termination":    headers.get("Termination"),
             "chess_com_url":  headers.get("Link"),
+            "variant":        _extract_variant(headers),
         }
 
         # Walk the move tree and extract moves + clocks

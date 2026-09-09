@@ -154,6 +154,15 @@ def _date_range_clause(
     )
 
 
+# Standard chess only. chess.com's archive mixes variants in with normal games
+# and reports them under the same time_class, but their Elo comes from a
+# separate pool — a 3100 blitz player is a different, much lower number at
+# Chess960 blitz — so leaving them in puts two unrelated rating series on one
+# line. Rows loaded before the variant column existed are NULL, which reads as
+# standard: unknown history keeps behaving exactly as it did.
+STANDARD_CHESS_CLAUSE = "g.variant IS NULL"
+
+
 def _player_color_clause(player_color: Optional[str]) -> str:
     """Restrict to games the player played as one colour, or either."""
     if player_color == "white":
@@ -194,6 +203,7 @@ def _build_game_filters(
     params: dict[str, Any] = {"player_id": player_id}
 
     clauses.append(_player_color_clause(player_color))
+    clauses.append(STANDARD_CHESS_CLAUSE)
 
     if time_class:
         clauses.append("g.time_class = :time_class")
@@ -837,7 +847,12 @@ def elo_history(
     end_date: Optional[date] = None,
     tz: Optional[str] = None,
 ):
-    """Player Elo over time, with IQR outlier filtering and same-day spreading."""
+    """Player Elo over time, spread across each day so same-day games don't stack.
+
+    No outlier filtering: every point is a real rating the player held. Variant
+    games used to look like outliers here — see STANDARD_CHESS_CLAUSE, which
+    keeps them out rather than smoothing them away.
+    """
     where, params = _build_game_filters(player_id, time_class, start_date, end_date, tz=tz)
     sql = text(f"""
         SELECT
@@ -919,7 +934,7 @@ def get_top_openings(
         win_case  = "result = '1-0'" if color == "white" else "result = '0-1'"
         loss_case = "result = '0-1'" if color == "white" else "result = '1-0'"
 
-        base_clauses = [f"g.{color}_player_id = :player_id"]
+        base_clauses = [f"g.{color}_player_id = :player_id", STANDARD_CHESS_CLAUSE]
         params: dict[str, Any] = {"player_id": player_id}
 
         if time_class:
@@ -1007,7 +1022,7 @@ def winrate_by_color_rolling(
 
     # No lower date bound: the rolling window needs games played before
     # start_date; output rows are trimmed to the requested range below.
-    clauses = [_player_color_clause(player_color)]
+    clauses = [_player_color_clause(player_color), STANDARD_CHESS_CLAUSE]
     params: dict[str, Any] = {"player_id": player_id}
     if time_class:
         clauses.append("g.time_class = :time_class")
@@ -1119,7 +1134,8 @@ def winrate_vs_first_move_rolling(
 
     # No lower date bound: the rolling window needs games played before
     # start_date; output rows are trimmed to the requested range below.
-    clauses = ["g.black_player_id = :player_id", "m.ply = 1", "m.move_san IN ('e4', 'd4')"]
+    clauses = ["g.black_player_id = :player_id", STANDARD_CHESS_CLAUSE,
+               "m.ply = 1", "m.move_san IN ('e4', 'd4')"]
     params: dict[str, Any] = {"player_id": player_id}
     if time_class:
         clauses.append("g.time_class = :time_class")
@@ -1223,6 +1239,7 @@ def streak_reaction(
     to end_date and trim the bucketed output to start_date afterward.
     """
     clauses = ["(g.white_player_id = :player_id OR g.black_player_id = :player_id)",
+               STANDARD_CHESS_CLAUSE,
                "g.date_played IS NOT NULL"]
     params: dict[str, Any] = {"player_id": player_id}
     if time_class:
