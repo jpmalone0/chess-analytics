@@ -297,6 +297,8 @@ def winrate_by_color(
     end_date: Optional[date] = None,
     tz: Optional[str] = None,
     window_games: int = 30,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     player = crud.get_player(db, username)
@@ -304,6 +306,7 @@ def winrate_by_color(
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.winrate_by_color_rolling(
         db, player.player_id, time_class, start_date, end_date, window_games=window_games, tz=tz,
+        player_color=player_color, opening_names=opening_names,
     )
 
 
@@ -315,6 +318,8 @@ def winrate_vs_opening(
     end_date: Optional[date] = None,
     tz: Optional[str] = None,
     window_games: int = 30,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     player = crud.get_player(db, username)
@@ -322,6 +327,7 @@ def winrate_vs_opening(
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.winrate_vs_first_move_rolling(
         db, player.player_id, time_class, start_date, end_date, window_games=window_games, tz=tz,
+        player_color=player_color, opening_names=opening_names,
     )
 
 

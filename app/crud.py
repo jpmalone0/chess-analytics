@@ -154,6 +154,29 @@ def _date_range_clause(
     )
 
 
+def _player_color_clause(player_color: Optional[str]) -> str:
+    """Restrict to games the player played as one colour, or either."""
+    if player_color == "white":
+        return "g.white_player_id = :player_id"
+    if player_color == "black":
+        return "g.black_player_id = :player_id"
+    return "(g.white_player_id = :player_id OR g.black_player_id = :player_id)"
+
+
+def _opening_names_clause(opening_names: Optional[str], params: dict) -> Optional[str]:
+    """Match any of a "|"-joined list of opening-family prefixes."""
+    if not opening_names:
+        return None
+    ops = [o.strip() for o in opening_names.split("|") if o.strip()]
+    if not ops:
+        return None
+    like_clauses = []
+    for i, op in enumerate(ops):
+        like_clauses.append(f"g.opening_name LIKE :op_{i}")
+        params[f"op_{i}"] = op + '%'
+    return f"({' OR '.join(like_clauses)})"
+
+
 def _build_game_filters(
     player_id: int,
     time_class: Optional[str] = None,
@@ -170,12 +193,7 @@ def _build_game_filters(
     clauses: list[str] = []
     params: dict[str, Any] = {"player_id": player_id}
 
-    if player_color == "white":
-        clauses.append("g.white_player_id = :player_id")
-    elif player_color == "black":
-        clauses.append("g.black_player_id = :player_id")
-    else:
-        clauses.append("(g.white_player_id = :player_id OR g.black_player_id = :player_id)")
+    clauses.append(_player_color_clause(player_color))
 
     if time_class:
         clauses.append("g.time_class = :time_class")
@@ -183,13 +201,9 @@ def _build_game_filters(
     date_clause = _date_range_clause(start_date, end_date, tz, params)
     if date_clause:
         clauses.append(date_clause)
-    if opening_names:
-        ops = [o.strip() for o in opening_names.split("|") if o.strip()]
-        if ops:
-            like_clauses = [f"g.opening_name LIKE :op_{i}" for i in range(len(ops))]
-            clauses.append(f"({' OR '.join(like_clauses)})")
-            for i, op in enumerate(ops):
-                params[f"op_{i}"] = op + '%'
+    opening_clause = _opening_names_clause(opening_names, params)
+    if opening_clause:
+        clauses.append(opening_clause)
 
     return " AND ".join(clauses), params
 
@@ -976,21 +990,31 @@ def winrate_by_color_rolling(
     end_date: Optional[date] = None,
     window_games: int = 30,
     tz: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
 ):
     """
     For each date that has games, the player's win rate and draw rate over
     their most recent `window_games` games as white, as black, and overall,
     as of the end of that day. window_games=1 shows the last game's result.
+
+    player_color and opening_names narrow the games the window is drawn from,
+    so the chart describes the same games as the rest of the dashboard. With a
+    colour filter on, the other colour's series comes back empty rather than
+    silently counting games the filter excluded.
     """
     window_games = max(window_games, 1)
 
     # No lower date bound: the rolling window needs games played before
     # start_date; output rows are trimmed to the requested range below.
-    clauses = ["(g.white_player_id = :player_id OR g.black_player_id = :player_id)"]
+    clauses = [_player_color_clause(player_color)]
     params: dict[str, Any] = {"player_id": player_id}
     if time_class:
         clauses.append("g.time_class = :time_class")
         params["time_class"] = time_class
+    opening_clause = _opening_names_clause(opening_names, params)
+    if opening_clause:
+        clauses.append(opening_clause)
     if end_date:
         # Upper bound only: the streak needs games before start_date to know
         # its state entering the window. Timezone-aware like every other range.
@@ -1076,12 +1100,21 @@ def winrate_vs_first_move_rolling(
     end_date: Optional[date] = None,
     window_games: int = 30,
     tz: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
 ):
     """
     For each date with games, the player's win rate and draw rate as black
     over their most recent `window_games` games against 1.e4 and 1.d4, as of
     the end of that day. window_games=1 shows the last game's result.
+
+    This view only exists for the player's black games, so a white-only filter
+    leaves it with nothing to say; opening_names narrows it like every other
+    chart.
     """
+    if player_color == "white":
+        return []
+
     window_games = max(window_games, 1)
 
     # No lower date bound: the rolling window needs games played before
@@ -1091,9 +1124,16 @@ def winrate_vs_first_move_rolling(
     if time_class:
         clauses.append("g.time_class = :time_class")
         params["time_class"] = time_class
+    opening_clause = _opening_names_clause(opening_names, params)
+    if opening_clause:
+        clauses.append(opening_clause)
     if end_date:
-        clauses.append("g.date_played <= :end_date")
-        params["end_date"] = end_date
+        # Upper bound only, and timezone-aware like every other range: a plain
+        # date_played comparison drops games played after the viewer's evening,
+        # which carry the next UTC date.
+        upper = _date_range_clause(None, end_date, tz, params)
+        if upper:
+            clauses.append(upper)
 
     where = " AND ".join(clauses)
     sql = text(f"""

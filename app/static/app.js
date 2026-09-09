@@ -18,6 +18,12 @@ let analyticsLoadId = 0;
 let compareLoadId = 0;
 let currentOpeningFilter = '';
 let currentOpeningColor = 'global';  // 'global' | 'white' | 'black'
+// An opening family is listed once per colour the player has met it with —
+// "Caro Kann Defense" is both a defence they play and one they face — and both
+// rows carry the same opening_name. Selecting from the combined table
+// therefore has to remember which side's row was clicked, or every query
+// silently widens to both colours. '' when nothing is filtered.
+let currentOpeningFilterColor = '';  // '' | 'white' | 'black'
 const ANALYTICS_SECTIONS = ['outcomes', 'time', 'form'];
 const collapsedSections = new Set();  // sections the user has collapsed
 const OPENINGS_PREVIEW_COUNT = 6;     // opening rows shown before "show all"
@@ -162,7 +168,7 @@ async function loadBaselineBands(username) {
         // than the labels beside it — with Black Pieces selected the dropdown
         // counted both sides while every overlay counted one.
         const r = await fetchJSON(`/api/players/${username}/analytics/baseline-bands`
-            + colorParams(currentOpeningColor, currentOpeningFilter));
+            + colorParams(queryColor(), currentOpeningFilter));
         const previous = selectedBaselineBand;
 
         // The default entry stands in for the player's own band, so listing that
@@ -510,6 +516,7 @@ async function loadPlayer() {
     currentTimeClass = 'rapid';
     gamesPage = 0;
     currentOpeningFilter = '';
+    currentOpeningFilterColor = '';
     winrateMode = 'color';
     document.getElementById('winrate-mode-color').classList.add('active');
     document.getElementById('winrate-mode-opening').classList.remove('active');
@@ -663,7 +670,7 @@ function exitCompareMode() {
 async function loadCompareStats(username) {
     try {
         const data = await fetchJSON(`/api/players/${username}/stats`
-            + colorParams(currentOpeningColor, currentOpeningFilter));
+            + colorParams(queryColor(), currentOpeningFilter));
         let stats = data;
 
         if (currentTimeClass && data.by_time_class[currentTimeClass]) {
@@ -699,7 +706,7 @@ async function loadCompareStats(username) {
 async function loadStats(username) {
     try {
         const data = await fetchJSON(`/api/players/${username}/stats`
-            + colorParams(currentOpeningColor, currentOpeningFilter));
+            + colorParams(queryColor(), currentOpeningFilter));
         let stats = data;
 
         if (currentTimeClass && data.by_time_class[currentTimeClass]) {
@@ -1021,7 +1028,8 @@ function renderOpeningRow(o, showColorPip = false, totalRow = false) {
     // filter (data-op), with data-name reused by the "Filtered to X" chip.
     const opAttr = totalRow
         ? ` data-color-target="${o.color === 'all' ? 'global' : o.color}"`
-        : ` data-op="${escapeHtml(o.filter || o.name)}" data-name="${escapeHtml(o.name)}"`;
+        : ` data-op="${escapeHtml(o.filter || o.name)}" data-name="${escapeHtml(o.name)}"`
+          + ` data-op-color="${o.color || ''}"`;
     return `
         <tr${cls}${opAttr}>
             <td>${pip}${o.name}</td>
@@ -1171,18 +1179,23 @@ function openingFilterString(list) {
     return list.join('|');
 }
 
-/** The row for an opening in whichever stats table is currently shown. */
+/** The row for an opening in whichever stats table is currently shown. The
+ *  same opening is listed under both colours, so the selection's colour picks
+ *  between them. */
 function visibleOpeningRow(op) {
-    return [...document.querySelectorAll('.opening-stats-table tr[data-op]')].find(
-        tr => tr.dataset.op === op && tr.offsetParent !== null
-    );
+    const rows = [...document.querySelectorAll('.opening-stats-table tr[data-op]')]
+        .filter(tr => tr.dataset.op === op && tr.offsetParent !== null);
+    return rows.find(tr => tr.dataset.opColor === currentOpeningFilterColor) || rows[0];
 }
 
-/** Apply (or clear, when op is '') the opening filter across the dashboard. */
-function applyOpeningFilter(op) {
+/** Apply (or clear, when op is '') the opening filter across the dashboard.
+ *  filterColor is the side the selected rows belong to, '' once nothing is
+ *  selected. */
+function applyOpeningFilter(op, filterColor = currentOpeningFilterColor) {
     currentOpeningFilter = op;
+    currentOpeningFilterColor = op ? filterColor : '';
     gamesPage = 0;
-    loadColorAnalytics(currentUsername, currentOpeningColor, op);
+    loadColorAnalytics(currentUsername, currentOpeningColor, op, currentOpeningFilterColor);
     loadGames(currentUsername);
     if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
 }
@@ -1193,8 +1206,9 @@ function applyOpeningColor(color) {
     // Each perspective lists different openings, so a filter picked in one
     // doesn't carry over.
     currentOpeningFilter = '';
+    currentOpeningFilterColor = '';
     gamesPage = 0;
-    loadColorAnalytics(currentUsername, color, '');
+    loadColorAnalytics(currentUsername, color, '', '');
     loadGames(currentUsername);
     if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
 }
@@ -1209,10 +1223,15 @@ function attachOpeningRowFilters(container) {
         tr.classList.add('opening-row-clickable');
         tr.title = 'Add or remove this opening from the filter';
         tr.addEventListener('click', () => {
-            const ops = openingList(currentOpeningFilter);
+            const rowColor = tr.dataset.opColor || '';
+            // One colour at a time: a filter spanning both sides can't be
+            // expressed to the API, and the White/Black split is the point of
+            // the table. Crossing sides starts the selection over.
+            const sameSide = !currentOpeningFilter || rowColor === currentOpeningFilterColor;
+            const ops = sameSide ? openingList(currentOpeningFilter) : [];
             const at = ops.indexOf(tr.dataset.op);
             if (at >= 0) ops.splice(at, 1); else ops.push(tr.dataset.op);
-            applyOpeningFilter(openingFilterString(ops));
+            applyOpeningFilter(openingFilterString(ops), rowColor);
         });
     });
 
@@ -1281,7 +1300,11 @@ function syncOpeningFilterUI(op) {
     }
 
     document.querySelectorAll('.opening-stats-table tr[data-op]').forEach(tr => {
-        tr.classList.toggle('opening-row-active', active.has(tr.dataset.op));
+        // The same opening appears under both colours; only the side that was
+        // clicked is in the filter.
+        const mine = active.has(tr.dataset.op)
+            && (!currentOpeningFilterColor || tr.dataset.opColor === currentOpeningFilterColor);
+        tr.classList.toggle('opening-row-active', mine);
     });
 
     // With no perspective tabs, the highlighted summary row is the only cue for
@@ -1307,11 +1330,12 @@ function syncTimeUsageAvailability() {
     return available;
 }
 
-function loadColorAnalytics(username, color, op) {
+function loadColorAnalytics(username, color, op, filterColor = currentOpeningFilterColor) {
     // loadAnalyticsSection reads these globals, so keep them authoritative.
     currentUsername = username;
     currentOpeningColor = color;
     currentOpeningFilter = op;
+    currentOpeningFilterColor = op ? filterColor : '';
 
     const overview = document.getElementById('opening-stats-overview');
     if (overview) {
@@ -1354,6 +1378,17 @@ function colorParams(color, op) {
     return buildFilterParamsExtra(ext);
 }
 
+/**
+ * The colour every data query should be scoped to. An explicit White/Black
+ * perspective wins; otherwise a selection made from the combined table
+ * supplies the colour of the rows that were clicked, so the charts describe
+ * the same games as the row the user picked.
+ */
+function queryColor() {
+    if (currentOpeningColor !== 'global') return currentOpeningColor;
+    return currentOpeningFilterColor || 'global';
+}
+
 // ═══════════════════════════════════════════════════════════
 // Win Rate by Color Over Time (rolling 30-day EMA)
 // ═══════════════════════════════════════════════════════════
@@ -1391,12 +1426,16 @@ async function loadWinrateByColor(username, loadId, suffix = '') {
     const noDataEl = document.getElementById('winrate-color-no-data' + (suffix ? suffix : ''));
     const opening = winrateMode === 'opening';
 
-    const windowParam = buildFilterParams()
-        ? `&window_games=${winrateWindow}`
-        : `?window_games=${winrateWindow}`;
-    const url = opening
-        ? `/api/players/${username}/analytics/winrate-vs-opening${buildFilterParams()}${windowParam}`
-        : `/api/players/${username}/analytics/winrate-by-color${buildFilterParams()}${windowParam}`;
+    // The colour and opening filters belong here as much as anywhere else:
+    // without them the chart kept plotting both colours over every game while
+    // the table above it showed one side's opening.
+    const color = queryColor();
+    const ext = { window_games: winrateWindow };
+    if (color !== 'global') ext.player_color = color;
+    if (currentOpeningFilter) ext.opening_names = currentOpeningFilter;
+    const params = buildFilterParamsExtra(ext);
+    const endpoint = opening ? 'winrate-vs-opening' : 'winrate-by-color';
+    const url = `/api/players/${username}/analytics/${endpoint}${params}`;
 
     const s1 = opening
         ? { label: 'vs 1.e4 Win', key: 'e4',    drawKey: 'e4_draw', color: '#fb923c', bg: 'rgba(251,146,60,0.08)' }
@@ -1426,49 +1465,53 @@ async function loadWinrateByColor(username, loadId, suffix = '') {
         const drawLabel1 = opening ? 'vs 1.e4 Draw' : 'White Draw';
         const drawLabel2 = opening ? 'vs 1.d4 Draw' : 'Black Draw';
 
+        // With one side filtered out its series is empty, and "Overall" just
+        // retraces the side that's left. Dropping them keeps the legend from
+        // advertising lines that aren't on the chart.
+        const bothSides = pts1.length > 0 && pts2.length > 0;
+        const datasets = [
+            {
+                label: s1.label, data: pts1,
+                borderColor: opening ? s1.color : hexToRgba(s1.color, 0.8),
+                backgroundColor: s1.bg,
+                borderWidth: 2, pointRadius: 0, pointHitRadius: 20,
+                tension: 0, spanGaps: true,
+            },
+            {
+                label: s2.label, data: pts2,
+                borderColor: opening ? s2.color : hexToRgba(s2.color, 0.8),
+                backgroundColor: s2.bg,
+                borderWidth: 2, pointRadius: 0, pointHitRadius: 20,
+                tension: 0, spanGaps: true,
+            },
+            {
+                label: drawLabel1, data: ptsDraw1,
+                borderColor: hexToRgba(s1.color, 0.55),
+                backgroundColor: 'transparent',
+                borderWidth: 1.5, borderDash: [5, 4],
+                pointRadius: 0, pointHitRadius: 16,
+                tension: 0, spanGaps: true,
+            },
+            {
+                label: drawLabel2, data: ptsDraw2,
+                borderColor: hexToRgba(s2.color, 0.55),
+                backgroundColor: 'transparent',
+                borderWidth: 1.5, borderDash: [5, 4],
+                pointRadius: 0, pointHitRadius: 16,
+                tension: 0, spanGaps: true,
+            },
+            ...((opening || !bothSides) ? [] : [{
+                label: 'Overall Win', data: ptsOverall,
+                borderColor: 'rgba(148,163,184,0.45)',
+                backgroundColor: 'transparent',
+                borderWidth: 1.5, pointRadius: 0, pointHitRadius: 16,
+                tension: 0, spanGaps: true,
+            }]),
+        ].filter(d => d.data.length > 0);
+
         charts[chartKey] = new Chart(document.getElementById('winrate-color-chart' + suffix).getContext('2d'), {
             type: 'line',
-            data: {
-                datasets: [
-                    {
-                        label: s1.label, data: pts1,
-                        borderColor: opening ? s1.color : hexToRgba(s1.color, 0.8),
-                        backgroundColor: s1.bg,
-                        borderWidth: 2, pointRadius: 0, pointHitRadius: 20,
-                        tension: 0, spanGaps: true,
-                    },
-                    {
-                        label: s2.label, data: pts2,
-                        borderColor: opening ? s2.color : hexToRgba(s2.color, 0.8),
-                        backgroundColor: s2.bg,
-                        borderWidth: 2, pointRadius: 0, pointHitRadius: 20,
-                        tension: 0, spanGaps: true,
-                    },
-                    {
-                        label: drawLabel1, data: ptsDraw1,
-                        borderColor: hexToRgba(s1.color, 0.55),
-                        backgroundColor: 'transparent',
-                        borderWidth: 1.5, borderDash: [5, 4],
-                        pointRadius: 0, pointHitRadius: 16,
-                        tension: 0, spanGaps: true,
-                    },
-                    {
-                        label: drawLabel2, data: ptsDraw2,
-                        borderColor: hexToRgba(s2.color, 0.55),
-                        backgroundColor: 'transparent',
-                        borderWidth: 1.5, borderDash: [5, 4],
-                        pointRadius: 0, pointHitRadius: 16,
-                        tension: 0, spanGaps: true,
-                    },
-                    ...(opening ? [] : [{
-                        label: 'Overall Win', data: ptsOverall,
-                        borderColor: 'rgba(148,163,184,0.45)',
-                        backgroundColor: 'transparent',
-                        borderWidth: 1.5, pointRadius: 0, pointHitRadius: 16,
-                        tension: 0, spanGaps: true,
-                    }]),
-                ]
-            },
+            data: { datasets },
             options: {
                 responsive: true, maintainAspectRatio: false, animation: false,
                 plugins: {
@@ -2040,7 +2083,7 @@ async function loadGames(username, suffix = '') {
         const offset = page * GAMES_PER_PAGE;
         const extras = { limit: GAMES_PER_PAGE, offset };
         if (currentOpeningFilter) extras.opening_names = currentOpeningFilter;
-        if (currentOpeningColor !== 'global') extras.player_color = currentOpeningColor;
+        if (queryColor() !== 'global') extras.player_color = queryColor();
         const games = await fetchJSON(`/api/players/${username}/games${buildFilterParamsExtra(extras)}`);
 
         const tbody = document.getElementById('games-tbody' + suffix);
@@ -2231,7 +2274,7 @@ function toggleAnalyticsSection(name) {
 
 /** Draw the charts belonging to one section, for both compare columns. */
 function loadAnalyticsSection(name) {
-    const color = currentOpeningColor;
+    const color = queryColor();
     const op = currentOpeningFilter;
     const id = analyticsLoadId;
     const cid = compareLoadId;
