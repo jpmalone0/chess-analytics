@@ -240,6 +240,12 @@ SELECT
     e.ply                                           AS ply,
     e.color                                         AS color,
     e.cp_loss                                       AS cp_loss,
+    -- Carried through from move_evals: whether the game was still live is the
+    -- context that decides whether an error mattered. Without it, the most
+    -- natural question about a missed tactic -- "was it winnable at the time?"
+    -- -- forces callers back to move_evals and a second join.
+    e.cp_before                                     AS cp_before,
+    e.cp_after                                      AS cp_after,
     p.piece                                         AS played_piece,
     b.piece                                         AS best_piece,
     (p.is_capture OR p.gives_check)                 AS played_forcing,
