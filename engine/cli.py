@@ -26,6 +26,7 @@ from engine.analyze import (
     stderr_progress,
 )
 from engine.db import analysis_engine
+from engine.features import extract_features
 from engine.models import init_engine_db
 from engine.scope import Scope, UnknownPlayer, resolve_scope, unanalyzed
 
@@ -88,6 +89,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="resolve the scope and estimate the cost without evaluating",
+    )
+    p.add_argument(
+        "--features-only",
+        action="store_true",
+        help="re-classify moves without re-running analysis (the engine is still "
+             "queried once, for its version, to pick the matching run); for "
+             "backfilling games "
+             "evaluated before features existed, or after the vocabulary changes",
     )
     return p
 
@@ -158,7 +167,22 @@ def main(argv=None) -> int:
         f"(~{est:.1f} min on {workers} workers, {version} depth {config.depth})"
     )
 
-    if args.dry_run or not todo:
+    if args.dry_run:
+        return 0
+
+    if args.features_only:
+        # Classify what has already been evaluated, rather than the outstanding
+        # work: a game with no evaluations has no engine recommendation to
+        # compare against.
+        done = [g for g in game_ids if g not in set(todo)]
+        feats = extract_features(done, run_id)
+        print(
+            f"features: {feats.games} games, {feats.played:,} played moves, "
+            f"{feats.best:,} engine picks ({feats.skipped_best:,} skipped)"
+        )
+        return 0
+
+    if not todo:
         return 0
 
     summary = analyze_games(todo, config, workers=args.workers, progress=stderr_progress)
@@ -167,6 +191,12 @@ def main(argv=None) -> int:
         f"run {summary.run_id}: {summary.complete} complete, "
         f"{summary.partial} partial, {summary.failed} failed, "
         f"{summary.positions:,} positions stored"
+    )
+
+    feats = extract_features(todo, summary.run_id)
+    print(
+        f"features: {feats.games} games, {feats.played:,} played moves, "
+        f"{feats.best:,} engine picks ({feats.skipped_best:,} skipped)"
     )
     return 0
 

@@ -174,5 +174,86 @@ def init_engine_db():
     """
     Base.metadata.create_all(bind=engine)
     with engine.begin() as conn:
+        conn.execute(text("DROP VIEW IF EXISTS move_errors"))
         conn.execute(text("DROP VIEW IF EXISTS move_evals"))
         conn.execute(text(MOVE_EVALS_VIEW))
+        conn.execute(text(MOVE_ERRORS_VIEW))
+
+
+# ═══════════════════════════════════════════════════════════
+# Move features
+# ═══════════════════════════════════════════════════════════
+
+class PlayedMoveFeatures(Base):
+    """What kind of move was actually played.
+
+    Keyed by game, not by run: whether a move is a capture does not depend on
+    engine depth. That split is what keeps the elite comparison reachable — the
+    94k bullet games nobody will ever evaluate can still be classified.
+    """
+
+    __tablename__ = "played_move_features"
+
+    game_id      = Column(Integer, primary_key=True)
+    ply          = Column(Integer, primary_key=True)
+    piece        = Column(String(1), nullable=False)   # P N B R Q K
+    is_capture   = Column(Integer, nullable=False)
+    gives_check  = Column(Integer, nullable=False)
+    is_castling  = Column(Integer, nullable=False)
+    is_promotion = Column(Integer, nullable=False)
+
+
+class BestMoveFeatures(Base):
+    """What the engine wanted instead, classified identically.
+
+    Run-scoped, because which move is "best" depends on the depth that found it.
+    A ply whose best move is NULL (terminal positions) or unparseable gets no row
+    at all rather than a guess.
+    """
+
+    __tablename__ = "best_move_features"
+
+    run_id       = Column(Integer, ForeignKey("analysis_runs.run_id"), primary_key=True)
+    game_id      = Column(Integer, primary_key=True)
+    ply          = Column(Integer, primary_key=True)   # the ply this move would have been
+    piece        = Column(String(1), nullable=False)
+    is_capture   = Column(Integer, nullable=False)
+    gives_check  = Column(Integer, nullable=False)
+    is_castling  = Column(Integer, nullable=False)
+    is_promotion = Column(Integer, nullable=False)
+
+
+# A move is "forcing" if it captures or gives check. Crude on purpose: it is the
+# distinction between a move that demands an answer and one that does not, which
+# is what separates "walked past a winning capture" from "drifted in a quiet
+# position". Nothing here tries to say whether the tactic was *sound* — the
+# engine already said that, in cp_loss.
+#
+# No error threshold is applied. Every scored move appears with its cp_loss and
+# its kind; deciding that 150 cp is an error is the caller's call, the same way
+# blunder thresholds are. A threshold in stored rows is one nobody can revise.
+MOVE_ERRORS_VIEW = """
+CREATE VIEW IF NOT EXISTS move_errors AS
+SELECT
+    e.run_id                                        AS run_id,
+    e.game_id                                       AS game_id,
+    e.ply                                           AS ply,
+    e.color                                         AS color,
+    e.cp_loss                                       AS cp_loss,
+    p.piece                                         AS played_piece,
+    b.piece                                         AS best_piece,
+    (p.is_capture OR p.gives_check)                 AS played_forcing,
+    (b.is_capture OR b.gives_check)                 AS best_forcing,
+    CASE
+        WHEN (b.is_capture OR b.gives_check)
+         AND NOT (p.is_capture OR p.gives_check) THEN 'missed_forcing'
+        WHEN (p.is_capture OR p.gives_check)
+         AND NOT (b.is_capture OR b.gives_check) THEN 'forced_when_quiet_better'
+        ELSE 'other'
+    END                                             AS error_kind
+FROM       move_evals            AS e
+JOIN       played_move_features  AS p
+       ON  p.game_id = e.game_id AND p.ply = e.ply
+JOIN       best_move_features    AS b
+       ON  b.run_id  = e.run_id  AND b.game_id = e.game_id AND b.ply = e.ply
+"""
