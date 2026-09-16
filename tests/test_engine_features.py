@@ -182,3 +182,26 @@ class TestNoThreshold:
         with errors.connect() as conn:
             n = conn.execute(text("SELECT COUNT(*) FROM move_errors WHERE game_id=2")).scalar()
         assert n == 0
+
+
+class TestEvaluationContext:
+    def test_the_view_carries_the_evaluations_the_loss_came_from(self, errors):
+        """"Was this winnable at the time?" is the first question anyone asks of
+        a missed tactic. A 400 cp slip from +300 is a thrown-away win; the same
+        slip from -900 is noise in a game already lost. Without cp_before the
+        view cannot tell them apart and every caller re-joins move_evals."""
+        seed(errors, played_forcing=False, best_forcing=True,
+             cp_before=300, cp_after=-100)
+        with errors.connect() as conn:
+            r = conn.execute(text(
+                "SELECT cp_before, cp_after, cp_loss FROM move_errors")).mappings().first()
+        assert (r["cp_before"], r["cp_after"], r["cp_loss"]) == (300, -100, 400)
+
+    def test_evaluations_stay_unclamped_here_too(self, errors):
+        """Same reason as in move_evals: 'already lost' is exactly the context
+        that makes a small loss unimportant."""
+        seed(errors, False, True, cp_before=4000, cp_after=-4000)
+        with errors.connect() as conn:
+            r = conn.execute(text(
+                "SELECT cp_before, cp_after FROM move_errors")).mappings().first()
+        assert (r["cp_before"], r["cp_after"]) == (4000, -4000)
