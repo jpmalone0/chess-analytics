@@ -1174,11 +1174,24 @@ function renderOpeningTables() {
         // the user sorted on rather than the top rows by games, re-ordered.
         const sorted = sortOpenings(openings);
         const shown = openingsExpanded ? sorted : sorted.slice(0, OPENINGS_PREVIEW_COUNT);
-        let html = buildOpeningTable(shown, showColorPip, summaryRows);
+
+        // A player can have hundreds of opening families, so the expanded list
+        // scrolls in its own box rather than pushing the dashboard down. The
+        // toggle sits outside that box: inside it, collapsing would mean
+        // scrolling past every row to reach the button.
+        let html = `<div class="openings-box${openingsExpanded ? ' openings-scroll' : ''}">`
+                 + buildOpeningTable(shown, showColorPip, summaryRows)
+                 + `</div>`;
         if (openings.length > OPENINGS_PREVIEW_COUNT) {
-            const hint = openingsExpanded ? 'Show fewer openings' : `Show all ${openings.length} openings`;
-            html += `<button class="openings-toggle${openingsExpanded ? ' expanded' : ''}"`
-                  + ` onclick="toggleOpeningRows()" title="${hint}" aria-label="${hint}"><span>▼</span></button>`;
+            const label = openingsExpanded ? 'Show fewer' : `Show all ${openings.length}`;
+            const hint = openingsExpanded
+                ? `Collapse back to the top ${OPENINGS_PREVIEW_COUNT}`
+                : `Show all ${openings.length} openings, not just the most played`;
+            html += `<div class="openings-toggle-row">`
+                  + `<button class="openings-toggle${openingsExpanded ? ' expanded' : ''}"`
+                  + ` onclick="toggleOpeningRows()" title="${escapeHtml(hint)}"`
+                  + ` aria-expanded="${openingsExpanded}">`
+                  + `${label}<span>▼</span></button></div>`;
         }
         el.innerHTML = html;
         attachWinBarTooltips(el);
@@ -1210,7 +1223,11 @@ async function initRepertoireTabs(username) {
     try {
         loadColorAnalytics(username, currentOpeningColor, currentOpeningFilter);
 
-        lastTopOpenings = await fetchJSON(`/api/players/${username}/analytics/top-openings${buildFilterParams()}`);
+        // Every family, not the top N: the preview slice and the column sort
+        // both happen client-side, and sorting by win rate over a
+        // most-played-first cut would quietly answer the wrong question.
+        lastTopOpenings = await fetchJSON(
+            `/api/players/${username}/analytics/top-openings${buildFilterParams()}`);
         renderOpeningTables();
 
         // The rebuilt table may no longer list the active opening (e.g. it drops

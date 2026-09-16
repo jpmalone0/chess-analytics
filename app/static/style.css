@@ -829,37 +829,62 @@ body {
 }
 
 /* Chevron toggle for the rest of the openings */
-.openings-toggle {
+/* Bottom right, under the table: the numeric columns end there, so the eye is
+   already on that edge after reading a row. */
+.openings-toggle-row {
     display: flex;
+    justify-content: flex-end;
+    padding: 0.4rem 0.25rem 0 0;
+}
+
+.openings-toggle {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 26px;
+    gap: 0.35rem;
     /* No border of its own: the last row's bottom border is already the
        divider, and adding one here drew a second line below it. */
     border: none;
-    border-radius: 0;
-    padding: 0;
+    border-radius: 4px;
+    padding: 0.3rem 0.5rem;
     background: transparent;
     color: var(--text-muted);
-    font-size: 0.62rem;
+    font-size: 0.7rem;
     line-height: 1;
     cursor: pointer;
     transition: color 0.15s, background 0.15s;
 }
 
-.openings-toggle:hover {
+.openings-toggle:hover,
+.openings-toggle:focus-visible {
     background: var(--bg-card-hover);
     color: var(--text-primary);
 }
 
 .openings-toggle > span {
     display: inline-block;
+    font-size: 0.62rem;
     transition: transform 0.2s;
 }
 
 .openings-toggle.expanded > span {
     transform: rotate(180deg);
+}
+
+/* Expanded, the list runs to hundreds of rows. Scroll it in place instead of
+   pushing the whole dashboard down, and pin the header — it is the sort
+   control, so it has to stay reachable from row 300. */
+.openings-scroll {
+    /* A floor as well as a proportion: vh collapses to 0 in a zero-height
+       viewport, which would leave the expanded list with no box to live in. */
+    max-height: max(320px, 60vh);
+    overflow-y: auto;
+}
+
+.openings-scroll .opening-stats-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg-card);
 }
 
 .win-bar {
