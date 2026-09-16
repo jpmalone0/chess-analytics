@@ -912,10 +912,16 @@ def get_top_openings(
     time_class: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    limit: int = 8,
+    limit: Optional[int] = 8,
     tz: Optional[str] = None,
 ):
-    """Top N opening families for the player, split by color, with win/draw/loss stats and color totals."""
+    """Opening families for the player, split by color, with win/draw/loss stats
+    and color totals. Most-played first; limit=None returns every family.
+
+    The caller needs the whole set to sort it honestly: ranking by win rate
+    within the ten most-played openings answers a different question from
+    "which openings do I score best in", while looking identical.
+    """
     result: dict = {"white": [], "black": [], "totals": {}}
 
     def _stats_entry(g, w, dr, lo):
@@ -985,12 +991,15 @@ def get_top_openings(
             family_data[fam]["draws"]  += r["draws"]
             family_data[fam]["losses"] += r["losses"]
 
+        ranked = sorted(family_data.items(), key=lambda x: -x[1]["games"])
+        if limit is not None:
+            ranked = ranked[:limit]
         result[color] = [
             # name is the display label; filter is the raw-name prefix used
             # by the frontend's opening_names LIKE filter.
             {"name": _family_display_name(fam), "filter": fam,
              **_stats_entry(d["games"], d["wins"], d["draws"], d["losses"])}
-            for fam, d in sorted(family_data.items(), key=lambda x: -x[1]["games"])[:limit]
+            for fam, d in ranked
         ]
 
     return result

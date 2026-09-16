@@ -356,6 +356,7 @@ def top_openings(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     tz: Optional[str] = None,
+    limit: Optional[int] = Query(None, ge=1, description="omit for every opening family"),
     db: Session = Depends(get_db),
 ):
     player = crud.get_player(db, username)
@@ -363,7 +364,7 @@ def top_openings(
         raise HTTPException(404, f"Player '{username}' not found")
     return crud.get_top_openings(
         db, player.player_id, time_class,
-        start_date, end_date, limit=10, tz=tz,
+        start_date, end_date, limit=limit, tz=tz,
     )
 
 
