@@ -84,6 +84,11 @@ def _end_time_epoch(headers: dict) -> int | None:
 STANDARD_START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 
+def _variant_slug(name: str) -> str | None:
+    """A variant name (PGN header or chess.com `rules`) as a storage slug."""
+    return re.sub(r"[^a-z0-9]", "", name.lower()) or None
+
+
 def _extract_variant(headers: dict) -> str | None:
     """
     The game's variant as a lowercase slug, or None for standard chess.
@@ -95,7 +100,7 @@ def _extract_variant(headers: dict) -> str | None:
     variant = (headers.get("Variant") or "").strip()
     if variant:
         # "Chess960" -> chess960, "King of the Hill" -> kingofthehill
-        return re.sub(r"[^a-z0-9]", "", variant.lower()) or None
+        return _variant_slug(variant)
 
     fen = (headers.get("FEN") or "").strip()
     if headers.get("SetUp") == "1" and fen and fen != STANDARD_START_FEN:

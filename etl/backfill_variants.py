@@ -12,10 +12,17 @@ re-fetches the player's monthly archives and marks the games it finds. Only
 non-standard games are written, so a player with none costs nothing but the
 HTTP round-trips.
 
+Run it over full history. --since exists for re-runs, not first passes: a
+player's variant games are wherever they are, and scoping the first backfill to
+the range you happen to be looking at leaves older ones marked as standard,
+where they go on drawing spikes the moment someone widens the date filter.
+Naroditsky's Chess960 games start in 2025, but he also has three-check games
+from 2023, crazyhouse from 2016, and odds games in between.
+
 Usage:
     uv run python -m etl.backfill_variants danielnaroditsky [ballasack6 ...]
-    uv run python -m etl.backfill_variants --since 2025-01 danielnaroditsky
     uv run python -m etl.backfill_variants --all          # every player in the DB
+    uv run python -m etl.backfill_variants --since 2025-01 danielnaroditsky  # re-run
 """
 
 import argparse
@@ -28,13 +35,9 @@ from sqlalchemy import CursorResult, text
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, init_db
+from etl.parse_pgn import _variant_slug
 
 HEADERS = {"User-Agent": "ChessAnalytics/1.0 (student project)"}
-
-
-def _slug(rules: str) -> str:
-    """chess.com's rules value as the slug the parser would have stored."""
-    return "".join(c for c in rules.lower() if c.isalnum())
 
 
 def _archives(username: str, since: Optional[str]) -> list[str]:
@@ -86,7 +89,7 @@ def backfill_player(db: Session, username: str, since: Optional[str] = None) -> 
             result = cast(CursorResult, db.execute(
                 text("UPDATE games SET variant = :variant "
                      "WHERE chess_com_url = :url AND variant IS NULL"),
-                {"variant": _slug(rules), "url": url},
+                {"variant": _variant_slug(rules), "url": url},
             ))
             if result.rowcount:
                 updated += 1
@@ -110,7 +113,9 @@ def _all_usernames(db: Session) -> Iterable[str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("usernames", nargs="*", help="players to backfill")
-    ap.add_argument("--since", help="only archives from this month onward (YYYY-MM)")
+    ap.add_argument("--since", metavar="YYYY-MM",
+                    help="only archives from this month onward; for re-runs, "
+                         "not first passes (see module docstring)")
     ap.add_argument("--all", action="store_true",
                     help="every player in the database (slow: one API pass per player)")
     args = ap.parse_args()

@@ -7,6 +7,7 @@ No local PGN files needed; works entirely via HTTP + in-memory parsing.
 
 import io
 from datetime import date, datetime
+from typing import Any
 
 import chess.pgn
 import httpx
@@ -21,6 +22,7 @@ from etl.parse_pgn import (
     _parse_clock,
     _parse_time_control,
     _safe_int,
+    _variant_slug,
 )
 
 
@@ -199,12 +201,13 @@ def sync_player(
         games_in_month = archive_data.get("games", [])
         urls = [g.get("url") for g in games_in_month if g.get("url")]
 
-        # Bulk DB check for all games in the month (end_time fetched so
-        # rows synced before that column existed can be backfilled below)
-        existing_rows = db.query(Game.chess_com_url, Game.game_id, Game.end_time).filter(
-            Game.chess_com_url.in_(urls)
-        ).all()
-        existing_games = {r[0]: (r[1], r[2]) for r in existing_rows}
+        # Bulk DB check for all games in the month. end_time and variant come
+        # along so rows stored before either column existed can be backfilled
+        # below, from the archive JSON we already have in hand.
+        existing_rows = db.query(
+            Game.chess_com_url, Game.game_id, Game.end_time, Game.variant,
+        ).filter(Game.chess_com_url.in_(urls)).all()
+        existing_games = {r[0]: (r[1], r[2], r[3]) for r in existing_rows}
 
         for api_game in games_in_month:
             # Date-filter using end_time to avoid parsing out-of-bounds games
@@ -218,11 +221,20 @@ def sync_player(
 
             url = api_game.get("url")
             if url and url in existing_games:
-                game_id, stored_end_time = existing_games[url]
+                game_id, stored_end_time, stored_variant = existing_games[url]
+                updates: dict[Any, Any] = {}
                 if stored_end_time is None and end_time:
-                    db.query(Game).filter(Game.game_id == game_id).update(
-                        {"end_time": end_time}
-                    )
+                    updates["end_time"] = end_time
+                # Bulk-loaded rows predate the variant column, so a Chess960
+                # game sits there as NULL — indistinguishable from standard,
+                # and drawing its separate rating pool onto the standard line.
+                # The archive already tells us; marking it here means a player
+                # is repaired just by being looked at, with no extra requests.
+                rules = api_game.get("rules")
+                if stored_variant is None and rules and rules != "chess":
+                    updates["variant"] = _variant_slug(rules)
+                if updates:
+                    db.query(Game).filter(Game.game_id == game_id).update(updates)
                 total_skipped += 1
                 continue
 
