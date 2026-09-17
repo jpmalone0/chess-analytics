@@ -359,6 +359,15 @@ SNAPSHOT_PLY = 20
 Run: `uv run pytest tests/test_style_metrics.py -v`
 Expected: 17 passed
 
+> **As built (2026-09-17):** the final file has 21 tests. Code review found that
+> three of the seventeen could not detect the bug they were named for — the
+> doubled-pawn fixture was also isolated, so the assertion held with doubling
+> detection removed; mobility's enemy-pawn exclusion had no coverage; and
+> `passed_pawns` survived a flipped direction comparison. Four tests were added
+> and one fixture corrected. Each is verified by mutation rather than by
+> assertion alone. See `tests/test_style_metrics.py`, commits 9532082 and
+> 0c181ad.
+
 - [ ] **Step 5: Lint, typecheck and commit**
 
 ```bash
