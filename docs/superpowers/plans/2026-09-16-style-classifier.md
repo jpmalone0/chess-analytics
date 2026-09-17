@@ -166,9 +166,17 @@ class TestPawnStructure:
         assert pawn_structure(b, chess.WHITE) < 0.0
 
     def test_an_isolated_pawn_costs(self):
-        b = chess.Board("4k3/8/8/8/8/8/P1P5/4K3 w - - 0 1")
+        supported = chess.Board("4k3/8/8/8/8/8/PP6/4K3 w - - 0 1")
         lone = chess.Board("4k3/8/8/8/8/8/P7/4K3 w - - 0 1")
-        assert pawn_structure(lone, chess.WHITE) < pawn_structure(b, chess.WHITE)
+        assert pawn_structure(lone, chess.WHITE) < pawn_structure(supported, chess.WHITE)
+
+    def test_pawns_two_files_apart_are_both_isolated(self):
+        """a2 and c2 support neither each other nor anything else, so this
+        costs twice what a single lone pawn does -- 'isolated' means no pawn on
+        an IMMEDIATELY adjacent file, not merely no pawn nearby."""
+        split = chess.Board("4k3/8/8/8/8/8/P1P5/4K3 w - - 0 1")
+        lone = chess.Board("4k3/8/8/8/8/8/P7/4K3 w - - 0 1")
+        assert pawn_structure(split, chess.WHITE) == 2 * pawn_structure(lone, chess.WHITE)
 
     def test_a_pawnless_side_scores_zero(self):
         b = chess.Board("4k3/8/8/8/8/8/8/4K3 w - - 0 1")
@@ -349,7 +357,7 @@ SNAPSHOT_PLY = 20
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_style_metrics.py -v`
-Expected: 16 passed
+Expected: 17 passed
 
 - [ ] **Step 5: Lint, typecheck and commit**
 
