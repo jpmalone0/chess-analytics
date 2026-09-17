@@ -123,8 +123,24 @@ joined to `style_cell_means`, filtered by the same clauses the other analytics
 routes use. Returns per axis: mean, `n`, and standard deviation.
 
 **Percentile:** rank the subject's axis value against that axis across
-`player_style_vectors`, restricted to the same time class, over **every** player
-with ≥30 games — not only the elite pool.
+`player_style_vectors`, over **every** player with ≥30 games — not only the
+elite pool — **pooled across all time controls**, with every vector expressed as
+a z-score within its own class first.
+
+> **Corrected 2026-09-17.** The original design scoped this to one time class,
+> which left 37 rapid players — 2.7 percentile points apiece. Pooling looked
+> unsafe because centring does not make classes comparable: on the 15 players
+> holding both vectors, the same player lands +0.618 higher on mobility in rapid
+> than in blitz (t=5.05), +0.277 on king safety, +0.082 on pawn structure. The
+> within-player gap exceeds the between-population gap, so it is a property of
+> the time control, not of who plays each one. Centring equalises the *spread*
+> (within 16%) but not the *location* — the original justification checked the
+> first and assumed the second.
+>
+> Z-scoring within class fixes it. The reference becomes 789 vectors at 0.13
+> points apiece and reproduces the rapid-only answer within a few points, which
+> is the validation: a correction that merely papered over the difference would
+> not land back where the honest small-sample answer was.
 
 These are deliberately two different reference sets and the response must keep
 them apart. A percentile against 472 super-GMs answers a different question than
@@ -152,12 +168,13 @@ online time control and top players barely play rapid online; gating per class
 leaves **7** usable reference players for a rapid subject, against 405 for blitz
 and 107 for bullet.
 
-Comparing a rapid subject to a blitz reference is sound because of the
-centring. Each vector is expressed relative to its own `(time_class, ECO,
-colour)` norm, so both sides read as "more than is normal here" rather than as
-raw quantities. The spreads are also close enough not to distort a distance —
-measured across classes, max/min is 1.06 for space, 1.05 for mobility, 1.16 for
-king safety, 1.15 for pawn structure.
+Comparing a rapid subject to a blitz reference needs more than centring.
+Centring makes each vector relative to its own `(time_class, ECO, colour)` norm
+and equalises the spreads — max/min across classes is 1.06 for space, 1.05 for
+mobility, 1.16 for king safety, 1.15 for pawn structure — but it does **not**
+equalise the location. **Both sides are therefore z-scored within their own time
+class before any distance is taken.** Without that the comparison is biased, and
+on real data it changes two of the five nearest neighbours.
 
 Standardise each axis **within time class** before computing distance. The
 residual 5–16% scale difference above is small but free to remove, and
