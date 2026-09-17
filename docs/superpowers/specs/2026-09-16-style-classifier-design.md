@@ -102,12 +102,12 @@ silently bias the profile toward whatever openings are popular.
 
 ## Computation
 
-**Prerequisite:** the four metric implementations are not currently in the
-repository — they were written and validated during the investigation but left
-out of the findings PR. Implementation begins by adding them as
-`analysis/metrics.py`, with the definitions traceable to classical Stockfish's
-terms rather than invented, and unit tests per the Testing section. The findings
-doc's Reproduction section describes them precisely enough to rebuild.
+**Prerequisite:** `analysis/metrics.py` holds the validated metric
+implementations, committed to this branch in `fcf889c`. They were written during
+the investigation behind the findings doc and left out of that PR because it was
+documentation only. They carry no unit tests yet, so implementation begins by
+covering them, and by renaming `STYLE_METRICS` to `STYLE_AXES` so one name is
+used throughout.
 
 **Population pass** (`python -m analysis.build_features`): replay every game in
 the corpus to ply 20, compute four metrics for both colours, write

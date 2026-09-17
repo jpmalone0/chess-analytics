@@ -30,8 +30,9 @@
 
 | file | responsibility |
 |---|---|
-| `analysis/__init__.py` | package marker |
-| `analysis/metrics.py` | the four board-derived metrics. Pure functions, no I/O |
+| `analysis/__init__.py` | package marker (exists) |
+| `analysis/metrics.py` | the metrics. Pure functions, no I/O (exists; Task 1 renames `STYLE_METRICS` to `STYLE_AXES` and adds `SNAPSHOT_PLY`) |
+| `analysis/screen.py` | the rating-gradient and reliability screen (exists; not otherwise touched) |
 | `analysis/build_features.py` | CLI: populate `position_features`, then `style_cell_means`, then `player_style_vectors` |
 | `engine/models.py` (modify) | three new table definitions + `init_engine_db` |
 | `app/style.py` | query layer: subject vector, percentiles, similarity. Takes a `conn` |
@@ -49,9 +50,28 @@
 ## Task 1: The four metrics
 
 **Files:**
-- Create: `analysis/__init__.py` (empty)
-- Create: `analysis/metrics.py`
-- Test: `tests/test_style_metrics.py`
+- Modify: `analysis/metrics.py`
+- Modify: `analysis/screen.py:32-36`
+- Test: `tests/test_style_metrics.py` (create)
+
+**Read this first.** `analysis/metrics.py` and `analysis/__init__.py` already
+exist on this branch, committed in `fcf889c`, with all five metric functions
+already written and validated. This task does **not** create them. It adds the
+tests they never had, and makes three small changes so the rest of the plan's
+tasks can import what they expect:
+
+1. Rename `STYLE_METRICS` to `STYLE_AXES` (line 140). "Axes" is what every later
+   task and the UI call them; two names for one thing is how a later task ends
+   up importing the wrong one.
+2. Add `SNAPSHOT_PLY = 20` to `metrics.py`. It currently lives in `screen.py`,
+   but `build_features.py` needs it too in Task 3, and duplicating it is how the
+   two drift apart and silently measure different positions.
+3. Update `analysis/screen.py:32-36` to import both from `metrics`, dropping its
+   local `SNAPSHOT_PLY`.
+
+Do not otherwise rewrite the metric functions. They are the validated versions
+behind the findings doc; changing them invalidates the measurements that
+justified this feature.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -168,11 +188,14 @@ class TestPassedPawns:
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_style_metrics.py -v`
-Expected: collection error, `ModuleNotFoundError: No module named 'analysis'`
+Expected: `ImportError: cannot import name 'STYLE_AXES'` from the Task 3 import, or failures in the metric tests if any assertion is wrong. The metric functions themselves already exist, so most tests should pass immediately; that is expected and is the point of writing them against code that was never covered.
 
-- [ ] **Step 3: Create the package and implement the metrics**
+- [ ] **Step 3: Make the three changes**
 
-Create empty `analysis/__init__.py`, then `analysis/metrics.py`:
+Apply the three changes listed above. For reference, this is what
+`analysis/metrics.py` must look like afterwards — the function bodies are
+already correct and unchanged; only the module docstring, `STYLE_AXES` and
+`SNAPSHOT_PLY` differ from what is on disk:
 
 ```python
 """Board-derived positional metrics, reimplemented from classical Stockfish.
@@ -333,8 +356,9 @@ Expected: 16 passed
 ```bash
 uv run ruff check analysis/ tests/test_style_metrics.py
 uv run mypy analysis/
-git add analysis/__init__.py analysis/metrics.py tests/test_style_metrics.py
-git commit -m "feat: add the four board-derived style metrics"
+uv run python -c "import analysis.screen"   # the rename must not break it
+git add analysis/metrics.py analysis/screen.py tests/test_style_metrics.py
+git commit -m "test: cover the style metrics, and name the axes consistently"
 ```
 
 ---
