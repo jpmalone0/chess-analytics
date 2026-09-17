@@ -136,8 +136,14 @@ def passed_pawns(board: chess.Board, color: chess.Color) -> float:
     return float(n)
 
 
+#: The ply every metric is sampled at. Shared by screen.py (which screens
+#: candidate axes for reliability) and build_features.py (which builds player
+#: profiles from the axes that passed), so the two cannot silently drift apart
+#: and measure different positions.
+SNAPSHOT_PLY = 20
+
 #: Metrics that survived the reliability screen. passed_pawns is excluded.
-STYLE_METRICS = {
+STYLE_AXES = {
     "space": space,
     "mobility": mobility,
     "king_safety": king_safety,

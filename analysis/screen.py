@@ -29,11 +29,10 @@ from collections import defaultdict
 import chess
 
 sys.path.insert(0, ".")
-from analysis.metrics import STYLE_METRICS, passed_pawns  # noqa: E402
+from analysis.metrics import SNAPSHOT_PLY, STYLE_AXES, passed_pawns  # noqa: E402
 
-METRICS = {**STYLE_METRICS, "passed_pawns": passed_pawns}
+METRICS = {**STYLE_AXES, "passed_pawns": passed_pawns}
 
-SNAPSHOT_PLY = 20
 MIN_CELL = 40        # observations per (ECO, colour) before it can be centred
 MIN_BANDS = 3        # rating bands per cell, so the centre is not one band's taste
 MIN_GAMES = 30       # games per player for the reliability half-split
