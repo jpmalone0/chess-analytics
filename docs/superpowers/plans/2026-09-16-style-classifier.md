@@ -643,7 +643,7 @@ MIN_PLAYER_GAMES = 30
 #: Schema prefix for the sidecar tables. "engine." in production, where the
 #: sidecar is ATTACHed under that alias; empty in tests, which keep both schemas
 #: in one in-memory database so the same SQL is exercised either way.
-SCHEMA = "engine." 
+SCHEMA = "engine."
 
 
 def extract_game(game_id: int, sans: list[str]) -> list[dict]:
@@ -729,7 +729,7 @@ def build_cell_means(conn) -> int:
         WHERE g.variant IS NULL AND g.time_class IS NOT NULL
         GROUP BY 1, 2, 3"""))
     return int(conn.execute(text(
-        "SELECT COUNT(*) FROM {SCHEMA}style_cell_means")).scalar() or 0)
+        f"SELECT COUNT(*) FROM {SCHEMA}style_cell_means")).scalar() or 0)
 
 
 def build_player_vectors(conn) -> int:
@@ -759,7 +759,7 @@ def build_player_vectors(conn) -> int:
         GROUP BY 1, 2
         HAVING COUNT(*) >= :min_games"""), {"min_games": MIN_PLAYER_GAMES})
     return int(conn.execute(text(
-        "SELECT COUNT(*) FROM {SCHEMA}player_style_vectors")).scalar() or 0)
+        f"SELECT COUNT(*) FROM {SCHEMA}player_style_vectors")).scalar() or 0)
 
 
 def main(argv: list[str] | None = None) -> int:
