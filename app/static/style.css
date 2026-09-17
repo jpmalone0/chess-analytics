@@ -1655,6 +1655,43 @@ body.compare-mode #stat-winrate     { order: 8; }
     border-color: rgba(148, 163, 184, 0.85);
 }
 
+.panel-meta { font-size: 0.85rem; opacity: 0.75; margin: 0 0 0.75rem; }
+
+.style-similar { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+.style-similar li { padding: 0.15rem 0; }
+.style-similar .distance { opacity: 0.6; font-variant-numeric: tabular-nums; }
+
+.info-tip {
+    position: relative;
+    display: inline-block; width: 1.1em; height: 1.1em; line-height: 1.1em;
+    text-align: center; border-radius: 50%; font-size: 0.7em;
+    background: rgba(127, 127, 127, 0.25); cursor: help; vertical-align: super;
+}
+
+/* data-tip holds the tooltip text; nothing renders it without this rule. */
+.info-tip:hover::after,
+.info-tip:focus::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 280px;
+    white-space: normal;
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.65rem;
+    font-size: 0.78rem;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--text-secondary);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    z-index: 200;
+    pointer-events: none;
+}
+
 .baseline-picker select option:disabled {
     color: var(--text-muted);
     font-style: italic;

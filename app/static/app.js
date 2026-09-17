@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    Chess Analytics — Frontend JS
    ═══════════════════════════════════════════════════════════ */
+/* global loadStylePanel */
 
 const API = '';
 let currentUsername = '';
@@ -590,6 +591,7 @@ async function refreshAll() {
         loadEloChart(currentUsername),
         loadGames(currentUsername),
         initRepertoireTabs(currentUsername),
+        loadStylePanel(currentUsername),
     ];
     if (compareMode && currentCompareUsername) {
         promises.push(loadCompareStats(currentCompareUsername));

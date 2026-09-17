@@ -188,6 +188,19 @@
                         <div id="opening-stats-table-black" class="hidden"></div>
                     </div>
                 </div>
+                <div id="style-panel" class="section hidden">
+                    <h2>
+                        Playing style
+                        <span class="info-tip" tabindex="0" data-tip="These axes describe how you play, not how well. They are stable traits that barely track rating, so neither end is better.">?</span>
+                    </h2>
+                    <p id="style-meta" class="panel-meta"></p>
+                    <canvas id="style-chart" height="180"></canvas>
+                    <h3>
+                        Closest in style among 2800+ blitz players
+                        <span class="info-tip" id="style-similar-tip" tabindex="0" data-tip="">?</span>
+                    </h3>
+                    <ol id="style-similar" class="style-similar"></ol>
+                </div>
             </div>
         </div>
 
@@ -472,7 +485,8 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=77"></script>
+    <script src="/static/app.js?v=78"></script>
+    <script src="/static/style-panel.js?v=1"></script>
 </body>
 
 </html>
