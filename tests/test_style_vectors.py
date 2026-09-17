@@ -104,9 +104,14 @@ class TestExtraction:
         assert rows["black"]["space"] == space(board, chess.BLACK)
 
     def test_exactly_nineteen_plies_yields_nothing(self):
-        """The boundary SNAPSHOT_PLY sits on. An off-by-one here -- <= instead
-        of < -- would measure move 19.5 and call it move 20 for every game in
-        the corpus, silently and uniformly, which no later test would catch."""
+        """A game one ply short of the snapshot is not measured at all.
+
+        Not a guard against `<` becoming `<=`: at 19 plies both are true, so
+        that mutation diverges at 20, where the two tests above already catch
+        it. What this pins is the guard existing at all -- drop it, or set
+        SNAPSHOT_PLY below 20, and a short game gets measured at whatever
+        position it reached, mixing move 19 with move 20 across the corpus.
+        """
         assert extract_game(7, _TWENTY_PLY_GAME[:19]) == []
 
 
