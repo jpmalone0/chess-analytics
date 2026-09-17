@@ -157,9 +157,10 @@ def percentile_profile(conn, vector: Vector, time_class: str) -> dict:
 
 #: Rating floor for the similarity pool, applied to BLITZ rating.
 #: On chess.com the players recognisable as super-GMs sit near 3000; 2400 would
-#: pad the pool with players the comparison is not about. 472 players clear
-#: 2800 with 30+ games, against 650 at 2400 -- 7% fewer games for a pool that
-#: means what it says.
+#: pad the pool with players the comparison is not about. Measured on the
+#: corpus: 2800+ leaves 472 players and 265,584 games, against 650 players and
+#: 284,422 games at 2400+. That is 27% fewer players but only 7% fewer games --
+#: the ones dropped have the shallowest histories.
 ELITE_MIN_ELO = 2800
 
 #: The reference is always blitz, whatever class the subject is viewing. Blitz

@@ -398,4 +398,15 @@ class TestSimilarity:
         assert out["p10"] == pytest.approx(out["p11"], rel=0.01)
 
     def test_an_empty_vector_returns_nothing(self, conn):
+        """The pool must be seeded for this to prove anything.
+
+        Against an empty pool the function returns [] whether or not the
+        early guard exists, so the test would pass while detecting nothing.
+        With rows present, removing the guard raises KeyError on
+        vector.axes[axis] instead.
+        """
+        conn.execute(text("INSERT INTO players VALUES (10, 'gm')"))
+        conn.execute(text(
+            "INSERT INTO player_style_vectors VALUES "
+            "(10, 'blitz', 200, 2900, 0, 0, 0, 0)"))
         assert similar_players(conn, Vector()) == []
