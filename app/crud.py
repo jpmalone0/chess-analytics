@@ -1376,14 +1376,18 @@ def style_profile(
         conn, player_id, time_class, extra_clause=where, params=params)
     ranked = style.percentile_profile(conn, vector, time_class or "blitz")
     similar = (
-        style.similar_players(conn, vector, player_id=player_id)
+        style.similar_players(conn, vector, player_id=player_id,
+                              time_class=time_class)
         if vector.axes else []
     )
 
     try:
+        # Pooled across every time class, because each vector is z-scored
+        # within its own before ranking. Scoping this to one class left 37
+        # rapid players -- 2.7 percentile points apiece.
         n_reference = conn.execute(text(
-            f"SELECT COUNT(*) FROM {style.SCHEMA}player_style_vectors "
-            "WHERE time_class = :tc"), {"tc": time_class or "blitz"}).scalar() or 0
+            f"SELECT COUNT(*) FROM {style.SCHEMA}player_style_vectors"
+        )).scalar() or 0
         n_pool = conn.execute(text(
             f"SELECT COUNT(*) FROM {style.SCHEMA}player_style_vectors "
             "WHERE time_class = :tc AND mean_elo >= :floor"),
@@ -1398,7 +1402,7 @@ def style_profile(
         "n_games": vector.n,
         "time_class": time_class,
         "percentile_reference": {
-            "pool": "all players with 30+ games",
+            "pool": "all players with 30+ games, pooled across time controls",
             "n_players": int(n_reference),
             "time_class": time_class or "blitz",
         },
