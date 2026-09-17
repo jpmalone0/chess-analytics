@@ -1825,6 +1825,21 @@ function renderStyleSimilar(data) {
 
 In `app/static/app.js`, inside `loadAll`, add `loadStylePanel(currentUsername),` to the `promises` array, after `initRepertoireTabs(currentUsername),`.
 
+> **As built (2026-09-17):** three things in this task were wrong.
+> 1. **Placement.** "after the `opening-stats-overview` section" put the panel
+>    inside `#layer-1-right`, a column of a two-column grid whose `.section`
+>    children get `height: 100%`. Two sections there both claim the full column
+>    height; the panel overflowed and its similarity list rendered on top of the
+>    charts below — 1,022px of slack against 479px of content. It belongs after
+>    the grid as a full-width section. Fixed in 0355ff9.
+> 2. **The tooltip never rendered.** The CSS styled the `?` badge but had no
+>    `content: attr(data-tip)` rule, so the text this task requires was
+>    invisible. A hover/focus popup and `tabindex="0"` were added.
+> 3. **`loadAll` does not exist** — the function is `refreshAll`.
+>
+> Splitting into a second plain script also broke `npx eslint app/static/` with
+> `no-undef` on cross-file globals, resolved with `/* global */` directives.
+
 - [ ] **Step 5: Verify in the browser**
 
 ```bash
