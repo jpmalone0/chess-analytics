@@ -210,9 +210,16 @@ ballasack6's own band. Within the elite corpus the concentration is worse still:
 71% of the 94,104 elite bullet games come from 5 players, 41,237 from Naroditsky
 alone.
 
-**Decision (2026-09-16):** ship similarity against GMs only, framed explicitly as
-"which strong player you most resemble" rather than as a peer comparison. The
-thin sample is accepted for now.
+**Decision (2026-09-16):** ship similarity against **2800+ only**, framed
+explicitly as "which strong player you most resemble" rather than as a peer
+comparison. The thin sample is accepted for now.
+
+2800 rather than 2400 because on chess.com the players actually recognisable as
+super-GMs sit near 3000, and 2400 would pad the pool with players the comparison
+is not meant to be about. The cutoff costs almost nothing: 472 players and
+265,584 games at 2800+, against 650 and 284,422 at 2400+ — 7% fewer games for a
+pool that means what it says. 3000+ would leave 124 players and 219,428 games,
+still viable if the cutoff is ever tightened.
 
 **Follow-up required:** a crawl feature to widen the corpus — more titled players
 with deep histories, and ideally real coverage of the 1600–2399 range, which is
