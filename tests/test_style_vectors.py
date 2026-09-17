@@ -1,11 +1,14 @@
 """Centring, aggregation, percentile and similarity over the style tables."""
 
+import math
+
 import chess
 import pytest
 from sqlalchemy import create_engine, text
 
 from analysis.build_features import build_cell_means, build_player_vectors, extract_game
 from analysis.metrics import space
+from app.style import AXES, subject_vector
 
 
 @pytest.fixture(autouse=True)
@@ -14,13 +17,12 @@ def _local_schema(monkeypatch):
 
     Production ATTACHes the sidecar under the alias "engine"; the SQL is
     otherwise identical, so this exercises the same statements.
-
-    Note: the plan's version of this fixture also patches app.style.SCHEMA,
-    but app.style does not exist until Task 5 -- that patch is added back then.
     """
     from analysis import build_features
+    from app import style
 
     monkeypatch.setattr(build_features, "SCHEMA", "")
+    monkeypatch.setattr(style, "SCHEMA", "")
 
 
 @pytest.fixture
@@ -174,3 +176,51 @@ class TestCentring:
         classes = {r[0] for r in conn.execute(text(
             "SELECT time_class FROM player_style_vectors WHERE player_id = 1"))}
         assert classes == {"blitz", "bullet"}
+
+
+class TestSubjectVector:
+    def test_it_returns_a_mean_and_a_standard_error_per_axis(self, conn):
+        seed_games(conn, 40)
+        build_cell_means(conn)
+        result = subject_vector(conn, player_id=1, time_class="blitz")
+        assert set(result.axes) == set(AXES)
+        assert result.n == 40
+        for axis in AXES:
+            assert math.isfinite(result.axes[axis].mean)
+            assert result.axes[axis].se >= 0.0
+
+    def test_identical_games_give_a_zero_standard_error(self, conn):
+        """Every game measured the same, so the mean cannot be uncertain. A
+        standard error computed as SD/sqrt(n) with a wrong SD shows up here."""
+        seed_games(conn, 40)
+        build_cell_means(conn)
+        result = subject_vector(conn, player_id=1, time_class="blitz")
+        assert result.axes["space"].se == pytest.approx(0.0)
+
+    def test_the_standard_error_shrinks_as_games_accumulate(self, conn):
+        """More observations of the same noisy quantity narrow the estimate.
+
+        The per-game value alternates between two fixed points rather than
+        growing with i: growing values would widen the sample's spread as more
+        games are added, inflating variance faster than sqrt(n) shrinks it, and
+        the assertion below would fail for any correct implementation.
+        """
+        for i in range(40):
+            seed_games(conn, 1, space=float(i % 2), start_id=i + 1)
+        build_cell_means(conn)
+        few = subject_vector(conn, 1, "blitz", limit_game_ids=list(range(1, 6)))
+        many = subject_vector(conn, 1, "blitz")
+        assert many.axes["space"].se < few.axes["space"].se
+
+    def test_no_games_gives_an_empty_vector_not_a_crash(self, conn):
+        """Narrowing a filter to nothing must not divide by zero."""
+        result = subject_vector(conn, player_id=1, time_class="rapid")
+        assert result.n == 0
+        assert result.axes == {}
+
+    def test_the_time_class_filter_is_honoured(self, conn):
+        seed_games(conn, 40, time_class="blitz")
+        seed_games(conn, 10, time_class="bullet", start_id=200)
+        build_cell_means(conn)
+        assert subject_vector(conn, 1, "blitz").n == 40
+        assert subject_vector(conn, 1, "bullet").n == 10
