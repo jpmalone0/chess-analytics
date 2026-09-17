@@ -127,9 +127,17 @@ function renderStyleSimilar(data) {
     const tip = document.getElementById('style-similar-tip');
     const viewing = data.time_class || 'blitz';
     const crossing = viewing !== data.similarity_reference.vectors_from;
+    // The floor lives in app/style.py; taking it from the response keeps the
+    // label and the filter from drifting apart when it changes.
+    const pool = data.similarity_reference.pool.replace(' blitz', '');
+
+    const heading = document.getElementById('style-similar-heading');
+    if (heading) {
+        heading.firstChild.nodeValue = `Closest in style among ${pool} blitz players `;
+    }
 
     tip.dataset.tip =
-        `Compared against players rated 2800+ in blitz, using their blitz games. `
+        `Compared against players rated ${pool} in blitz, using their blitz games. `
         + (crossing
             ? 'Blitz is where strong players have the deepest online histories — '
             + `in rapid only a handful have enough games to place. You are viewing `

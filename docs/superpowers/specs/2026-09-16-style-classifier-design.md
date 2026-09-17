@@ -30,7 +30,7 @@ The weakness feature remains a separate open thread; see the findings doc.
 | Output | percentile profile **plus** similarity | Similarity is nearly free once the vector exists |
 | Scope | follows the existing UI filters, time class included | Consistency with every other analytics panel, at the cost of variable *n* |
 | Low *n* | always render, error bars widen | The panel must not vanish when a filter narrows, and a bare point estimate reads as a fact |
-| Similarity pool | **2800+ blitz rating**, compared using their **blitz** vectors | Blitz is the de facto online time control; top players barely play rapid online. 405 players, 159,033 blitz games |
+| Similarity pool | **3000+ blitz rating**, compared using their **blitz** vectors | Blitz is the de facto online time control; top players barely play rapid online. 100 players, 118,609 blitz games |
 | Cross-class comparison | subject's vector may be any time class; the reference is always blitz | Centring makes each vector relative to its own class's norm, so the comparison is like-for-like |
 | Reference for percentile | names itself in the UI | "Percentile" unqualified invites reading it as a peer comparison the corpus cannot support |
 
@@ -124,21 +124,28 @@ routes use. Returns per axis: mean, `n`, and standard deviation.
 
 **Percentile:** rank the subject's axis value against that axis across
 `player_style_vectors`, restricted to the same time class, over **every** player
-with ≥30 games — not only the 2800+ pool.
+with ≥30 games — not only the elite pool.
 
 These are deliberately two different reference sets and the response must keep
 them apart. A percentile against 472 super-GMs answers a different question than
 a percentile against all 695 players with deep histories, and reporting one
 while labelling it the other is the failure this project has already made four
-times. The similarity readout uses 2800+; the percentile uses the full pool.
+times. The similarity readout uses the 3000+ pool; the percentile uses the full one.
 
 **Error bars:** standard error is `SD/√n`. Map `mean ± 1.96·SE` through the same
 percentile function, so the bar is in the same units as the dot. At small `n` the
 bar approaches the full width of the axis, which is the correct display.
 
-**Similarity:** the pool is players with a blitz rating ≥2800 over ≥30 blitz
-games — **405 players, 159,033 blitz games** — and their vectors are always their
+**Similarity:** the pool is players with a blitz rating ≥3000 over ≥30 blitz
+games — **100 players, 118,609 blitz games** — and their vectors are always their
 **blitz** vectors, whatever time class the subject is viewing.
+
+3000 rather than 2800, decided 2026-09-17: on chess.com the players actually
+recognisable as super-GMs sit at or above 3000. Dropping from 2800 costs three
+quarters of the players but only a quarter of the games, because the ones
+removed have the shallowest histories. The floor lives in one constant
+(`style.ELITE_MIN_ELO`) and every user-visible mention is derived from it, so
+the label and the filter cannot drift apart.
 
 Gating on blitz rather than per-class is deliberate. Blitz is the de facto
 online time control and top players barely play rapid online; gating per class
@@ -177,7 +184,7 @@ Accepts the same filter parameters as the sibling analytics routes
   "n_games": 412,
   "percentile_reference": { "pool": "all players with >=30 games",
                             "n_players": 695, "time_class": "rapid" },
-  "similarity_reference": { "pool": "2800+ blitz", "n_players": 405,
+  "similarity_reference": { "pool": "3000+ blitz", "n_players": 100,
                             "vectors_from": "blitz" },
   "axes": [
     { "axis": "mobility", "value": 0.571, "percentile": 78,
@@ -211,14 +218,14 @@ Each axis is labelled neutrally (`more space` / `less space`), never
 the two things that most change how the numbers should be read are never
 implicit.
 
-Below the bars, "closest in style among 2800+ blitz players", five names with
+Below the bars, "closest in style among 3000+ blitz players", five names with
 distances.
 
 The reference is always blitz, so only the blitz view is like-for-like; bullet
 and rapid views compare the subject's vector in that class against the pool's
 blitz vectors. A tooltip on the similarity heading carries the explanation:
 
-> Compared against players rated 2800+ in blitz, using their blitz games. Blitz
+> Compared against players rated 3000+ in blitz, using their blitz games. Blitz
 > is where strong players have the deepest online histories — in rapid only 7 of
 > them have enough games to place. Each side is measured relative to what is
 > normal for its own time control and opening, so the comparison holds across

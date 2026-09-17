@@ -1363,7 +1363,7 @@ def style_profile(
 
     Reuses _build_game_filters so the panel can never drift from the rest of the
     UI, and returns the two reference populations separately: percentiles rank
-    against every player with a vector, similarity against the 2800+ blitz pool.
+    against every player with a vector, similarity against the elite blitz pool.
     """
     where, params = _build_game_filters(
         player_id, time_class, start_date, end_date,
@@ -1403,7 +1403,7 @@ def style_profile(
             "time_class": time_class or "blitz",
         },
         "similarity_reference": {
-            "pool": "2800+ blitz",
+            "pool": f"{style.ELITE_MIN_ELO}+ blitz",
             "n_players": int(n_pool),
             "vectors_from": style.SIMILARITY_CLASS,
         },

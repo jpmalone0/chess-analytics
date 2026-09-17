@@ -116,7 +116,7 @@ Z_95 = 1.96
 def _reference_values(conn, time_class: str) -> dict[str, list[float]]:
     """Every reference player's value per axis, sorted, for that time class.
 
-    The percentile reference is EVERY player with a vector -- not the 2800+ pool
+    The percentile reference is EVERY player with a vector -- not the elite pool
     used for similarity. They answer different questions and conflating them is
     the mistake this project has already made four times.
     """
@@ -165,12 +165,17 @@ def percentile_profile(conn, vector: Vector, time_class: str) -> dict:
 
 
 #: Rating floor for the similarity pool, applied to BLITZ rating.
-#: On chess.com the players recognisable as super-GMs sit near 3000; 2400 would
-#: pad the pool with players the comparison is not about. Measured on the
-#: corpus: 2800+ leaves 472 players and 265,584 games, against 650 players and
-#: 284,422 games at 2400+. That is 27% fewer players but only 7% fewer games --
-#: the ones dropped have the shallowest histories.
-ELITE_MIN_ELO = 2800
+#:
+#: On chess.com the players recognisable as super-GMs sit at or above 3000, so
+#: that is where the floor goes -- a lower one pads the pool with players the
+#: comparison is not meant to be about. Measured over the built vectors:
+#: 3000+ leaves 100 players and 118,609 blitz games, against 401 and 155,717 at
+#: 2800. A quarter of the players and three quarters of the games, for a pool
+#: whose label means what it says.
+#:
+#: Every user-visible mention of this floor is derived from this constant rather
+#: than written out, so the label and the filter cannot disagree.
+ELITE_MIN_ELO = 3000
 
 #: The reference is always blitz, whatever class the subject is viewing. Blitz
 #: is the de facto online time control and top players barely play rapid there:
@@ -195,7 +200,7 @@ def similar_players(conn, vector: Vector, player_id: int | None = None) -> list[
     mobility while appearing to use all four axes.
 
     player_id, when given, excludes that player from the pool -- a subject who
-    is themselves in the 2800+ blitz pool would otherwise appear in their own
+    is themselves in the elite blitz pool would otherwise appear in their own
     results. This is applied in the WHERE clause, before the list is truncated
     to SIMILAR_COUNT: filtering after the slice would silently return four
     results whenever the subject placed in their own top five, dropping a real

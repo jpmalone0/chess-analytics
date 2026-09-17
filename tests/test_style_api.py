@@ -3,6 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app import style
 from app.database import get_db
 from app.main import app
 from tests.conftest import make_player
@@ -33,11 +34,11 @@ def test_a_player_with_no_features_gets_an_empty_profile(client, db):
 
 def test_the_response_names_both_reference_sets(client, db):
     """Percentiles rank against every player with a vector; similarity uses the
-    2800+ blitz pool. Reporting one under the other's name is exactly the
+    elite blitz pool. Reporting one under the other's name is exactly the
     mistake that produced four dissolved findings."""
     make_player(db, "subject")
     db.commit()
     body = client.get("/api/players/subject/analytics/style").json()
     assert body["percentile_reference"]["pool"]
-    assert body["similarity_reference"]["pool"] == "2800+ blitz"
+    assert body["similarity_reference"]["pool"] == f"{style.ELITE_MIN_ELO}+ blitz"
     assert body["similarity_reference"]["vectors_from"] == "blitz"

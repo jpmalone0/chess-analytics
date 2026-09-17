@@ -350,14 +350,14 @@ class TestSimilarity:
                 {"p": pid, "u": f"gm{pid}"})
             conn.execute(text(
                 "INSERT INTO player_style_vectors VALUES "
-                "(:p, 'blitz', 200, 2900, :v, :v, :v, :v)"), {"p": pid, "v": v})
+                "(:p, 'blitz', 200, 3100, :v, :v, :v, :v)"), {"p": pid, "v": v})
         axes = {a: AxisValue(mean=0.2, se=0.0) for a in AXES}
         out = similar_players(conn, Vector(n=100, axes=axes))
         assert out[0]["username"] == "gm10"
         assert out[0]["distance"] < out[-1]["distance"]
 
     def test_players_below_the_rating_floor_are_excluded(self, conn):
-        for pid, elo in ((10, 2900), (11, 2500)):
+        for pid, elo in ((10, 3100), (11, 2900)):
             conn.execute(text("INSERT INTO players VALUES (:p, :u)"),
                          {"p": pid, "u": f"p{pid}"})
             conn.execute(text(
@@ -366,7 +366,7 @@ class TestSimilarity:
         axes = {a: AxisValue(mean=0.0, se=0.0) for a in AXES}
         names = {r["username"] for r in similar_players(conn, Vector(100, axes))}
         assert names == {"p10"}
-        assert ELITE_MIN_ELO == 2800
+        assert ELITE_MIN_ELO == 3000
 
     def test_only_blitz_vectors_are_used(self, conn):
         """The reference is always blitz, whatever class the subject is viewing:
@@ -375,7 +375,7 @@ class TestSimilarity:
         conn.execute(text("INSERT INTO players VALUES (10, 'gm')"))
         conn.execute(text(
             "INSERT INTO player_style_vectors VALUES "
-            "(10, 'rapid', 200, 2900, 0, 0, 0, 0)"))
+            "(10, 'rapid', 200, 3100, 0, 0, 0, 0)"))
         axes = {a: AxisValue(mean=0.0, se=0.0) for a in AXES}
         assert similar_players(conn, Vector(100, axes)) == []
         assert SIMILARITY_CLASS == "blitz"
@@ -392,12 +392,12 @@ class TestSimilarity:
                 "INSERT INTO player_style_vectors "
                 "(player_id, time_class, n, mean_elo, space, mobility, "
                 "king_safety, pawn_structure) "
-                "VALUES (:p, 'blitz', 200, 2900, :s, :m, 0, 0)"),
+                "VALUES (:p, 'blitz', 200, 3100, :s, :m, 0, 0)"),
                 {"p": pid, "s": sp, "m": mob})
         conn.execute(text("INSERT INTO players VALUES (12, 'spread')"))
         conn.execute(text(
             "INSERT INTO player_style_vectors VALUES "
-            "(12, 'blitz', 200, 2900, -3.0, -9.0, 0, 0)"))
+            "(12, 'blitz', 200, 3100, -3.0, -9.0, 0, 0)"))
         axes = {a: AxisValue(mean=0.0, se=0.0) for a in AXES}
         out = {r["username"]: r["distance"] for r in similar_players(conn, Vector(100, axes))}
         assert out["p10"] == pytest.approx(out["p11"], rel=0.01)
@@ -413,11 +413,11 @@ class TestSimilarity:
         conn.execute(text("INSERT INTO players VALUES (10, 'gm')"))
         conn.execute(text(
             "INSERT INTO player_style_vectors VALUES "
-            "(10, 'blitz', 200, 2900, 0, 0, 0, 0)"))
+            "(10, 'blitz', 200, 3100, 0, 0, 0, 0)"))
         assert similar_players(conn, Vector()) == []
 
     def test_the_subject_does_not_appear_in_their_own_results(self, conn):
-        """A player who is themselves in the 2800+ blitz pool must not show up
+        """A player who is themselves in the elite blitz pool must not show up
         in their own similarity list -- and excluding them must not shrink the
         list below SIMILAR_COUNT when enough other players exist to fill it.
         """
@@ -428,7 +428,7 @@ class TestSimilarity:
                 "INSERT INTO players VALUES (:p, :u)"), {"p": pid, "u": f"p{pid}"})
             conn.execute(text(
                 "INSERT INTO player_style_vectors VALUES "
-                "(:p, 'blitz', 200, 2900, :v, :v, :v, :v)"), {"p": pid, "v": v})
+                "(:p, 'blitz', 200, 3100, :v, :v, :v, :v)"), {"p": pid, "v": v})
         axes = {a: AxisValue(mean=0.0, se=0.0) for a in AXES}
         out = similar_players(conn, Vector(n=100, axes=axes), player_id=SUBJECT_ID)
         assert "p10" not in {r["username"] for r in out}
