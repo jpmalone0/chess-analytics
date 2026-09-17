@@ -410,3 +410,21 @@ class TestSimilarity:
             "INSERT INTO player_style_vectors VALUES "
             "(10, 'blitz', 200, 2900, 0, 0, 0, 0)"))
         assert similar_players(conn, Vector()) == []
+
+    def test_the_subject_does_not_appear_in_their_own_results(self, conn):
+        """A player who is themselves in the 2800+ blitz pool must not show up
+        in their own similarity list -- and excluding them must not shrink the
+        list below SIMILAR_COUNT when enough other players exist to fill it.
+        """
+        SUBJECT_ID = 10
+        for pid, v in ((SUBJECT_ID, 0.0), (11, 1.0), (12, 2.0),
+                       (13, 3.0), (14, 4.0), (15, 5.0)):
+            conn.execute(text(
+                "INSERT INTO players VALUES (:p, :u)"), {"p": pid, "u": f"p{pid}"})
+            conn.execute(text(
+                "INSERT INTO player_style_vectors VALUES "
+                "(:p, 'blitz', 200, 2900, :v, :v, :v, :v)"), {"p": pid, "v": v})
+        axes = {a: AxisValue(mean=0.0, se=0.0) for a in AXES}
+        out = similar_players(conn, Vector(n=100, axes=axes), player_id=SUBJECT_ID)
+        assert "p10" not in {r["username"] for r in out}
+        assert len(out) == 5

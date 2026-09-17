@@ -14,6 +14,7 @@ import math
 from dataclasses import dataclass, field
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 #: Display order for the axes.
 AXES = ("space", "mobility", "king_safety", "pawn_structure")
@@ -75,20 +76,25 @@ def subject_vector(
         ids = ",".join(str(int(g)) for g in limit_game_ids) or "NULL"
         clauses.append(f"g.game_id IN ({ids})")
 
-    row = conn.execute(text(f"""
-        SELECT COUNT(*) AS n, {', '.join(selects)}
-        FROM games g
-        JOIN {SCHEMA}position_features f
-          ON f.game_id = g.game_id
-         AND f.color = CASE WHEN g.white_player_id = :player_id
-                            THEN 'white' ELSE 'black' END
-        LEFT JOIN {SCHEMA}style_cell_means c
-          ON c.time_class = g.time_class AND c.color = f.color
-         AND c.eco3 = SUBSTR(COALESCE(g.eco, '?'), 1, 3)
-        LEFT JOIN {SCHEMA}style_cell_means cf
-          ON cf.time_class = g.time_class AND cf.color = f.color AND cf.eco3 = '*'
-        WHERE (g.white_player_id = :player_id OR g.black_player_id = :player_id)
-          AND {' AND '.join(clauses)}"""), params).mappings().first()
+    try:
+        row = conn.execute(text(f"""
+            SELECT COUNT(*) AS n, {', '.join(selects)}
+            FROM games g
+            JOIN {SCHEMA}position_features f
+              ON f.game_id = g.game_id
+             AND f.color = CASE WHEN g.white_player_id = :player_id
+                                THEN 'white' ELSE 'black' END
+            LEFT JOIN {SCHEMA}style_cell_means c
+              ON c.time_class = g.time_class AND c.color = f.color
+             AND c.eco3 = SUBSTR(COALESCE(g.eco, '?'), 1, 3)
+            LEFT JOIN {SCHEMA}style_cell_means cf
+              ON cf.time_class = g.time_class AND cf.color = f.color AND cf.eco3 = '*'
+            WHERE (g.white_player_id = :player_id OR g.black_player_id = :player_id)
+              AND {' AND '.join(clauses)}"""), params).mappings().first()
+    except OperationalError:
+        # The sidecar is not attached, or has never been built. An absent
+        # profile is the correct answer, not a 500.
+        return Vector()
 
     if not row or not row["n"]:
         return Vector()
@@ -114,9 +120,12 @@ def _reference_values(conn, time_class: str) -> dict[str, list[float]]:
     used for similarity. They answer different questions and conflating them is
     the mistake this project has already made four times.
     """
-    rows = conn.execute(text(
-        f"SELECT {', '.join(AXES)} FROM {SCHEMA}player_style_vectors "
-        "WHERE time_class = :tc"), {"tc": time_class}).mappings().all()
+    try:
+        rows = conn.execute(text(
+            f"SELECT {', '.join(AXES)} FROM {SCHEMA}player_style_vectors "
+            "WHERE time_class = :tc"), {"tc": time_class}).mappings().all()
+    except OperationalError:
+        return {axis: [] for axis in AXES}
     return {axis: sorted(float(r[axis]) for r in rows) for axis in AXES}
 
 
@@ -178,22 +187,36 @@ SIMILARITY_CLASS = "blitz"
 SIMILAR_COUNT = 5
 
 
-def similar_players(conn, vector: Vector) -> list[dict]:
+def similar_players(conn, vector: Vector, player_id: int | None = None) -> list[dict]:
     """The nearest players in standardised style space.
 
     Standardising is not optional: mobility has roughly triple the raw spread of
     space, so an unstandardised Euclidean distance would rank almost entirely on
     mobility while appearing to use all four axes.
+
+    player_id, when given, excludes that player from the pool -- a subject who
+    is themselves in the 2800+ blitz pool would otherwise appear in their own
+    results. This is applied in the WHERE clause, before the list is truncated
+    to SIMILAR_COUNT: filtering after the slice would silently return four
+    results whenever the subject placed in their own top five, dropping a real
+    neighbour instead of surfacing it. The self-distance is not generally zero
+    -- the subject's vector is filter-scoped while the pool row is full-history
+    -- so there is no shortcut of just dropping the nearest match.
     """
     if not vector.axes:
         return []
 
-    rows = conn.execute(text(f"""
-        SELECT p.username, v.mean_elo, {', '.join('v.' + a for a in AXES)}
-        FROM {SCHEMA}player_style_vectors v
-        JOIN players p ON p.player_id = v.player_id
-        WHERE v.time_class = :tc AND v.mean_elo >= :floor"""),
-        {"tc": SIMILARITY_CLASS, "floor": ELITE_MIN_ELO}).mappings().all()
+    try:
+        rows = conn.execute(text(f"""
+            SELECT p.username, v.mean_elo, {', '.join('v.' + a for a in AXES)}
+            FROM {SCHEMA}player_style_vectors v
+            JOIN players p ON p.player_id = v.player_id
+            WHERE v.time_class = :tc AND v.mean_elo >= :floor
+              AND (:player_id IS NULL OR v.player_id != :player_id)"""),
+            {"tc": SIMILARITY_CLASS, "floor": ELITE_MIN_ELO, "player_id": player_id}
+            ).mappings().all()
+    except OperationalError:
+        return []
     if not rows:
         return []
 
