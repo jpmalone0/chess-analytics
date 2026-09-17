@@ -4,8 +4,23 @@ import chess
 import pytest
 from sqlalchemy import create_engine, text
 
-from analysis.build_features import extract_game
+from analysis.build_features import build_cell_means, build_player_vectors, extract_game
 from analysis.metrics import space
+
+
+@pytest.fixture(autouse=True)
+def _local_schema(monkeypatch):
+    """Tests keep both schemas in one database, so the sidecar prefix is empty.
+
+    Production ATTACHes the sidecar under the alias "engine"; the SQL is
+    otherwise identical, so this exercises the same statements.
+
+    Note: the plan's version of this fixture also patches app.style.SCHEMA,
+    but app.style does not exist until Task 5 -- that patch is added back then.
+    """
+    from analysis import build_features
+
+    monkeypatch.setattr(build_features, "SCHEMA", "")
 
 
 @pytest.fixture
@@ -87,3 +102,70 @@ class TestExtraction:
             board.push_san(san)
         assert rows["white"]["space"] == space(board, chess.WHITE)
         assert rows["black"]["space"] == space(board, chess.BLACK)
+
+    def test_exactly_nineteen_plies_yields_nothing(self):
+        """The boundary SNAPSHOT_PLY sits on. An off-by-one here -- <= instead
+        of < -- would measure move 19.5 and call it move 20 for every game in
+        the corpus, silently and uniformly, which no later test would catch."""
+        assert extract_game(7, _TWENTY_PLY_GAME[:19]) == []
+
+
+def seed_games(conn, n, time_class="blitz", eco="B30", elo=1500,
+                space=5.0, start_id=1):
+    """n games where our player is White, each with the same measured values."""
+    conn.execute(text("INSERT OR IGNORE INTO players VALUES (1, 'subject')"))
+    conn.execute(text("INSERT OR IGNORE INTO players VALUES (2, 'other')"))
+    for i in range(n):
+        gid = start_id + i
+        conn.execute(text(
+            "INSERT INTO games (game_id, white_player_id, black_player_id, "
+            "time_class, eco, variant, white_elo, black_elo) "
+            "VALUES (:g, 1, 2, :tc, :eco, NULL, :elo, :elo)"),
+            {"g": gid, "tc": time_class, "eco": eco, "elo": elo})
+        for color in ("white", "black"):
+            conn.execute(text(
+                "INSERT INTO position_features VALUES (:g, :c, :s, 0, 0, 0)"),
+                {"g": gid, "c": color, "s": space if color == "white" else 0.0})
+
+
+class TestCentring:
+    def test_a_populated_cell_becomes_its_own_centre(self, conn):
+        """With every game identical, each player's centred value is exactly 0 --
+        the whole point of centring, and a sign error would show as +/-5."""
+        seed_games(conn, 50)
+        build_cell_means(conn)
+        build_player_vectors(conn)
+        v = conn.execute(text(
+            "SELECT space FROM player_style_vectors WHERE player_id = 1")).scalar()
+        assert v == pytest.approx(0.0)
+
+    def test_a_thin_cell_falls_back_to_the_coarse_mean(self, conn):
+        """B30 has 50 games so it gets a cell; C00 has 5 and does not. The C00
+        games must still be centred -- dropping them would bias the profile
+        toward whichever openings happen to be popular."""
+        seed_games(conn, 50, eco="B30", space=5.0)
+        seed_games(conn, 5, eco="C00", space=9.0, start_id=100)
+        build_cell_means(conn)
+        build_player_vectors(conn)
+        cells = {r[0] for r in conn.execute(text(
+            "SELECT eco3 FROM style_cell_means WHERE color = 'white'"))}
+        assert cells == {"B30", "*"}
+        n = conn.execute(text(
+            "SELECT n FROM player_style_vectors WHERE player_id = 1")).scalar()
+        assert n == 55, "the thin-cell games must still be counted"
+
+    def test_a_player_below_the_game_threshold_gets_no_vector(self, conn):
+        seed_games(conn, 10)
+        build_cell_means(conn)
+        build_player_vectors(conn)
+        assert conn.execute(text(
+            "SELECT COUNT(*) FROM player_style_vectors")).scalar() == 0
+
+    def test_vectors_are_separate_per_time_class(self, conn):
+        seed_games(conn, 40, time_class="blitz")
+        seed_games(conn, 40, time_class="bullet", start_id=200)
+        build_cell_means(conn)
+        build_player_vectors(conn)
+        classes = {r[0] for r in conn.execute(text(
+            "SELECT time_class FROM player_style_vectors WHERE player_id = 1"))}
+        assert classes == {"blitz", "bullet"}
