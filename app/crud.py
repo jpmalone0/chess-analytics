@@ -10,7 +10,11 @@ from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
+
+from app import style
+from engine.db import attach_engine_db
 
 # ═══════════════════════════════════════════════════════════
 # Helpers
@@ -1340,4 +1344,69 @@ def streak_reaction(
     return {
         "after_loss": _build(loss_buckets),
         "after_win":  _build(win_buckets),
+    }
+
+
+# ── Style Profile ────────────────────────────────────────
+
+def style_profile(
+    db: Session,
+    player_id: int,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    tz: Optional[str] = None,
+) -> dict:
+    """Where this player sits on the four style axes, and who they resemble.
+
+    Reuses _build_game_filters so the panel can never drift from the rest of the
+    UI, and returns the two reference populations separately: percentiles rank
+    against every player with a vector, similarity against the elite blitz pool.
+    """
+    where, params = _build_game_filters(
+        player_id, time_class, start_date, end_date,
+        player_color, opening_names, tz)
+
+    conn = db.connection()
+    attach_engine_db(conn)
+
+    vector = style.subject_vector(
+        conn, player_id, time_class, extra_clause=where, params=params)
+    ranked = style.percentile_profile(conn, vector, time_class or "blitz")
+    similar = (
+        style.similar_players(conn, vector, player_id=player_id)
+        if vector.axes else []
+    )
+
+    try:
+        n_reference = conn.execute(text(
+            f"SELECT COUNT(*) FROM {style.SCHEMA}player_style_vectors "
+            "WHERE time_class = :tc"), {"tc": time_class or "blitz"}).scalar() or 0
+        n_pool = conn.execute(text(
+            f"SELECT COUNT(*) FROM {style.SCHEMA}player_style_vectors "
+            "WHERE time_class = :tc AND mean_elo >= :floor"),
+            {"tc": style.SIMILARITY_CLASS, "floor": style.ELITE_MIN_ELO}).scalar() or 0
+    except OperationalError:
+        # Same absent-sidecar case the three style.py reads guard against --
+        # these two ad hoc counts aren't inside style.py, so they need their
+        # own guard rather than 500ing on a database that was never built.
+        n_reference = n_pool = 0
+
+    return {
+        "n_games": vector.n,
+        "time_class": time_class,
+        "percentile_reference": {
+            "pool": "all players with 30+ games",
+            "n_players": int(n_reference),
+            "time_class": time_class or "blitz",
+        },
+        "similarity_reference": {
+            "pool": f"{style.ELITE_MIN_ELO}+ blitz",
+            "n_players": int(n_pool),
+            "vectors_from": style.SIMILARITY_CLASS,
+        },
+        "axes": [{"axis": a, **ranked[a]} for a in style.AXES if a in ranked],
+        "similar": similar,
     }

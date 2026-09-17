@@ -368,6 +368,26 @@ def top_openings(
     )
 
 
+@app.get("/api/players/{username}/analytics/style")
+def style_profile(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    tz: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    player = crud.get_player(db, username)
+    if not player:
+        raise HTTPException(404, f"Player '{username}' not found")
+    return crud.style_profile(
+        db, player.player_id, time_class,
+        start_date, end_date, player_color, opening_names, tz=tz,
+    )
+
+
 # ── Population Baselines ─────────────────────────────────
 
 def _baseline_response(db, username, fn, *, time_class, start_date, end_date,

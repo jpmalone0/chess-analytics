@@ -6,7 +6,7 @@ either database never reaches into the other.
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, text
 
 from engine.db import Base, engine
 
@@ -221,6 +221,75 @@ class BestMoveFeatures(Base):
     gives_check  = Column(Integer, nullable=False)
     is_castling  = Column(Integer, nullable=False)
     is_promotion = Column(Integer, nullable=False)
+
+
+# ═══════════════════════════════════════════════════════════
+# Style
+# ═══════════════════════════════════════════════════════════
+
+class PositionFeatures(Base):
+    """Board-derived metrics at a fixed ply, one row per game per colour.
+
+    Keyed by game, not by run: whether a position has more space does not depend
+    on engine depth. That split is what makes the whole 203k-game corpus
+    reachable -- these never need Stockfish.
+    """
+
+    __tablename__ = "position_features"
+
+    game_id        = Column(Integer, primary_key=True)
+    color          = Column(String(5), primary_key=True)   # white | black
+    space          = Column(Float, nullable=False)
+    mobility       = Column(Float, nullable=False)
+    king_safety    = Column(Float, nullable=False)
+    pawn_structure = Column(Float, nullable=False)
+
+
+class StyleCellMeans(Base):
+    """The centring reference: mean metric values per (time class, opening, colour).
+
+    Every value is read relative to this. Without it, colour alone produces an
+    effect above t=7, because White has more space than Black -- a fact about
+    chess rather than about a player.
+
+    A row with eco3 = '*' is the coarse fallback for openings too rare to have a
+    reliable cell of their own.
+    """
+
+    __tablename__ = "style_cell_means"
+
+    time_class     = Column(String(20), primary_key=True)
+    eco3           = Column(String(3), primary_key=True)
+    color          = Column(String(5), primary_key=True)
+    n              = Column(Integer, nullable=False)
+    space          = Column(Float, nullable=False)
+    mobility       = Column(Float, nullable=False)
+    king_safety    = Column(Float, nullable=False)
+    pawn_structure = Column(Float, nullable=False)
+
+
+class PlayerStyleVectors(Base):
+    """Full-history centred vectors for the reference population.
+
+    The subject's own vector is computed live against the current UI filters;
+    these are not, because recomputing hundreds of reference players on every
+    filter change is not affordable and their style is stable by construction --
+    that stability is the finding this feature rests on.
+
+    mean_elo is that player's average rating in that time class, which is how the
+    2800+ blitz pool is selected.
+    """
+
+    __tablename__ = "player_style_vectors"
+
+    player_id      = Column(Integer, primary_key=True)
+    time_class     = Column(String(20), primary_key=True)
+    n              = Column(Integer, nullable=False)
+    mean_elo       = Column(Float, nullable=False)
+    space          = Column(Float, nullable=False)
+    mobility       = Column(Float, nullable=False)
+    king_safety    = Column(Float, nullable=False)
+    pawn_structure = Column(Float, nullable=False)
 
 
 # A move is "forcing" if it captures or gives check. Crude on purpose: it is the

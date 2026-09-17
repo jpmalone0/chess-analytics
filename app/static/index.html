@@ -194,6 +194,20 @@
         <!-- ═══ Main Perspectives ═══ -->
         <!-- section-bare: keeps the .section show/hide hook without the card
              styling, so each analytics section reads as its own top-level block -->
+        <section id="style-panel" class="section hidden">
+            <h2>
+                Playing style
+                <span class="info-tip" tabindex="0" data-tip="These axes describe how you play, not how well. They are stable traits that barely track rating, so neither end is better.">?</span>
+            </h2>
+            <p id="style-meta" class="panel-meta"></p>
+            <canvas id="style-chart" height="180"></canvas>
+            <h3 id="style-similar-heading">
+                Closest in style among strong blitz players
+                <span class="info-tip" id="style-similar-tip" tabindex="0" data-tip="">?</span>
+            </h3>
+            <ol id="style-similar" class="style-similar"></ol>
+        </section>
+
         <section id="main-perspective-section" class="section section-bare hidden">
 
             <!-- ═══ Analytics ═══ -->
@@ -472,7 +486,8 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=77"></script>
+    <script src="/static/app.js?v=78"></script>
+    <script src="/static/style-panel.js?v=1"></script>
 </body>
 
 </html>

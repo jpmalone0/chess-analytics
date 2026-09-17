@@ -54,7 +54,23 @@ def _sqlite_path(url: str) -> str:
 
 
 def attach_engine_db(conn):
-    """ATTACH the engine database onto an open canonical connection."""
+    """ATTACH the engine database onto an open canonical connection.
+
+    Idempotent: a connection checked out from a pool may already have the
+    sidecar attached from an earlier request, and ATTACHing the same alias
+    twice raises sqlite3.OperationalError ("database engine is already in
+    use") -- the same exception type SQLite raises for a genuine failure to
+    open the file (a bad path, a permissions problem, a corrupt sidecar).
+    A caller that wants "missing sidecar is not an error" can't tell those
+    apart from that exception alone, so checking first keeps a real open
+    failure raising rather than swallowing it.
+    """
+    already_attached = any(
+        row[1] == ATTACH_ALIAS
+        for row in conn.exec_driver_sql("PRAGMA database_list").fetchall()
+    )
+    if already_attached:
+        return
     conn.exec_driver_sql(
         f"ATTACH DATABASE '{_sqlite_path(ENGINE_DATABASE_URL)}' AS {ATTACH_ALIAS}"
     )

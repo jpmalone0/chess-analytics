@@ -3,15 +3,47 @@
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 from app.models import Game, Move, Player
+from engine import db as engine_db
+
+
+@pytest.fixture(autouse=True)
+def _isolate_engine_db(tmp_path, monkeypatch):
+    """Keep the suite away from the real sidecar database.
+
+    ENGINE_DATABASE_URL defaults to a relative path and pytest runs from the
+    repository root, so attach_engine_db would otherwise attach the real
+    chess_engine.db -- 14MB holding hours of Stockfish analysis that nothing
+    here can regenerate quickly. No test writes to it today, but the cost of
+    one that does is total, and the cost of this fixture is nothing.
+
+    Pointing it at a per-test temporary file also means the sidecar-missing
+    path is genuinely exercised rather than accidentally satisfied by whatever
+    happens to be on disk.
+    """
+    monkeypatch.setattr(
+        engine_db, "ENGINE_DATABASE_URL", f"sqlite:///{tmp_path / 'engine.db'}"
+    )
 
 
 @pytest.fixture
 def db():
-    """In-memory SQLite session with the full schema created."""
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    """In-memory SQLite session with the full schema created.
+
+    StaticPool is required, not just convenient: SQLAlchemy's default pool for
+    an in-memory SQLite URL is thread-affinitized (a distinct physical
+    ":memory:" database per thread). Route tests dispatch the request through
+    FastAPI's TestClient, which runs the ASGI app on a background anyio worker
+    thread rather than the pytest thread that built this schema -- without
+    StaticPool's single shared connection, that request sees a fresh, empty
+    database and every query fails with "no such table".
+    """
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
     Base.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine)()
     try:
