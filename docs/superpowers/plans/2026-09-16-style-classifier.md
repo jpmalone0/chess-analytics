@@ -791,6 +791,14 @@ if __name__ == "__main__":
 Run: `uv run pytest tests/test_style_vectors.py -v`
 Expected: 5 passed
 
+> **As built (2026-09-17):** the test fixture above is wrong. `sans * 2` replays
+> the same ten moves twice, which is illegal — `e4` cannot be played with the
+> pawn already on e4 — so `extract_game` correctly returned `[]` and two tests
+> failed. Replaced with a single verified-legal 20-ply line (Ruy Lopez, Breyer)
+> hoisted into a `_TWENTY_PLY_GAME` constant. Imports were also moved to the top
+> of the file, since the plan placed them mid-file where ruff rejects them
+> (E402/I001). See `tests/test_style_vectors.py`, commit bcacb56.
+
 - [ ] **Step 5: Commit**
 
 ```bash
