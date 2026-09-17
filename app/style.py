@@ -101,3 +101,55 @@ def subject_vector(
         variance = max(0.0, float(row[f"{axis}_sq"]) - mean * mean)
         axes[axis] = AxisValue(mean=mean, se=math.sqrt(variance / n))
     return Vector(n=n, axes=axes)
+
+
+#: 95% interval. Two-sided normal approximation.
+Z_95 = 1.96
+
+
+def _reference_values(conn, time_class: str) -> dict[str, list[float]]:
+    """Every reference player's value per axis, sorted, for that time class.
+
+    The percentile reference is EVERY player with a vector -- not the 2800+ pool
+    used for similarity. They answer different questions and conflating them is
+    the mistake this project has already made four times.
+    """
+    rows = conn.execute(text(
+        f"SELECT {', '.join(AXES)} FROM {SCHEMA}player_style_vectors "
+        "WHERE time_class = :tc"), {"tc": time_class}).mappings().all()
+    return {axis: sorted(float(r[axis]) for r in rows) for axis in AXES}
+
+
+def _rank(sorted_values: list[float], value: float) -> int:
+    """Percentile of value within sorted_values, 0-100."""
+    if not sorted_values:
+        return 0
+    below = sum(1 for v in sorted_values if v < value)
+    return round(100 * below / len(sorted_values))
+
+
+def percentile_profile(conn, vector: Vector, time_class: str) -> dict:
+    """Each axis as a percentile, with an interval from the standard error.
+
+    The interval is the point estimate +/- 1.96 SE mapped through the same rank
+    function, so the bar is in the same units as the dot. At small n it
+    approaches the full width of the axis -- the panel stays visible and simply
+    stops claiming anything.
+    """
+    if not vector.axes:
+        return {}
+    reference = _reference_values(conn, time_class)
+    if not any(reference.values()):
+        return {}
+
+    out = {}
+    for axis in AXES:
+        value = vector.axes[axis]
+        margin = Z_95 * value.se
+        out[axis] = {
+            "value": value.mean,
+            "percentile": _rank(reference[axis], value.mean),
+            "low": _rank(reference[axis], value.mean - margin),
+            "high": _rank(reference[axis], value.mean + margin),
+        }
+    return out

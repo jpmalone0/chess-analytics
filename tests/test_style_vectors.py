@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, text
 
 from analysis.build_features import build_cell_means, build_player_vectors, extract_game
 from analysis.metrics import space
-from app.style import AXES, subject_vector
+from app.style import AXES, AxisValue, Vector, percentile_profile, subject_vector
 
 
 @pytest.fixture(autouse=True)
@@ -224,3 +224,105 @@ class TestSubjectVector:
         build_cell_means(conn)
         assert subject_vector(conn, 1, "blitz").n == 40
         assert subject_vector(conn, 1, "bullet").n == 10
+
+    def test_near_identical_nonzero_values_do_not_crash_the_square_root(self, conn):
+        """Regression test for Task 5's review: SD is derived from the
+        single-pass formula E[x^2] - E[x]^2, which suffers catastrophic
+        cancellation when every value sits within about 1e-9 of a shared
+        NONZERO mean.
+
+        The values must be near-identical but not bit-identical, and the
+        shared mean must not be zero, for this to exercise anything.
+        `test_identical_games_give_a_zero_standard_error` above uses
+        bit-identical values: E[x^2] and E[x]^2 are then computed from the
+        exact same bit pattern, so the subtraction is exact and the clamp is
+        never touched. Here each value is nudged by a few times 1e-9 around
+        -48.76. E[x^2] and E[x]^2 both land near 48.76^2 = 2,378 -- a
+        magnitude at which float64's ~15-17 significant decimal digits only
+        resolve differences down to about 2,378 * 2^-52 =~ 5e-13. The true
+        variance here is on the order of 1e-18, far below that floor, so the
+        subtraction is dominated by rounding noise that can fall on either
+        side of zero. A mean of 0 would not trigger this: E[x^2] and E[x]^2
+        would both be tiny already, well within float64's resolution, and the
+        subtraction would stay accurate. These particular nudges were checked
+        to drive SQLite's actual AVG() negative (about -4.5e-13); without the
+        `max(0.0, ...)` clamp, math.sqrt raises ValueError: math domain error.
+        """
+        conn.execute(text("INSERT OR IGNORE INTO players VALUES (1, 'subject')"))
+        conn.execute(text("INSERT OR IGNORE INTO players VALUES (2, 'other')"))
+        # A coarse fallback of exactly 0 so centring is a no-op and the raw
+        # values -- clustered around the nonzero -48.76 -- pass straight
+        # through into the variance calculation unchanged.
+        conn.execute(text(
+            "INSERT INTO style_cell_means VALUES "
+            "('blitz', '*', 'white', 999, 0, 0, 0, 0)"))
+        base = -48.76
+        nudges = [
+            -5.571456909457337e-11, -7.985975838632685e-10,
+            -1.3165632909243266e-10, 2.2177394688760325e-10,
+            8.260221064757965e-10, 9.332127355415175e-10,
+            -4.598044689456589e-11, 7.306198555432802e-10,
+            -4.790153792160812e-10, 6.100556540260447e-10,
+            9.739860767117856e-11, -9.719165996719621e-10,
+        ]
+        assert len(set(nudges)) == len(nudges), "values must not be bit-identical"
+        for i, nudge in enumerate(nudges):
+            gid = 500 + i
+            conn.execute(text(
+                "INSERT INTO games (game_id, white_player_id, black_player_id, "
+                "time_class, eco, variant, white_elo, black_elo) "
+                "VALUES (:g, 1, 2, 'blitz', 'Z99', NULL, 1500, 1500)"), {"g": gid})
+            conn.execute(text(
+                "INSERT INTO position_features VALUES (:g, 'white', :s, 0, 0, 0)"),
+                {"g": gid, "s": base + nudge})
+            conn.execute(text(
+                "INSERT INTO position_features VALUES (:g, 'black', 0, 0, 0, 0)"),
+                {"g": gid})
+
+        result = subject_vector(conn, player_id=1, time_class="blitz")
+        assert math.isfinite(result.axes["space"].se)
+        assert result.axes["space"].se == pytest.approx(0.0, abs=1e-6)
+
+
+def seed_reference(conn, values, time_class="blitz", elo=2000.0):
+    """One reference player per value, so percentiles are hand-checkable."""
+    for i, v in enumerate(values, start=10):
+        conn.execute(text(
+            "INSERT INTO player_style_vectors VALUES "
+            "(:p, :tc, 100, :elo, :s, :s, :s, :s)"),
+            {"p": i, "tc": time_class, "elo": elo, "s": v})
+
+
+class TestPercentile:
+    def test_the_median_lands_mid_scale(self, conn):
+        seed_reference(conn, [0.0, 1.0, 2.0, 3.0, 4.0])
+        axes = {a: AxisValue(mean=2.0, se=0.0) for a in AXES}
+        out = percentile_profile(conn, Vector(n=50, axes=axes), "blitz")
+        assert out["space"]["percentile"] == pytest.approx(40, abs=15)
+
+    def test_an_extreme_value_lands_at_the_top(self, conn):
+        seed_reference(conn, [0.0, 1.0, 2.0, 3.0, 4.0])
+        axes = {a: AxisValue(mean=99.0, se=0.0) for a in AXES}
+        out = percentile_profile(conn, Vector(n=50, axes=axes), "blitz")
+        assert out["space"]["percentile"] == 100
+
+    def test_a_large_standard_error_widens_the_interval(self, conn):
+        """This is the whole low-n design decision: the panel never disappears,
+        the bar just grows until it says nothing, which is honest."""
+        seed_reference(conn, [float(i) for i in range(100)])
+        tight = percentile_profile(
+            conn, Vector(n=500, axes={a: AxisValue(50.0, 0.1) for a in AXES}), "blitz")
+        loose = percentile_profile(
+            conn, Vector(n=2, axes={a: AxisValue(50.0, 40.0) for a in AXES}), "blitz")
+        tight_width = tight["space"]["high"] - tight["space"]["low"]
+        loose_width = loose["space"]["high"] - loose["space"]["low"]
+        assert loose_width > tight_width
+        assert loose_width > 50
+
+    def test_an_empty_vector_produces_an_empty_profile(self, conn):
+        seed_reference(conn, [0.0, 1.0])
+        assert percentile_profile(conn, Vector(), "blitz") == {}
+
+    def test_an_empty_reference_produces_an_empty_profile(self, conn):
+        axes = {a: AxisValue(mean=1.0, se=0.0) for a in AXES}
+        assert percentile_profile(conn, Vector(n=50, axes=axes), "blitz") == {}
