@@ -1370,13 +1370,7 @@ def style_profile(
         player_color, opening_names, tz)
 
     conn = db.connection()
-    try:
-        attach_engine_db(conn)
-    except OperationalError:
-        # Already attached -- a pooled connection reused from an earlier
-        # request on this same process. Nothing further to do here; the
-        # sidecar is available either way.
-        pass
+    attach_engine_db(conn)
 
     vector = style.subject_vector(
         conn, player_id, time_class, extra_clause=where, params=params)

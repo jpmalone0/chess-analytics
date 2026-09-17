@@ -14,6 +14,7 @@ from app.style import (
     SIMILARITY_CLASS,
     AxisValue,
     Vector,
+    _reference_values,
     percentile_profile,
     similar_players,
     subject_vector,
@@ -336,6 +337,10 @@ class TestPercentile:
         axes = {a: AxisValue(mean=1.0, se=0.0) for a in AXES}
         assert percentile_profile(conn, Vector(n=50, axes=axes), "blitz") == {}
 
+    def test_reference_values_survives_a_missing_sidecar_table(self, conn):
+        conn.execute(text("DROP TABLE player_style_vectors"))
+        assert _reference_values(conn, "blitz") == {a: [] for a in AXES}
+
 
 class TestSimilarity:
     def test_the_nearest_player_comes_first(self, conn):
@@ -428,3 +433,8 @@ class TestSimilarity:
         out = similar_players(conn, Vector(n=100, axes=axes), player_id=SUBJECT_ID)
         assert "p10" not in {r["username"] for r in out}
         assert len(out) == 5
+
+    def test_similar_players_survives_a_missing_sidecar_table(self, conn):
+        axes = {a: AxisValue(mean=0.0, se=0.0) for a in AXES}
+        conn.execute(text("DROP TABLE player_style_vectors"))
+        assert similar_players(conn, Vector(n=10, axes=axes)) == []
