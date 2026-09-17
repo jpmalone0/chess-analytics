@@ -7,6 +7,7 @@ is better. These axes measure style, not ability.
 import chess
 
 from analysis.metrics import (
+    STYLE_AXES,
     king_safety,
     mobility,
     passed_pawns,
@@ -52,6 +53,15 @@ class TestMobility:
         assert mobility(w, chess.WHITE) > 0
         assert mobility(w, chess.BLACK) > 0
 
+    def test_enemy_pawn_control_removes_a_target_square(self):
+        """A white knight on d4 reaches c6 and e6. A black pawn on d7 attacks
+        both of those squares, so they drop out of the mobility area even
+        though the pawn itself sits on neither -- this is the exclusion that
+        every other mobility assertion here is too directional to catch."""
+        open_board = chess.Board("4k3/8/8/8/3N4/8/8/4K3 w - - 0 1")
+        covered = chess.Board("4k3/3p4/8/8/3N4/8/8/4K3 w - - 0 1")
+        assert mobility(covered, chess.WHITE) < mobility(open_board, chess.WHITE)
+
 
 class TestKingSafety:
     def test_an_intact_shield_beats_a_stripped_one(self):
@@ -82,8 +92,11 @@ class TestPawnStructure:
         assert pawn_structure(b, chess.WHITE) == 0.0
 
     def test_doubled_pawns_cost(self):
-        b = chess.Board("4k3/8/8/8/8/P7/P7/4K3 w - - 0 1")
-        assert pawn_structure(b, chess.WHITE) < 0.0
+        """a2+a3 doubled, with b2 supporting so neither file is isolated --
+        otherwise the isolation penalty alone would keep this negative and the
+        test would pass even with doubling detection removed."""
+        b = chess.Board("4k3/8/8/8/8/P7/PP6/4K3 w - - 0 1")
+        assert pawn_structure(b, chess.WHITE) == -1.0
 
     def test_an_isolated_pawn_costs(self):
         supported = chess.Board("4k3/8/8/8/8/8/PP6/4K3 w - - 0 1")
@@ -111,3 +124,20 @@ class TestPassedPawns:
     def test_an_enemy_pawn_on_an_adjacent_file_stops_it(self):
         b = chess.Board("4k3/1p6/8/8/8/8/P7/4K3 w - - 0 1")
         assert passed_pawns(b, chess.WHITE) == 0.0
+
+    def test_an_enemy_pawn_on_the_same_file_ahead_stops_it(self):
+        b = chess.Board("4k3/8/p7/8/8/8/P7/4K3 w - - 0 1")
+        assert passed_pawns(b, chess.WHITE) == 0.0
+
+    def test_an_enemy_pawn_on_an_adjacent_file_behind_does_not_stop_it(self):
+        """b3 is on a file adjacent to a5, but it is behind, not ahead. This is
+        the case that actually exercises `ahead()`'s direction -- a flipped
+        `>`/`<` would wrongly block the pawn here."""
+        b = chess.Board("4k3/8/8/P7/8/1p6/8/4K3 w - - 0 1")
+        assert passed_pawns(b, chess.WHITE) == 1.0
+
+
+def test_the_axes_exclude_passed_pawns():
+    """passed_pawns measured as noise at ply 20 (split-half reliability +0.03),
+    so it is deliberately not an axis. Re-including it would go unnoticed."""
+    assert set(STYLE_AXES) == {"space", "mobility", "king_safety", "pawn_structure"}

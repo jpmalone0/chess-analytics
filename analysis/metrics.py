@@ -6,9 +6,10 @@ These are our own implementations, following the shape of the classical
 definitions so that the choices are traceable to a public source rather than to
 taste.
 
-Every function is engine-free and returns a value where HIGHER = BETTER for the
-given colour. At ~500 games/sec they can be run over the whole 203k-game corpus,
-which is the only reason a cross-player comparison is affordable at all.
+Every function is engine-free and returns a value where HIGHER = MORE OF THE
+THING for the given colour. At ~500 games/sec they can be run over the whole
+203k-game corpus, which is the only reason a cross-player comparison is
+affordable at all.
 
 These metrics measure STYLE, NOT ABILITY. See
 docs/superpowers/specs/2026-09-16-style-vs-ability-findings.md before using them
@@ -72,11 +73,12 @@ def mobility(board: chess.Board, color: chess.Color) -> float:
 
 
 def king_safety(board: chess.Board, color: chess.Color) -> float:
-    """Pawn shield minus attacker weight on the king ring. Higher = safer.
+    """Pawn shield minus attacker weight on the king ring.
 
-    Signed so that higher is better, unlike classical Stockfish's "king danger",
-    which runs the other way. Keeping every metric pointing the same direction
-    is what lets them be averaged or charted without a per-metric sign table.
+    Signed so that higher means more shelter and fewer attackers, unlike
+    classical Stockfish's "king danger", which runs the other way. Keeping
+    every metric pointing the same direction is what lets them be averaged or
+    charted without a per-metric sign table.
     """
     ksq = board.king(color)
     if ksq is None:
