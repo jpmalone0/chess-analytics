@@ -99,6 +99,12 @@ function drawStyleChart(axes, pro) {
         },
         options: {
             indexAxis: 'y',
+            // Clicking a name redraws the whole chart, and an animated redraw
+            // means waiting out a transition before the two profiles can be
+            // compared. The point of the overlay is the difference between the
+            // bars, so they arrive already drawn.
+            animation: false,
+            animations: { colors: false, x: false, y: false },
             scales: {
                 x: {
                     min: 0, max: 100,

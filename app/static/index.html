@@ -319,6 +319,34 @@
                     </div>
                 </div>
 
+                <!-- ═══ Pro Comparison ═══ -->
+                <div class="analytics-section" data-section="style">
+                    <button class="analytics-section-header" onclick="toggleAnalyticsSection('style')">
+                        <span class="analytics-section-chevron">▼</span>
+                        Pro Comparison
+                    </button>
+                    <div class="analytics-section-body">
+                        <div class="analytics-grid">
+                            <div class="analytic-row" id="style-chart-cell">
+                                <h4 class="chart-title">
+                                    Playing style
+                                    <span class="info-tip" tabindex="0" data-tip="These axes describe how you play, not how well. They are stable traits that barely track rating, so neither end is better.">?</span>
+                                </h4>
+                                <p id="style-meta" class="panel-meta"></p>
+                                <div class="chart-container"><canvas id="style-chart"></canvas></div>
+                            </div>
+                            <div class="analytic-row" id="style-compare-cell">
+                                <h4 class="chart-title" id="style-similar-heading">
+                                    Pro Comparison
+                                    <span class="info-tip" id="style-similar-tip" tabindex="0" data-tip="">?</span>
+                                </h4>
+                                <p id="style-compare-hint" class="panel-meta">Select a player to overlay their profile.</p>
+                                <ol id="style-similar" class="style-similar"></ol>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- ═══ Form ═══ -->
                 <div class="analytics-section" data-section="form">
                     <button class="analytics-section-header" onclick="toggleAnalyticsSection('form')">
@@ -381,34 +409,6 @@
                                         <div class="chart-container"><canvas id="streak-win-chart-compare"></canvas></div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ═══ Pro Comparison ═══ -->
-                <div class="analytics-section" data-section="style">
-                    <button class="analytics-section-header" onclick="toggleAnalyticsSection('style')">
-                        <span class="analytics-section-chevron">▼</span>
-                        Pro Comparison
-                    </button>
-                    <div class="analytics-section-body">
-                        <div class="analytics-grid">
-                            <div class="analytic-row" id="style-chart-cell">
-                                <h4 class="chart-title">
-                                    Playing style
-                                    <span class="info-tip" tabindex="0" data-tip="These axes describe how you play, not how well. They are stable traits that barely track rating, so neither end is better.">?</span>
-                                </h4>
-                                <p id="style-meta" class="panel-meta"></p>
-                                <div class="chart-container"><canvas id="style-chart"></canvas></div>
-                            </div>
-                            <div class="analytic-row" id="style-compare-cell">
-                                <h4 class="chart-title" id="style-similar-heading">
-                                    Pro Comparison
-                                    <span class="info-tip" id="style-similar-tip" tabindex="0" data-tip="">?</span>
-                                </h4>
-                                <p id="style-compare-hint" class="panel-meta">Select a player to overlay their profile.</p>
-                                <ol id="style-similar" class="style-similar"></ol>
                             </div>
                         </div>
                     </div>
@@ -501,8 +501,8 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=78"></script>
-    <script src="/static/style-panel.js?v=7"></script>
+    <script src="/static/app.js?v=79"></script>
+    <script src="/static/style-panel.js?v=8"></script>
 </body>
 
 </html>

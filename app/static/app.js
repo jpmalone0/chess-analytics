@@ -25,7 +25,7 @@ let currentOpeningColor = 'global';  // 'global' | 'white' | 'black'
 // therefore has to remember which side's row was clicked, or every query
 // silently widens to both colours. '' when nothing is filtered.
 let currentOpeningFilterColor = '';  // '' | 'white' | 'black'
-const ANALYTICS_SECTIONS = ['outcomes', 'time', 'form', 'style'];
+const ANALYTICS_SECTIONS = ['outcomes', 'time', 'style', 'form'];
 const collapsedSections = new Set();  // sections the user has collapsed
 const OPENINGS_PREVIEW_COUNT = 6;     // opening rows shown before "show all"
 let openingsExpanded = false;
