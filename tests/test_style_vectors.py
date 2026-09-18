@@ -15,6 +15,7 @@ from app.style import (
     AxisValue,
     Vector,
     _reference_values,
+    class_scales,
     percentile_profile,
     similar_players,
     subject_vector,
@@ -340,6 +341,80 @@ class TestPercentile:
     def test_reference_values_survives_a_missing_sidecar_table(self, conn):
         conn.execute(text("DROP TABLE player_style_vectors"))
         assert _reference_values(conn, "blitz") == {a: [] for a in AXES}
+
+
+def seed_class(conn, time_class, values, start_id=500, elo=2000.0):
+    """One vector per value in `time_class`, so its distribution is known."""
+    for i, v in enumerate(values):
+        pid = start_id + i
+        conn.execute(text("INSERT OR IGNORE INTO players VALUES (:p, :u)"),
+                     {"p": pid, "u": f"{time_class}{pid}"})
+        conn.execute(text(
+            "INSERT INTO player_style_vectors VALUES "
+            "(:p, :tc, 100, :elo, :v, :v, :v, :v)"),
+            {"p": pid, "tc": time_class, "elo": elo, "v": v})
+
+
+class TestCrossClassNormalisation:
+    """Centring equalises spread across time controls but not location.
+
+    Measured on the real corpus: the same player lands +0.618 higher on mobility
+    in rapid than in blitz (t=5.05), +0.277 on king safety, +0.082 on pawn
+    structure, verified on the 15 players holding both vectors. The within-player
+    gap exceeds the between-population gap, so it is a property of the time
+    control, not of who plays each one.
+
+    Every test here fails if values stop being z-scored within their own class.
+    """
+
+    def test_a_class_typical_value_ranks_mid_scale_not_at_the_top(self, conn):
+        """The decisive case. Rapid sits five units above blitz; a subject who
+        is exactly typical for rapid must rank near the middle, not near 100.
+
+        Pooling the two classes without z-scoring puts this subject above every
+        blitz vector and half the rapid ones -- which is how a rapid subject
+        gained 12 to 20 percentile points for no reason connected to their play.
+        """
+        seed_class(conn, "blitz", [-1.0, 0.0, 1.0] * 4, start_id=500)
+        seed_class(conn, "rapid", [4.0, 5.0, 6.0] * 4, start_id=600)
+        axes = {a: AxisValue(mean=5.0, se=0.0) for a in AXES}
+        out = percentile_profile(conn, Vector(n=80, axes=axes), "rapid")
+        # z-scored, the subject sits at its class median and ranks ~33rd (a
+        # third of the pooled vectors fall below zero). Pooling the raw values
+        # instead puts it above every blitz vector and ranks it ~67th, so the
+        # bound has to exclude that rather than merely bracket "the middle".
+        assert out["space"]["percentile"] <= 45, out["space"]["percentile"]
+
+    def test_the_reference_pools_every_class(self, conn):
+        """Scoped to one class the rapid reference was 37 players, 2.7
+        percentile points apiece. Pooling is what buys the resolution, and is
+        only legitimate because of the z-scoring."""
+        seed_class(conn, "blitz", [0.0] * 6, start_id=500)
+        seed_class(conn, "rapid", [5.0] * 6, start_id=600)
+        scales = class_scales(conn)
+        assert len(_reference_values(conn, scales)["space"]) == 12
+
+    def test_each_class_is_scaled_by_its_own_spread(self, conn):
+        seed_class(conn, "blitz", [-1.0, 0.0, 1.0] * 4, start_id=500)
+        seed_class(conn, "rapid", [-10.0, 0.0, 10.0] * 4, start_id=600)
+        scales = class_scales(conn)
+        assert scales["rapid"]["space"][1] > 5 * scales["blitz"]["space"][1]
+
+    def test_similarity_puts_both_sides_on_their_own_scale(self, conn):
+        """A subject typical for rapid should match the blitz player who is
+        typical for blitz -- not the one whose raw number happens to be closest
+        to a rapid-sized value."""
+        seed_class(conn, "blitz", [-1.0, 0.0, 1.0] * 4, start_id=500,
+                   elo=ELITE_MIN_ELO + 100)
+        seed_class(conn, "rapid", [4.0, 5.0, 6.0] * 4, start_id=600)
+        axes = {a: AxisValue(mean=5.0, se=0.0) for a in AXES}
+        nearest = similar_players(conn, Vector(n=80, axes=axes),
+                                  time_class="rapid")[0]["username"]
+        raw = conn.execute(text(
+            "SELECT space FROM player_style_vectors v JOIN players p "
+            "ON p.player_id = v.player_id WHERE p.username = :u"),
+            {"u": nearest}).scalar()
+        assert raw == pytest.approx(0.0), "matched on raw magnitude, not on style"
 
 
 class TestSimilarity:

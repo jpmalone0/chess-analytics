@@ -113,20 +113,79 @@ def subject_vector(
 Z_95 = 1.96
 
 
-def _reference_values(conn, time_class: str) -> dict[str, list[float]]:
-    """Every reference player's value per axis, sorted, for that time class.
+def class_scales(conn) -> dict[str, dict[str, tuple[float, float]]]:
+    """Per (time class, axis) mean and standard deviation of player vectors.
 
-    The percentile reference is EVERY player with a vector -- not the elite pool
-    used for similarity. They answer different questions and conflating them is
-    the mistake this project has already made four times.
+    Centring a value within its (time class, opening, colour) cell equalises the
+    SPREAD across time classes -- measured within 16% -- but NOT the location.
+    The same player, measured in rapid and in blitz, lands +0.618 apart on
+    mobility (t=5.05), +0.277 on king safety (t=4.52) and +0.082 on pawn
+    structure (t=3.67), verified on the 15 players who have both vectors. The
+    within-player gap is larger than the between-population gap, so it is a real
+    property of the time control rather than of who plays each one.
+
+    Two consequences, both of which this function exists to fix:
+
+    - A percentile reference cannot simply pool every class. Doing so shifts a
+      rapid subject up by 12 to 20 points for no reason connected to their play.
+    - A rapid vector cannot be compared to a blitz vector on a shared scale,
+      which is exactly what the similarity readout does.
+
+    Expressing every vector as a z-score within its own class removes both. It
+    is validated by agreement: a rapid subject ranked against 789 z-scored
+    vectors lands within a few points of where 37 rapid-only vectors put them,
+    while the reference grows twentyfold.
     """
     try:
         rows = conn.execute(text(
-            f"SELECT {', '.join(AXES)} FROM {SCHEMA}player_style_vectors "
-            "WHERE time_class = :tc"), {"tc": time_class}).mappings().all()
+            f"SELECT time_class, {', '.join(AXES)} "
+            f"FROM {SCHEMA}player_style_vectors")).mappings().all()
+    except OperationalError:
+        return {}
+
+    by_class: dict[str, list] = {}
+    for row in rows:
+        by_class.setdefault(row["time_class"], []).append(row)
+
+    out: dict[str, dict[str, tuple[float, float]]] = {}
+    for time_class, group in by_class.items():
+        out[time_class] = {}
+        for axis in AXES:
+            values = [float(r[axis]) for r in group]
+            mean = sum(values) / len(values)
+            variance = sum((v - mean) ** 2 for v in values) / len(values)
+            # A class with one vector, or a degenerate axis, contributes its
+            # location only -- dividing by zero would be worse than not scaling.
+            out[time_class][axis] = (mean, math.sqrt(variance) or 1.0)
+    return out
+
+
+def _z(scales, time_class: str, axis: str, value: float) -> float:
+    """Express a raw centred value as a z-score within its own time class."""
+    mean, sd = scales.get(time_class, {}).get(axis, (0.0, 1.0))
+    return (value - mean) / sd
+
+
+def _reference_values(conn, scales) -> dict[str, list[float]]:
+    """Every player vector in the corpus, z-scored within its own class.
+
+    Pooled across time classes on purpose. The percentile reference is EVERY
+    player with a vector -- no rating filter, unlike the elite pool used for
+    similarity. Those two answer different questions and conflating them is the
+    mistake this project has already made four times.
+
+    Pooling is only legitimate because of the z-scoring; see class_scales.
+    """
+    try:
+        rows = conn.execute(text(
+            f"SELECT time_class, {', '.join(AXES)} "
+            f"FROM {SCHEMA}player_style_vectors")).mappings().all()
     except OperationalError:
         return {axis: [] for axis in AXES}
-    return {axis: sorted(float(r[axis]) for r in rows) for axis in AXES}
+    return {
+        axis: sorted(_z(scales, r["time_class"], axis, float(r[axis])) for r in rows)
+        for axis in AXES
+    }
 
 
 def _rank(sorted_values: list[float], value: float) -> int:
@@ -147,19 +206,26 @@ def percentile_profile(conn, vector: Vector, time_class: str) -> dict:
     """
     if not vector.axes:
         return {}
-    reference = _reference_values(conn, time_class)
+    scales = class_scales(conn)
+    reference = _reference_values(conn, scales)
     if not any(reference.values()):
         return {}
+
+    # The subject and the reference must be on the same footing, so both are
+    # z-scored within their own time class. The standard error is a width in
+    # raw units, so it is scaled by the same divisor rather than shifted.
+    sd = {a: scales.get(time_class, {}).get(a, (0.0, 1.0))[1] for a in AXES}
 
     out = {}
     for axis in AXES:
         value = vector.axes[axis]
-        margin = Z_95 * value.se
+        centre = _z(scales, time_class, axis, value.mean)
+        margin = Z_95 * value.se / sd[axis]
         out[axis] = {
             "value": value.mean,
-            "percentile": _rank(reference[axis], value.mean),
-            "low": _rank(reference[axis], value.mean - margin),
-            "high": _rank(reference[axis], value.mean + margin),
+            "percentile": _rank(reference[axis], centre),
+            "low": _rank(reference[axis], centre - margin),
+            "high": _rank(reference[axis], centre + margin),
         }
     return out
 
@@ -182,22 +248,31 @@ ELITE_MIN_ELO = 3000
 #: gating per class leaves 7 usable reference players for a rapid subject,
 #: against 405 for blitz and 107 for bullet.
 #:
-#: Comparing across classes is sound because both sides are centred within their
-#: own (time class, opening, colour) norm, so each reads as "more than is normal
-#: here". Measured spreads across classes differ by at most 16%, and
-#: standardising below removes even that.
+#: Comparing across classes needs more than centring. Centring equalises the
+#: spread (within 16%) but not the location: the same player lands +0.618 higher
+#: on mobility in rapid than in blitz (t=5.05), verified within-player. Both
+#: sides are therefore expressed as z-scores within their own class before any
+#: distance is taken -- see class_scales.
 SIMILARITY_CLASS = "blitz"
 
 #: How many neighbours to return.
 SIMILAR_COUNT = 5
 
 
-def similar_players(conn, vector: Vector, player_id: int | None = None) -> list[dict]:
+def similar_players(conn, vector: Vector, player_id: int | None = None,
+                    time_class: str | None = None) -> list[dict]:
     """The nearest players in standardised style space.
 
     Standardising is not optional: mobility has roughly triple the raw spread of
     space, so an unstandardised Euclidean distance would rank almost entirely on
     mobility while appearing to use all four axes.
+
+    time_class is the class the subject's own vector came from. Both sides are
+    z-scored within their own class before the distance, because a rapid vector
+    and a blitz vector do not sit on a common scale even after centring -- the
+    same player lands +0.618 higher on mobility in rapid. Without it the
+    comparison is biased, and on real data it changes two of the five nearest
+    neighbours.
 
     player_id, when given, excludes that player from the pool -- a subject who
     is themselves in the elite blitz pool would otherwise appear in their own
@@ -225,18 +300,19 @@ def similar_players(conn, vector: Vector, player_id: int | None = None) -> list[
     if not rows:
         return []
 
-    scale = {}
-    for axis in AXES:
-        values = [float(r[axis]) for r in rows]
-        mean = sum(values) / len(values)
-        variance = sum((v - mean) ** 2 for v in values) / len(values)
-        # A degenerate axis contributes nothing rather than dividing by zero.
-        scale[axis] = math.sqrt(variance) or 1.0
+    # Each side is z-scored within its OWN class: the pool against blitz, the
+    # subject against whatever class they are viewing. That removes both the
+    # scale difference between axes (mobility has roughly triple the raw spread
+    # of space, so an unstandardised distance would be a mobility ranking
+    # wearing a costume) and the location difference between classes.
+    scales = class_scales(conn)
+    subject_class = time_class or SIMILARITY_CLASS
+    subject = {a: _z(scales, subject_class, a, vector.axes[a].mean) for a in AXES}
 
     out = []
     for row in rows:
         distance = math.sqrt(sum(
-            ((float(row[axis]) - vector.axes[axis].mean) / scale[axis]) ** 2
+            (_z(scales, SIMILARITY_CLASS, axis, float(row[axis])) - subject[axis]) ** 2
             for axis in AXES))
         out.append({"username": row["username"],
                     "elo": round(float(row["mean_elo"])),
