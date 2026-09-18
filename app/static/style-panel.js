@@ -19,6 +19,12 @@ const STYLE_AXIS_LABELS = {
 
 let styleChart = null;
 
+/** Username of the pro currently overlaid on the chart, or null. */
+let selectedPro = null;
+
+/** The last response, so a click can redraw without refetching. */
+let lastStyleData = null;
+
 async function loadStylePanel(username) {
     try {
         const data = await fetchJSON(
@@ -31,6 +37,10 @@ async function loadStylePanel(username) {
 
 function renderStylePanel(data) {
     const meta = document.getElementById('style-meta');
+    // A new filter means a new set of neighbours; carrying the old selection
+    // over would overlay a player who may no longer be in the list.
+    lastStyleData = data;
+    selectedPro = null;
 
     if (!data.axes.length) {
         meta.textContent = data.n_games
@@ -46,7 +56,7 @@ function renderStylePanel(data) {
         + `${data.percentile_reference.n_players.toLocaleString()} players `
         + `with 30+ ${data.percentile_reference.time_class} games`;
 
-    drawStyleChart(data.axes);
+    drawStyleChart(data.axes, null);
     renderStyleSimilar(data);
 }
 
@@ -54,23 +64,38 @@ function renderStylePanel(data) {
  *  bar. Deliberately not a radar: a radar cannot show uncertainty, which is the
  *  whole point at small sample sizes, and its area encodes nothing when the
  *  axes have unrelated units. */
-function drawStyleChart(axes) {
+function drawStyleChart(axes, pro) {
     const ctx = document.getElementById('style-chart');
     if (styleChart) styleChart.destroy();
+
+    const datasets = [{
+        label: 'you',
+        data: axes.map(a => a.percentile - 50),
+        backgroundColor: axes.map(a =>
+            a.percentile >= 50 ? 'rgba(90, 150, 220, 0.75)'
+                               : 'rgba(200, 140, 90, 0.75)'),
+        errorLow: axes.map(a => a.low - 50),
+        errorHigh: axes.map(a => a.high - 50),
+    }];
+
+    // The overlay carries no interval: a pro's vector is their full history,
+    // not a filtered slice, so drawing whiskers on it would imply an
+    // uncertainty we did not compute.
+    if (pro) {
+        datasets.push({
+            label: pro.username,
+            data: axes.map(a => (pro.axes[a.axis] ?? 50) - 50),
+            backgroundColor: 'rgba(214, 154, 90, 0.7)',
+            errorLow: null,
+            errorHigh: null,
+        });
+    }
 
     styleChart = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: axes.map(a => STYLE_AXIS_LABELS[a.axis] || a.axis),
-            datasets: [{
-                label: 'percentile',
-                data: axes.map(a => a.percentile - 50),
-                backgroundColor: axes.map(a =>
-                    a.percentile >= 50 ? 'rgba(90, 150, 220, 0.75)'
-                                       : 'rgba(200, 140, 90, 0.75)'),
-                errorLow: axes.map(a => a.low - 50),
-                errorHigh: axes.map(a => a.high - 50),
-            }],
+            datasets,
         },
         options: {
             indexAxis: 'y',
@@ -82,12 +107,16 @@ function drawStyleChart(axes) {
                 },
             },
             plugins: {
-                legend: { display: false },
+                legend: { display: Boolean(pro), position: 'bottom' },
                 tooltip: {
                     callbacks: {
                         label: ctx => {
                             const a = axes[ctx.dataIndex];
-                            return `${a.percentile}th percentile `
+                            if (ctx.datasetIndex === 1) {
+                                return `${ctx.dataset.label}: `
+                                     + `${a ? pro.axes[a.axis] : '?'}th percentile`;
+                            }
+                            return `you: ${a.percentile}th percentile `
                                  + `(${a.low}–${a.high} at 95%)`;
                         },
                     },
@@ -99,23 +128,33 @@ function drawStyleChart(axes) {
 }
 
 /** Chart.js has no built-in error bars. Drawing them in an afterDatasetsDraw
- *  hook keeps the interval on the same scale as the bar it belongs to. */
+ *  hook keeps the interval on the same scale as the bar it belongs to.
+ *
+ *  The vertical position comes from the rendered bar element rather than from
+ *  the category scale: once a pro is overlaid, each category holds two bars and
+ *  the category centre is the gap between them, so a whisker drawn there would
+ *  float between the series it is supposed to belong to. */
 const styleErrorBars = {
     id: 'styleErrorBars',
     afterDatasetsDraw(chart) {
-        const { ctx, scales: { x, y } } = chart;
+        const { ctx, scales: { x } } = chart;
         const ds = chart.data.datasets[0];
+        if (!ds || !ds.errorLow || !ds.errorHigh) return;
+        const meta = chart.getDatasetMeta(0);
         ctx.save();
         ctx.strokeStyle = 'rgba(70, 70, 70, 0.85)';
         ctx.lineWidth = 1.5;
         ds.data.forEach((_, i) => {
-            const cy = y.getPixelForValue(i);
+            const bar = meta.data[i];
+            if (!bar || ds.errorLow[i] == null || ds.errorHigh[i] == null) return;
+            const cy = bar.y;
+            const cap = Math.min(5, Math.max(2, (bar.height || 10) / 3));
             const lo = x.getPixelForValue(ds.errorLow[i]);
             const hi = x.getPixelForValue(ds.errorHigh[i]);
             ctx.beginPath();
             ctx.moveTo(lo, cy); ctx.lineTo(hi, cy);
-            ctx.moveTo(lo, cy - 5); ctx.lineTo(lo, cy + 5);
-            ctx.moveTo(hi, cy - 5); ctx.lineTo(hi, cy + 5);
+            ctx.moveTo(lo, cy - cap); ctx.lineTo(lo, cy + cap);
+            ctx.moveTo(hi, cy - cap); ctx.lineTo(hi, cy + cap);
             ctx.stroke();
         });
         ctx.restore();
@@ -131,11 +170,8 @@ function renderStyleSimilar(data) {
     // label and the filter from drifting apart when it changes.
     const pool = data.similarity_reference.pool.replace(' blitz', '');
 
-    const heading = document.getElementById('style-similar-heading');
-    if (heading) {
-        heading.firstChild.nodeValue = `Closest in style among ${pool} blitz players `;
-    }
-
+    // The heading stays short ("Pro Comparison"); the pool it actually uses is
+    // in the tooltip, derived from the response so the two cannot disagree.
     tip.dataset.tip =
         `Compared against players rated ${pool} in blitz, using their blitz games. `
         + (crossing
@@ -146,11 +182,41 @@ function renderStyleSimilar(data) {
         + 'Each side is measured relative to what is normal for its own time '
         + 'control and opening, so the comparison holds across them.';
 
+    const hint = document.getElementById('style-compare-hint');
     if (!data.similar.length) {
         list.innerHTML = '<li class="panel-meta">Not enough games to place you yet.</li>';
+        if (hint) hint.textContent = '';
         return;
     }
-    list.innerHTML = data.similar.map(s =>
-        `<li>${escapeHtml(s.username)} <span class="distance">${s.distance.toFixed(2)}</span></li>`
-    ).join('');
+    if (hint) {
+        hint.textContent = selectedPro
+            ? 'Selected — click again to clear.'
+            : 'Select a player to overlay their profile.';
+    }
+
+    // Each row is a real <button> so it is keyboard-reachable and announced as
+    // activatable; aria-pressed carries the selected state to a screen reader
+    // rather than leaving it to the background colour alone.
+    list.innerHTML = data.similar.map(s => `
+        <li>
+          <button type="button" class="pro-row" data-username="${escapeHtml(s.username)}"
+                  aria-pressed="${s.username === selectedPro}">
+            <span class="pro-name">${escapeHtml(s.username)}</span>
+            <span class="pro-elo">${s.elo}</span>
+            <span class="distance">${s.distance.toFixed(2)}</span>
+          </button>
+        </li>`).join('');
+
+    list.querySelectorAll('.pro-row').forEach(btn => {
+        btn.addEventListener('click', () => selectPro(btn.dataset.username));
+    });
+}
+
+/** Toggle a pro onto the chart. Clicking the selected one clears it. */
+function selectPro(username) {
+    if (!lastStyleData) return;
+    selectedPro = selectedPro === username ? null : username;
+    const pro = lastStyleData.similar.find(s => s.username === selectedPro) || null;
+    drawStyleChart(lastStyleData.axes, pro);
+    renderStyleSimilar(lastStyleData);
 }

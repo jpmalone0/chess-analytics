@@ -200,12 +200,19 @@
                 <span class="info-tip" tabindex="0" data-tip="These axes describe how you play, not how well. They are stable traits that barely track rating, so neither end is better.">?</span>
             </h2>
             <p id="style-meta" class="panel-meta"></p>
-            <canvas id="style-chart" height="180"></canvas>
-            <h3 id="style-similar-heading">
-                Closest in style among strong blitz players
-                <span class="info-tip" id="style-similar-tip" tabindex="0" data-tip="">?</span>
-            </h3>
-            <ol id="style-similar" class="style-similar"></ol>
+            <div class="style-columns">
+                <div class="style-chart-col">
+                    <canvas id="style-chart" height="200"></canvas>
+                </div>
+                <div class="style-compare-col">
+                    <h3 id="style-similar-heading">
+                        Pro Comparison
+                        <span class="info-tip" id="style-similar-tip" tabindex="0" data-tip="">?</span>
+                    </h3>
+                    <p id="style-compare-hint" class="panel-meta">Select a player to overlay their profile.</p>
+                    <ol id="style-similar" class="style-similar"></ol>
+                </div>
+            </div>
         </section>
 
         <section id="main-perspective-section" class="section section-bare hidden">
@@ -487,7 +494,7 @@
     </footer>
 
     <script src="/static/app.js?v=78"></script>
-    <script src="/static/style-panel.js?v=1"></script>
+    <script src="/static/style-panel.js?v=2"></script>
 </body>
 
 </html>
