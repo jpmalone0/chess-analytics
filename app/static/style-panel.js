@@ -204,7 +204,11 @@ function renderStyleSimilar(data) {
             + `${viewing}, so this compares your ${viewing} style to their blitz style. `
             : '')
         + 'Each side is measured relative to what is normal for its own time '
-        + 'control and opening, so the comparison holds across them.';
+        + 'control and opening, so the comparison holds across them.\n\n'
+        + 'Similarity is how close your profiles are compared with two of these '
+        + 'players picked at random: 100% means nothing in the pool is closer, '
+        + '50% means an ordinary pairing. ★ marks players shown whatever their '
+        + 'score.';
 
     const hint = document.getElementById('style-compare-hint');
     if (!data.similar.length) {
@@ -224,15 +228,24 @@ function renderStyleSimilar(data) {
     // The rank is rendered rather than left to the <ol> marker: the marker sits
     // outside the button, so it would not line up with the row it belongs to or
     // pick up the row's hover and selected states.
-    list.innerHTML = data.similar.map((s, i) => `
+    // The pin slot is always rendered, empty when unpinned, so every row's
+    // columns line up under the header rather than shifting by a star.
+    list.innerHTML = `
+        <li class="pro-head" aria-hidden="true">
+          <span class="pro-rank">#</span>
+          <span class="pro-name">Player</span>
+          <span class="pro-pin"></span>
+          <span class="pro-elo">Rating</span>
+          <span class="pro-score">Similarity</span>
+        </li>` + data.similar.map((s, i) => `
         <li>
           <button type="button" class="pro-row" data-username="${escapeHtml(s.username)}"
                   aria-pressed="${s.username === selectedPro}">
             <span class="pro-rank">${i + 1}</span>
             <span class="pro-name">${escapeHtml(s.username)}</span>
-            ${s.pinned ? '<span class="pro-pin" title="Always shown, whatever the distance">★</span>' : ''}
+            <span class="pro-pin">${s.pinned ? '<span title="Always shown, whatever the score">★</span>' : ''}</span>
             <span class="pro-elo">${s.elo}</span>
-            <span class="distance">${s.distance.toFixed(2)}</span>
+            <span class="pro-score">${s.similarity}%</span>
           </button>
         </li>`).join('');
 

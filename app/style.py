@@ -11,6 +11,7 @@ Nothing here may be presented as better or worse.
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass, field
 
 from sqlalchemy import text
@@ -280,6 +281,57 @@ PINNED_USERNAMES = (
 )
 
 
+#: Pairs sampled when the pool is too large to compare exhaustively. Enough for
+#: a percentile that is stable to about a point, and sampled from a fixed seed so
+#: the same pool always yields the same scores.
+MAX_SPREAD_PAIRS = 20000
+
+
+def _pool_distance_spread(rows, scales) -> list[float]:
+    """Sorted distances between pairs of pool members.
+
+    This is the yardstick a single distance is read against. Exhaustive while
+    that is cheap, sampled beyond it, because the count grows as the square of
+    the pool and this runs on every request.
+    """
+    vectors = [
+        [_z(scales, SIMILARITY_CLASS, a, float(r[a])) for a in AXES] for r in rows
+    ]
+    n = len(vectors)
+    if n < 2:
+        return []
+
+    pairs: list[tuple[int, int]] = []
+    if n * (n - 1) // 2 <= MAX_SPREAD_PAIRS:
+        pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
+    else:
+        rng = random.Random(0)
+        seen: set[tuple[int, int]] = set()
+        while len(seen) < MAX_SPREAD_PAIRS:
+            i, j = rng.randrange(n), rng.randrange(n)
+            if i != j:
+                seen.add((min(i, j), max(i, j)))
+        pairs = list(seen)
+
+    return sorted(
+        math.sqrt(sum((vectors[i][k] - vectors[j][k]) ** 2 for k in range(len(AXES))))
+        for i, j in pairs
+    )
+
+
+def _similarity(spread: list[float], distance: float) -> int:
+    """0-100: the share of random pool pairs that are further apart than this.
+
+    100 means nothing in the pool is closer than this pairing; 50 means it is a
+    typical pair. Reported instead of the raw distance because a distance is
+    only meaningful next to the distribution it came from.
+    """
+    if not spread:
+        return 0
+    farther = sum(1 for d in spread if d > distance)
+    return round(100 * farther / len(spread))
+
+
 def similar_players(conn, vector: Vector, player_id: int | None = None,
                     time_class: str | None = None) -> list[dict]:
     """The nearest players in standardised style space.
@@ -336,6 +388,13 @@ def similar_players(conn, vector: Vector, player_id: int | None = None,
     # four numbers we already hold would be the wrong trade.
     reference = _reference_values(conn, scales)
 
+    # A raw distance means nothing on its own -- is 0.6 close? -- so it is
+    # reported as a percentile against how far apart two random pool members
+    # are. That yardstick is a property of the pool, not of the subject:
+    # ranking each player against the subject's OWN list would make the nearest
+    # match score ~100 no matter how poor it actually was.
+    spread = _pool_distance_spread(rows, scales)
+
     scored = []
     for row in rows:
         theirs = {a: _z(scales, SIMILARITY_CLASS, a, float(row[a])) for a in AXES}
@@ -344,6 +403,7 @@ def similar_players(conn, vector: Vector, player_id: int | None = None,
         scored.append({"username": row["username"],
                        "elo": round(float(row["mean_elo"])),
                        "distance": round(distance, 3),
+                       "similarity": _similarity(spread, distance),
                        "pinned": row["username"].lower() in PINNED_USERNAMES,
                        "axes": {a: _rank(reference[a], theirs[a]) for a in AXES}})
     scored.sort(key=lambda r: r["distance"])

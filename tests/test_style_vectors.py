@@ -389,6 +389,55 @@ class TestSimilarPlayerAxes:
         assert len(reference["space"]) == 12
 
 
+class TestSimilarityScore:
+    """The raw distance is reported as a percentile against the pool's own
+    pairwise spread, because a distance means nothing without the distribution
+    it came from -- is 0.6 close?"""
+
+    @staticmethod
+    def _spread_pool(conn, values):
+        for i, v in enumerate(values):
+            pid = 700 + i
+            conn.execute(text("INSERT INTO players VALUES (:p, :u)"),
+                         {"p": pid, "u": f"pro{i}"})
+            conn.execute(text(
+                "INSERT INTO player_style_vectors VALUES "
+                "(:p, 'blitz', 200, :e, :v, 0, 0, 0)"),
+                {"p": pid, "e": ELITE_MIN_ELO + 100, "v": v})
+
+    def test_a_closer_player_scores_higher(self, conn):
+        self._spread_pool(conn, [float(i) for i in range(12)])
+        axes = {a: AxisValue(mean=0.0, se=0.0) for a in AXES}
+        out = similar_players(conn, Vector(n=80, axes=axes), time_class="blitz")
+        scores = [r["similarity"] for r in out]
+        assert scores == sorted(scores, reverse=True)
+
+    def test_the_score_stays_within_bounds(self, conn):
+        self._spread_pool(conn, [float(i) for i in range(12)])
+        axes = {a: AxisValue(mean=0.0, se=0.0) for a in AXES}
+        for row in similar_players(conn, Vector(n=80, axes=axes),
+                                   time_class="blitz"):
+            assert 0 <= row["similarity"] <= 100
+
+    def test_the_nearest_possible_match_scores_at_the_top(self, conn):
+        """A player sitting exactly on the subject is closer than every pair in
+        the pool, so nothing can rank above them."""
+        self._spread_pool(conn, [0.0] + [float(i) for i in range(1, 12)])
+        axes = {a: AxisValue(mean=0.0, se=0.0) for a in AXES}
+        out = similar_players(conn, Vector(n=80, axes=axes), time_class="blitz")
+        assert out[0]["similarity"] == 100
+
+    def test_the_yardstick_is_the_pool_not_the_subjects_own_list(self, conn):
+        """Ranking against the subject's own results would hand the nearest
+        match ~100 however poor it was. Here every pool member is far from the
+        subject but tightly packed together, so the best match must NOT score
+        near the top."""
+        self._spread_pool(conn, [100.0 + i * 0.01 for i in range(12)])
+        axes = {a: AxisValue(mean=0.0, se=0.0) for a in AXES}
+        out = similar_players(conn, Vector(n=80, axes=axes), time_class="blitz")
+        assert out[0]["similarity"] == 0, out[0]["similarity"]
+
+
 class TestPinnedPlayers:
     """Five players are always on the list, whatever their distance."""
 
