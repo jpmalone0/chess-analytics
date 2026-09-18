@@ -1671,6 +1671,7 @@ body.compare-mode #stat-winrate     { order: 8; }
 /* data-tip holds the tooltip text; nothing renders it without this rule. */
 .info-tip:hover::after,
 .info-tip:focus::after {
+    white-space: pre-line;
     content: attr(data-tip);
     position: absolute;
     bottom: calc(100% + 6px);
@@ -1697,23 +1698,6 @@ body.compare-mode #stat-winrate     { order: 8; }
     font-style: italic;
 }
 
-/* Two half-width cards side by side, matching .analytics-grid elsewhere. A
-   single full-width card was tall enough to push everything below it off
-   screen. align-items: start so the shorter card keeps its own height instead
-   of stretching to match its neighbour. */
-.style-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
-    align-items: start;
-    margin-bottom: 2rem;
-}
-
-@media (max-width: 900px) {
-    .style-row { grid-template-columns: 1fr; }
-}
-
-.style-row > .section { margin-bottom: 0; min-width: 0; }
 
 .style-similar { list-style: none; margin: 0.5rem 0 0; padding: 0; }
 
@@ -1747,10 +1731,67 @@ body.compare-mode #stat-winrate     { order: 8; }
     border-color: rgba(214, 154, 90, 0.55);
 }
 
+.style-similar .pro-rank {
+    width: 1.6em;
+    flex: none;
+    text-align: right;
+    opacity: 0.5;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85em;
+}
+
 .style-similar .pro-name { flex: 1; }
 
-.style-similar .pro-elo,
-.style-similar .distance {
+/* Marks a player who is on the list regardless of score, so a far-off name at
+   rank 10 does not read as "similar to you". Always present, empty when not
+   pinned, so the columns beside it stay aligned. */
+.style-similar .pro-pin {
+    flex: none;
+    width: 1em;
+    opacity: 0.55;
+    font-size: 0.8em;
+    cursor: help;
+}
+
+.style-similar .pro-score {
+    flex: none;
+    width: 5.5em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85em;
+}
+
+/* Aligned with .pro-row's columns, but padded to match the button's own inset
+   so the labels sit directly above the values rather than a border's width off. */
+.style-similar .pro-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0 0.6rem 0.3rem;
+    border-bottom: 1px solid var(--border-light, rgba(127, 127, 127, 0.25));
+    margin-bottom: 0.25rem;
+    font-size: 0.75em;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    opacity: 0.55;
+}
+
+.style-similar .pro-head .pro-rank,
+.style-similar .pro-head .pro-elo,
+.style-similar .pro-head .pro-score {
+    font-size: 1em;
+    opacity: 1;
+}
+
+/* RATING and SIMILARITY are longer than the numbers beneath them, so the header
+   row shrinks its own type rather than widening every column to fit a word that
+   appears once. */
+.style-similar .pro-head { font-size: 0.68em; }
+
+.style-similar .pro-elo {
+    flex: none;
+    width: 3.6em;
+    text-align: right;
     opacity: 0.6;
     font-variant-numeric: tabular-nums;
     font-size: 0.85em;

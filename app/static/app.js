@@ -25,7 +25,7 @@ let currentOpeningColor = 'global';  // 'global' | 'white' | 'black'
 // therefore has to remember which side's row was clicked, or every query
 // silently widens to both colours. '' when nothing is filtered.
 let currentOpeningFilterColor = '';  // '' | 'white' | 'black'
-const ANALYTICS_SECTIONS = ['outcomes', 'time', 'form'];
+const ANALYTICS_SECTIONS = ['outcomes', 'time', 'style', 'form'];
 const collapsedSections = new Set();  // sections the user has collapsed
 const OPENINGS_PREVIEW_COUNT = 6;     // opening rows shown before "show all"
 let openingsExpanded = false;
@@ -591,7 +591,6 @@ async function refreshAll() {
         loadEloChart(currentUsername),
         loadGames(currentUsername),
         initRepertoireTabs(currentUsername),
-        loadStylePanel(currentUsername),
     ];
     if (compareMode && currentCompareUsername) {
         promises.push(loadCompareStats(currentCompareUsername));
@@ -2385,5 +2384,7 @@ function loadAnalyticsSection(name) {
             loadWinrateByColor(currentCompareUsername, cid, '-compare');
             loadStreakReaction(currentCompareUsername, cid, '-compare');
         }
+    } else if (name === 'style') {
+        loadStylePanel(currentUsername);
     }
 }

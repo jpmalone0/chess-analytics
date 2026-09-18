@@ -11,12 +11,19 @@ Nothing here may be presented as better or worse.
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass, field
 
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 #: Display order for the axes.
+#:
+#: Every value here comes from ONE position per game, after each side's 10th
+#: move (analysis.metrics.SNAPSHOT_PLY). Nothing later in the game is measured,
+#: which is deliberate rather than a shortcut: sampled later these quantities
+#: become a restatement of who is already winning. Any copy describing them has
+#: to say so, or they read as a summary of how someone plays a whole game.
 AXES = ("space", "mobility", "king_safety", "pawn_structure")
 
 #: Schema prefix for the sidecar tables; empty in tests. See build_features.
@@ -255,8 +262,80 @@ ELITE_MIN_ELO = 3000
 #: distance is taken -- see class_scales.
 SIMILARITY_CLASS = "blitz"
 
-#: How many neighbours to return.
-SIMILAR_COUNT = 5
+#: How many entries the list holds.
+SIMILAR_COUNT = 10
+
+#: Players always shown, whatever their distance.
+#:
+#: The list would otherwise be five names most people have never heard of, which
+#: makes it hard to tell whether a distance of 0.6 is close. Anchoring it with
+#: players whose style is common knowledge gives the rest of the list a scale.
+#:
+#: They are ranked by distance like everyone else -- pinning decides who appears,
+#: not where. Each carries pinned=True so the panel can mark it, because a pinned
+#: player sitting at rank 10 is there despite their distance, not because of it.
+#:
+#: Matched case-insensitively against chess.com usernames. A pin that is missing
+#: from the pool (below the rating floor, too few games, or the subject
+#: themselves) is simply skipped.
+PINNED_USERNAMES = (
+    "hikaru",
+    "magnuscarlsen",
+    "firouzja2003",
+    "danielnaroditsky",
+    "fabianocaruana",
+)
+
+
+#: Pairs sampled when the pool is too large to compare exhaustively. Enough for
+#: a percentile that is stable to about a point, and sampled from a fixed seed so
+#: the same pool always yields the same scores.
+MAX_SPREAD_PAIRS = 20000
+
+
+def _pool_distance_spread(rows, scales) -> list[float]:
+    """Sorted distances between pairs of pool members.
+
+    This is the yardstick a single distance is read against. Exhaustive while
+    that is cheap, sampled beyond it, because the count grows as the square of
+    the pool and this runs on every request.
+    """
+    vectors = [
+        [_z(scales, SIMILARITY_CLASS, a, float(r[a])) for a in AXES] for r in rows
+    ]
+    n = len(vectors)
+    if n < 2:
+        return []
+
+    pairs: list[tuple[int, int]] = []
+    if n * (n - 1) // 2 <= MAX_SPREAD_PAIRS:
+        pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
+    else:
+        rng = random.Random(0)
+        seen: set[tuple[int, int]] = set()
+        while len(seen) < MAX_SPREAD_PAIRS:
+            i, j = rng.randrange(n), rng.randrange(n)
+            if i != j:
+                seen.add((min(i, j), max(i, j)))
+        pairs = list(seen)
+
+    return sorted(
+        math.sqrt(sum((vectors[i][k] - vectors[j][k]) ** 2 for k in range(len(AXES))))
+        for i, j in pairs
+    )
+
+
+def _similarity(spread: list[float], distance: float) -> int:
+    """0-100: the share of random pool pairs that are further apart than this.
+
+    100 means nothing in the pool is closer than this pairing; 50 means it is a
+    typical pair. Reported instead of the raw distance because a distance is
+    only meaningful next to the distribution it came from.
+    """
+    if not spread:
+        return 0
+    farther = sum(1 for d in spread if d > distance)
+    return round(100 * farther / len(spread))
 
 
 def similar_players(conn, vector: Vector, player_id: int | None = None,
@@ -315,14 +394,31 @@ def similar_players(conn, vector: Vector, player_id: int | None = None,
     # four numbers we already hold would be the wrong trade.
     reference = _reference_values(conn, scales)
 
-    out = []
+    # A raw distance means nothing on its own -- is 0.6 close? -- so it is
+    # reported as a percentile against how far apart two random pool members
+    # are. That yardstick is a property of the pool, not of the subject:
+    # ranking each player against the subject's OWN list would make the nearest
+    # match score ~100 no matter how poor it actually was.
+    spread = _pool_distance_spread(rows, scales)
+
+    scored = []
     for row in rows:
         theirs = {a: _z(scales, SIMILARITY_CLASS, a, float(row[a])) for a in AXES}
         distance = math.sqrt(sum(
             (theirs[axis] - subject[axis]) ** 2 for axis in AXES))
-        out.append({"username": row["username"],
-                    "elo": round(float(row["mean_elo"])),
-                    "distance": round(distance, 3),
-                    "axes": {a: _rank(reference[a], theirs[a]) for a in AXES}})
-    out.sort(key=lambda r: r["distance"])
-    return out[:SIMILAR_COUNT]
+        scored.append({"username": row["username"],
+                       "elo": round(float(row["mean_elo"])),
+                       "distance": round(distance, 3),
+                       "similarity": _similarity(spread, distance),
+                       "pinned": row["username"].lower() in PINNED_USERNAMES,
+                       "axes": {a: _rank(reference[a], theirs[a]) for a in AXES}})
+    scored.sort(key=lambda r: r["distance"])
+
+    # Pins take their places first, then the nearest others fill the rest. A pin
+    # that is already among the nearest is not counted twice, so the list stays
+    # SIMILAR_COUNT long rather than losing a genuine neighbour to a duplicate.
+    pinned = [r for r in scored if r["pinned"]]
+    others = [r for r in scored if not r["pinned"]]
+    chosen = pinned + others[:max(0, SIMILAR_COUNT - len(pinned))]
+    chosen.sort(key=lambda r: r["distance"])
+    return chosen[:SIMILAR_COUNT]

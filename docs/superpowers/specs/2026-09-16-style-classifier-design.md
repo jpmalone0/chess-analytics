@@ -40,7 +40,29 @@ The weakness feature remains a separate open thread; see the findings doc.
 higher, never so higher is better. `passed_pawns` is excluded: reliability 0.03
 means it is noise at ply 20.
 
-All are measured from the board at **ply 20** for both colours, engine-free.
+All are measured from the board at **ply 20** — a single position, after each
+side's 10th move — for both colours, engine-free.
+
+**This has to be visible in the UI, not only here.** Without it the panel reads
+as a description of how someone plays a whole game, which it is not: everything
+after move 10 is discarded. The meta line says "measured at move 10" and the
+tooltip explains why later is worse.
+
+Ply 20 is a deliberate choice rather than a compromise. Measured at plies
+16/20/30 across 665 players, moving later makes each axis both more contaminated
+and less meaningful:
+
+| | move 8 | move 10 | move 15 |
+|---|---|---|---|
+| king safety, correlation with the engine eval | −0.05 | +0.07 | **+0.19** |
+| space, split-half reliability | 0.68 | 0.65 | **0.56** |
+| mobility, split-half reliability | 0.62 | 0.59 | **0.51** |
+
+Both move together for one reason: the later you look, the more the position is
+a product of what the opponent did. That makes it less about the player
+(reliability falls) and more about who is standing better (contamination rises).
+Sampling several plies per game fails for the same reason — see the findings
+doc.
 
 ---
 

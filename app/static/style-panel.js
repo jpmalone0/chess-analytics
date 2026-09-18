@@ -51,10 +51,13 @@ function renderStylePanel(data) {
         return;
     }
 
+    // "measured at move 10" is on the face of the panel, not only in the
+    // tooltip: without it these read as a description of how you play across a
+    // whole game, which is not what they are.
     meta.textContent =
-        `${data.n_games.toLocaleString()} games · percentile against `
-        + `${data.percentile_reference.n_players.toLocaleString()} players `
-        + `with 30+ ${data.percentile_reference.time_class} games`;
+        `${data.n_games.toLocaleString()} games · measured at move 10 · `
+        + `percentile against ${data.percentile_reference.n_players.toLocaleString()} `
+        + `players with 30+ ${data.percentile_reference.time_class} games`;
 
     drawStyleChart(data.axes, null);
     renderStyleSimilar(data);
@@ -70,12 +73,12 @@ function drawStyleChart(axes, pro) {
 
     const datasets = [{
         label: 'you',
-        data: axes.map(a => a.percentile - 50),
+        data: axes.map(a => a.percentile),
         backgroundColor: axes.map(a =>
             a.percentile >= 50 ? 'rgba(90, 150, 220, 0.75)'
                                : 'rgba(200, 140, 90, 0.75)'),
-        errorLow: axes.map(a => a.low - 50),
-        errorHigh: axes.map(a => a.high - 50),
+        errorLow: axes.map(a => a.low),
+        errorHigh: axes.map(a => a.high),
     }];
 
     // The overlay carries no interval: a pro's vector is their full history,
@@ -84,7 +87,7 @@ function drawStyleChart(axes, pro) {
     if (pro) {
         datasets.push({
             label: pro.username,
-            data: axes.map(a => (pro.axes[a.axis] ?? 50) - 50),
+            data: axes.map(a => pro.axes[a.axis] ?? 50),
             backgroundColor: 'rgba(214, 154, 90, 0.7)',
             errorLow: null,
             errorHigh: null,
@@ -99,10 +102,15 @@ function drawStyleChart(axes, pro) {
         },
         options: {
             indexAxis: 'y',
+            // Clicking a name redraws the whole chart, and an animated redraw
+            // means waiting out a transition before the two profiles can be
+            // compared. The point of the overlay is the difference between the
+            // bars, so they arrive already drawn.
+            animation: false,
+            animations: { colors: false, x: false, y: false },
             scales: {
                 x: {
-                    min: -50, max: 50,
-                    ticks: { callback: v => `${v + 50}` },
+                    min: 0, max: 100,
                     title: { display: true, text: 'percentile' },
                 },
             },
@@ -123,9 +131,34 @@ function drawStyleChart(axes, pro) {
                 },
             },
         },
-        plugins: [styleErrorBars],
+        plugins: [styleMedianLine, styleErrorBars],
     });
 }
+
+/** A line at the 50th percentile.
+ *
+ *  Bars are measured from zero, so their length reads directly as "what
+ *  percentile is this". That costs the one thing a diverging chart gave for
+ *  free -- you could see at a glance which side of typical a value fell on --
+ *  so the median gets an explicit marker instead of being implied by the
+ *  origin. Drawn before the datasets so the bars sit on top of it. */
+const styleMedianLine = {
+    id: 'styleMedianLine',
+    beforeDatasetsDraw(chart) {
+        const { ctx, scales: { x }, chartArea } = chart;
+        if (!chartArea) return;
+        const px = x.getPixelForValue(50);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(150, 150, 150, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(px, chartArea.top);
+        ctx.lineTo(px, chartArea.bottom);
+        ctx.stroke();
+        ctx.restore();
+    },
+};
 
 /** Chart.js has no built-in error bars. Drawing them in an afterDatasetsDraw
  *  hook keeps the interval on the same scale as the bar it belongs to.
@@ -180,7 +213,11 @@ function renderStyleSimilar(data) {
             + `${viewing}, so this compares your ${viewing} style to their blitz style. `
             : '')
         + 'Each side is measured relative to what is normal for its own time '
-        + 'control and opening, so the comparison holds across them.';
+        + 'control and opening, so the comparison holds across them.\n\n'
+        + 'Similarity is how close your profiles are compared with two of these '
+        + 'players picked at random: 100% means nothing in the pool is closer, '
+        + '50% means an ordinary pairing. ★ marks players shown whatever their '
+        + 'score.';
 
     const hint = document.getElementById('style-compare-hint');
     if (!data.similar.length) {
@@ -197,13 +234,27 @@ function renderStyleSimilar(data) {
     // Each row is a real <button> so it is keyboard-reachable and announced as
     // activatable; aria-pressed carries the selected state to a screen reader
     // rather than leaving it to the background colour alone.
-    list.innerHTML = data.similar.map(s => `
+    // The rank is rendered rather than left to the <ol> marker: the marker sits
+    // outside the button, so it would not line up with the row it belongs to or
+    // pick up the row's hover and selected states.
+    // The pin slot is always rendered, empty when unpinned, so every row's
+    // columns line up under the header rather than shifting by a star.
+    list.innerHTML = `
+        <li class="pro-head" aria-hidden="true">
+          <span class="pro-rank">#</span>
+          <span class="pro-name">Player</span>
+          <span class="pro-pin"></span>
+          <span class="pro-elo">Rating</span>
+          <span class="pro-score">Similarity</span>
+        </li>` + data.similar.map((s, i) => `
         <li>
           <button type="button" class="pro-row" data-username="${escapeHtml(s.username)}"
                   aria-pressed="${s.username === selectedPro}">
+            <span class="pro-rank">${i + 1}</span>
             <span class="pro-name">${escapeHtml(s.username)}</span>
+            <span class="pro-pin">${s.pinned ? '<span title="Always shown, whatever the score">★</span>' : ''}</span>
             <span class="pro-elo">${s.elo}</span>
-            <span class="distance">${s.distance.toFixed(2)}</span>
+            <span class="pro-score">${s.similarity}%</span>
           </button>
         </li>`).join('');
 
