@@ -70,12 +70,12 @@ function drawStyleChart(axes, pro) {
 
     const datasets = [{
         label: 'you',
-        data: axes.map(a => a.percentile - 50),
+        data: axes.map(a => a.percentile),
         backgroundColor: axes.map(a =>
             a.percentile >= 50 ? 'rgba(90, 150, 220, 0.75)'
                                : 'rgba(200, 140, 90, 0.75)'),
-        errorLow: axes.map(a => a.low - 50),
-        errorHigh: axes.map(a => a.high - 50),
+        errorLow: axes.map(a => a.low),
+        errorHigh: axes.map(a => a.high),
     }];
 
     // The overlay carries no interval: a pro's vector is their full history,
@@ -84,7 +84,7 @@ function drawStyleChart(axes, pro) {
     if (pro) {
         datasets.push({
             label: pro.username,
-            data: axes.map(a => (pro.axes[a.axis] ?? 50) - 50),
+            data: axes.map(a => pro.axes[a.axis] ?? 50),
             backgroundColor: 'rgba(214, 154, 90, 0.7)',
             errorLow: null,
             errorHigh: null,
@@ -101,8 +101,7 @@ function drawStyleChart(axes, pro) {
             indexAxis: 'y',
             scales: {
                 x: {
-                    min: -50, max: 50,
-                    ticks: { callback: v => `${v + 50}` },
+                    min: 0, max: 100,
                     title: { display: true, text: 'percentile' },
                 },
             },
@@ -123,9 +122,34 @@ function drawStyleChart(axes, pro) {
                 },
             },
         },
-        plugins: [styleErrorBars],
+        plugins: [styleMedianLine, styleErrorBars],
     });
 }
+
+/** A line at the 50th percentile.
+ *
+ *  Bars are measured from zero, so their length reads directly as "what
+ *  percentile is this". That costs the one thing a diverging chart gave for
+ *  free -- you could see at a glance which side of typical a value fell on --
+ *  so the median gets an explicit marker instead of being implied by the
+ *  origin. Drawn before the datasets so the bars sit on top of it. */
+const styleMedianLine = {
+    id: 'styleMedianLine',
+    beforeDatasetsDraw(chart) {
+        const { ctx, scales: { x }, chartArea } = chart;
+        if (!chartArea) return;
+        const px = x.getPixelForValue(50);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(150, 150, 150, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(px, chartArea.top);
+        ctx.lineTo(px, chartArea.bottom);
+        ctx.stroke();
+        ctx.restore();
+    },
+};
 
 /** Chart.js has no built-in error bars. Drawing them in an afterDatasetsDraw
  *  hook keeps the interval on the same scale as the bar it belongs to.
