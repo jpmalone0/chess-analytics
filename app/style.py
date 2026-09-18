@@ -18,6 +18,12 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 #: Display order for the axes.
+#:
+#: Every value here comes from ONE position per game, after each side's 10th
+#: move (analysis.metrics.SNAPSHOT_PLY). Nothing later in the game is measured,
+#: which is deliberate rather than a shortcut: sampled later these quantities
+#: become a restatement of who is already winning. Any copy describing them has
+#: to say so, or they read as a summary of how someone plays a whole game.
 AXES = ("space", "mobility", "king_safety", "pawn_structure")
 
 #: Schema prefix for the sidecar tables; empty in tests. See build_features.

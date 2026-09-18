@@ -51,10 +51,13 @@ function renderStylePanel(data) {
         return;
     }
 
+    // "measured at move 10" is on the face of the panel, not only in the
+    // tooltip: without it these read as a description of how you play across a
+    // whole game, which is not what they are.
     meta.textContent =
-        `${data.n_games.toLocaleString()} games · percentile against `
-        + `${data.percentile_reference.n_players.toLocaleString()} players `
-        + `with 30+ ${data.percentile_reference.time_class} games`;
+        `${data.n_games.toLocaleString()} games · measured at move 10 · `
+        + `percentile against ${data.percentile_reference.n_players.toLocaleString()} `
+        + `players with 30+ ${data.percentile_reference.time_class} games`;
 
     drawStyleChart(data.axes, null);
     renderStyleSimilar(data);
