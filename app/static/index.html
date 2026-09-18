@@ -12,7 +12,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/static/style.css?v=36">
+    <link rel="stylesheet" href="/static/style.css?v=37">
 </head>
 
 <body>
@@ -194,19 +194,24 @@
         <!-- ═══ Main Perspectives ═══ -->
         <!-- section-bare: keeps the .section show/hide hook without the card
              styling, so each analytics section reads as its own top-level block -->
-        <section id="style-panel" class="section hidden">
-            <h2>
-                Playing style
-                <span class="info-tip" tabindex="0" data-tip="These axes describe how you play, not how well. They are stable traits that barely track rating, so neither end is better.">?</span>
-            </h2>
-            <p id="style-meta" class="panel-meta"></p>
-            <canvas id="style-chart" height="180"></canvas>
-            <h3 id="style-similar-heading">
-                Closest in style among strong blitz players
-                <span class="info-tip" id="style-similar-tip" tabindex="0" data-tip="">?</span>
-            </h3>
-            <ol id="style-similar" class="style-similar"></ol>
-        </section>
+        <div class="style-row">
+            <section id="style-panel" class="section hidden">
+                <h2>
+                    Playing style
+                    <span class="info-tip" tabindex="0" data-tip="These axes describe how you play, not how well. They are stable traits that barely track rating, so neither end is better.">?</span>
+                </h2>
+                <p id="style-meta" class="panel-meta"></p>
+                <canvas id="style-chart" height="220"></canvas>
+            </section>
+            <section id="style-compare-panel" class="section hidden">
+                <h2 id="style-similar-heading">
+                    Pro Comparison
+                    <span class="info-tip" id="style-similar-tip" tabindex="0" data-tip="">?</span>
+                </h2>
+                <p id="style-compare-hint" class="panel-meta">Select a player to overlay their profile.</p>
+                <ol id="style-similar" class="style-similar"></ol>
+            </section>
+        </div>
 
         <section id="main-perspective-section" class="section section-bare hidden">
 
@@ -487,7 +492,7 @@
     </footer>
 
     <script src="/static/app.js?v=78"></script>
-    <script src="/static/style-panel.js?v=1"></script>
+    <script src="/static/style-panel.js?v=3"></script>
 </body>
 
 </html>
