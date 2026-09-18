@@ -1697,20 +1697,23 @@ body.compare-mode #stat-winrate     { order: 8; }
     font-style: italic;
 }
 
-/* The style panel puts the axes and the pro comparison side by side: stacked,
-   the card was tall enough to push everything below it off screen. */
-.style-columns {
+/* Two half-width cards side by side, matching .analytics-grid elsewhere. A
+   single full-width card was tall enough to push everything below it off
+   screen. align-items: start so the shorter card keeps its own height instead
+   of stretching to match its neighbour. */
+.style-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 2rem;
+    gap: 1.5rem;
     align-items: start;
+    margin-bottom: 2rem;
 }
 
 @media (max-width: 900px) {
-    .style-columns { grid-template-columns: 1fr; }
+    .style-row { grid-template-columns: 1fr; }
 }
 
-.style-compare-col h3 { margin-top: 0; }
+.style-row > .section { margin-bottom: 0; min-width: 0; }
 
 .style-similar { list-style: none; margin: 0.5rem 0 0; padding: 0; }
 
