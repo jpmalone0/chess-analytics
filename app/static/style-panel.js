@@ -221,11 +221,16 @@ function renderStyleSimilar(data) {
     // Each row is a real <button> so it is keyboard-reachable and announced as
     // activatable; aria-pressed carries the selected state to a screen reader
     // rather than leaving it to the background colour alone.
-    list.innerHTML = data.similar.map(s => `
+    // The rank is rendered rather than left to the <ol> marker: the marker sits
+    // outside the button, so it would not line up with the row it belongs to or
+    // pick up the row's hover and selected states.
+    list.innerHTML = data.similar.map((s, i) => `
         <li>
           <button type="button" class="pro-row" data-username="${escapeHtml(s.username)}"
                   aria-pressed="${s.username === selectedPro}">
+            <span class="pro-rank">${i + 1}</span>
             <span class="pro-name">${escapeHtml(s.username)}</span>
+            ${s.pinned ? '<span class="pro-pin" title="Always shown, whatever the distance">★</span>' : ''}
             <span class="pro-elo">${s.elo}</span>
             <span class="distance">${s.distance.toFixed(2)}</span>
           </button>

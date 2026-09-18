@@ -1730,7 +1730,25 @@ body.compare-mode #stat-winrate     { order: 8; }
     border-color: rgba(214, 154, 90, 0.55);
 }
 
+.style-similar .pro-rank {
+    width: 1.6em;
+    flex: none;
+    text-align: right;
+    opacity: 0.5;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85em;
+}
+
 .style-similar .pro-name { flex: 1; }
+
+/* Marks a player who is on the list regardless of distance, so a far-off name
+   at rank 10 does not read as "similar to you". */
+.style-similar .pro-pin {
+    flex: none;
+    opacity: 0.55;
+    font-size: 0.8em;
+    cursor: help;
+}
 
 .style-similar .pro-elo,
 .style-similar .distance {

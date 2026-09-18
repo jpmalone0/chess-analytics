@@ -11,6 +11,8 @@ from analysis.metrics import space
 from app.style import (
     AXES,
     ELITE_MIN_ELO,
+    PINNED_USERNAMES,
+    SIMILAR_COUNT,
     SIMILARITY_CLASS,
     AxisValue,
     Vector,
@@ -385,6 +387,78 @@ class TestSimilarPlayerAxes:
             if r["distance"] == 0.0)
         assert twin["axes"]["space"] == mine["space"]["percentile"]
         assert len(reference["space"]) == 12
+
+
+class TestPinnedPlayers:
+    """Five players are always on the list, whatever their distance."""
+
+    @staticmethod
+    def _pool(conn, extras, pinned_distance):
+        """Pins placed far away, plus `extras` ordinary players placed near."""
+        pid = 500
+        for name in PINNED_USERNAMES:
+            conn.execute(text("INSERT INTO players VALUES (:p, :u)"),
+                         {"p": pid, "u": name})
+            conn.execute(text(
+                "INSERT INTO player_style_vectors VALUES "
+                "(:p, 'blitz', 200, :e, :v, :v, :v, :v)"),
+                {"p": pid, "e": ELITE_MIN_ELO + 100, "v": pinned_distance})
+            pid += 1
+        for i in range(extras):
+            conn.execute(text("INSERT INTO players VALUES (:p, :u)"),
+                         {"p": pid, "u": f"near{i}"})
+            conn.execute(text(
+                "INSERT INTO player_style_vectors VALUES "
+                "(:p, 'blitz', 200, :e, :v, :v, :v, :v)"),
+                {"p": pid, "e": ELITE_MIN_ELO + 100, "v": 0.01 * i})
+            pid += 1
+
+    def _subject(self):
+        return Vector(n=80, axes={a: AxisValue(mean=0.0, se=0.0) for a in AXES})
+
+    def test_all_five_appear_even_when_far_away(self, conn):
+        """Each pin sits at a distance no ordinary neighbour has, so a plain
+        nearest-N would drop every one of them."""
+        self._pool(conn, extras=30, pinned_distance=50.0)
+        out = similar_players(conn, self._subject(), time_class="blitz")
+        names = {r["username"] for r in out}
+        assert set(PINNED_USERNAMES) <= names
+
+    def test_the_list_is_exactly_ten(self, conn):
+        self._pool(conn, extras=30, pinned_distance=50.0)
+        assert len(similar_players(conn, self._subject(),
+                                   time_class="blitz")) == SIMILAR_COUNT
+        assert SIMILAR_COUNT == 10
+
+    def test_a_pin_that_is_already_near_does_not_cost_a_slot(self, conn):
+        """With the pins nearest, a naive union would count them twice and
+        return nine, quietly dropping a genuine neighbour."""
+        self._pool(conn, extras=30, pinned_distance=0.0)
+        out = similar_players(conn, self._subject(), time_class="blitz")
+        assert len(out) == SIMILAR_COUNT
+        assert len({r["username"] for r in out}) == SIMILAR_COUNT
+
+    def test_the_list_is_ordered_by_distance(self, conn):
+        self._pool(conn, extras=30, pinned_distance=50.0)
+        out = similar_players(conn, self._subject(), time_class="blitz")
+        assert [r["distance"] for r in out] == sorted(r["distance"] for r in out)
+
+    def test_a_pin_is_flagged_so_the_panel_can_mark_it(self, conn):
+        """A pinned player at rank 10 is there despite their distance, not
+        because of it, and the list must be able to say so."""
+        self._pool(conn, extras=30, pinned_distance=50.0)
+        out = similar_players(conn, self._subject(), time_class="blitz")
+        assert {r["username"] for r in out if r["pinned"]} == set(PINNED_USERNAMES)
+
+    def test_a_pin_missing_from_the_pool_is_skipped(self, conn):
+        """Below the rating floor, too few games, or the subject themselves."""
+        self._pool(conn, extras=30, pinned_distance=50.0)
+        conn.execute(text(
+            "DELETE FROM player_style_vectors WHERE player_id IN "
+            "(SELECT player_id FROM players WHERE username = 'hikaru')"))
+        out = similar_players(conn, self._subject(), time_class="blitz")
+        assert "hikaru" not in {r["username"] for r in out}
+        assert len(out) == SIMILAR_COUNT, "the freed slot goes to a real neighbour"
 
 
 class TestCrossClassNormalisation:

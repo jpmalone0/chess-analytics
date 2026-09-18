@@ -255,8 +255,29 @@ ELITE_MIN_ELO = 3000
 #: distance is taken -- see class_scales.
 SIMILARITY_CLASS = "blitz"
 
-#: How many neighbours to return.
-SIMILAR_COUNT = 5
+#: How many entries the list holds.
+SIMILAR_COUNT = 10
+
+#: Players always shown, whatever their distance.
+#:
+#: The list would otherwise be five names most people have never heard of, which
+#: makes it hard to tell whether a distance of 0.6 is close. Anchoring it with
+#: players whose style is common knowledge gives the rest of the list a scale.
+#:
+#: They are ranked by distance like everyone else -- pinning decides who appears,
+#: not where. Each carries pinned=True so the panel can mark it, because a pinned
+#: player sitting at rank 10 is there despite their distance, not because of it.
+#:
+#: Matched case-insensitively against chess.com usernames. A pin that is missing
+#: from the pool (below the rating floor, too few games, or the subject
+#: themselves) is simply skipped.
+PINNED_USERNAMES = (
+    "hikaru",
+    "magnuscarlsen",
+    "firouzja2003",
+    "danielnaroditsky",
+    "fabianocaruana",
+)
 
 
 def similar_players(conn, vector: Vector, player_id: int | None = None,
@@ -315,14 +336,23 @@ def similar_players(conn, vector: Vector, player_id: int | None = None,
     # four numbers we already hold would be the wrong trade.
     reference = _reference_values(conn, scales)
 
-    out = []
+    scored = []
     for row in rows:
         theirs = {a: _z(scales, SIMILARITY_CLASS, a, float(row[a])) for a in AXES}
         distance = math.sqrt(sum(
             (theirs[axis] - subject[axis]) ** 2 for axis in AXES))
-        out.append({"username": row["username"],
-                    "elo": round(float(row["mean_elo"])),
-                    "distance": round(distance, 3),
-                    "axes": {a: _rank(reference[a], theirs[a]) for a in AXES}})
-    out.sort(key=lambda r: r["distance"])
-    return out[:SIMILAR_COUNT]
+        scored.append({"username": row["username"],
+                       "elo": round(float(row["mean_elo"])),
+                       "distance": round(distance, 3),
+                       "pinned": row["username"].lower() in PINNED_USERNAMES,
+                       "axes": {a: _rank(reference[a], theirs[a]) for a in AXES}})
+    scored.sort(key=lambda r: r["distance"])
+
+    # Pins take their places first, then the nearest others fill the rest. A pin
+    # that is already among the nearest is not counted twice, so the list stays
+    # SIMILAR_COUNT long rather than losing a genuine neighbour to a duplicate.
+    pinned = [r for r in scored if r["pinned"]]
+    others = [r for r in scored if not r["pinned"]]
+    chosen = pinned + others[:max(0, SIMILAR_COUNT - len(pinned))]
+    chosen.sort(key=lambda r: r["distance"])
+    return chosen[:SIMILAR_COUNT]
