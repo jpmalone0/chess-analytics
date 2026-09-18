@@ -191,6 +191,44 @@ natural bridge back from the style work to the weakness work.
 
 ---
 
+## Sampling later in the game does not help (measured 2026-09-18)
+
+The obvious objection to measuring at ply 20 is that it throws away the rest of
+the game. Tested on ballasack6's rapid games, measuring at plies 20/40/60/80:
+
+| axis | ply 20 | ply 40 | ply 60 | ply 80 |
+|---|---|---|---|---|
+| mobility | +0.06 | +0.13 | +0.19 | **+0.26** |
+| king safety | +0.03 | +0.12 | +0.20 | **+0.26** |
+| space | +0.03 | +0.00 | +0.01 | +0.02 |
+| pawn structure | +0.02 | +0.04 | +0.03 | −0.02 |
+
+(correlation with the game result)
+
+Mobility and king safety appear to get much better. They do not. Holding the
+engine's evaluation at the same ply constant kills the effect entirely — at ply
+40, mobility goes from +0.117 to **+0.007** and king safety from +0.063 to
+**−0.003**. By move 20 "more mobility, safer king" is a restatement of "you are
+winning": the metric reflects the outcome rather than predicting it.
+
+The evaluation's own correlation with the result runs +0.23 at ply 20, +0.48 at
+ply 40, +0.61 at ply 60. It progressively swamps everything.
+
+**So ply 20 is not a limitation, it is the only point where these metrics carry
+information the engine does not already have** — the only point where the game
+is not yet decided enough for the evaluation to dominate. Sampling later adds
+data and subtracts signal. Do not build multi-snapshot sampling; an earlier
+version of the plan recommended it as "cheap and deferred", which was wrong.
+
+**Related: the axes barely predict his own results at all.** Across 4,626 rapid
+games, the gap in win rate between his lowest and highest quartile is +3.6 points
+for space, +6.1 for mobility, +3.1 for king safety, +1.0 for pawn structure.
+Centipawn loss, on the 865 analysed games, runs from 25.7% to 80.1% — r = −0.41.
+How accurately he plays decides games; what his position looks like at move 10
+does not.
+
+---
+
 ## Known corpus limitation: the similarity pool
 
 The style feature's "who do you play like" readout compares against players with
