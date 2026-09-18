@@ -1696,3 +1696,59 @@ body.compare-mode #stat-winrate     { order: 8; }
     color: var(--text-muted);
     font-style: italic;
 }
+
+/* The style panel puts the axes and the pro comparison side by side: stacked,
+   the card was tall enough to push everything below it off screen. */
+.style-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    align-items: start;
+}
+
+@media (max-width: 900px) {
+    .style-columns { grid-template-columns: 1fr; }
+}
+
+.style-compare-col h3 { margin-top: 0; }
+
+.style-similar { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+
+.style-similar li { padding: 0; }
+
+/* A row is a button so it is reachable by keyboard and announced as
+   activatable, rather than a div with a click handler bolted on. */
+.style-similar .pro-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.style-similar .pro-row:hover,
+.style-similar .pro-row:focus-visible {
+    background: rgba(127, 127, 127, 0.12);
+    border-color: var(--border-light, rgba(127, 127, 127, 0.3));
+}
+
+.style-similar .pro-row[aria-pressed="true"] {
+    background: rgba(214, 154, 90, 0.16);
+    border-color: rgba(214, 154, 90, 0.55);
+}
+
+.style-similar .pro-name { flex: 1; }
+
+.style-similar .pro-elo,
+.style-similar .distance {
+    opacity: 0.6;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85em;
+}

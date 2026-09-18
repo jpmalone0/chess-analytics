@@ -309,13 +309,20 @@ def similar_players(conn, vector: Vector, player_id: int | None = None,
     subject_class = time_class or SIMILARITY_CLASS
     subject = {a: _z(scales, subject_class, a, vector.axes[a].mean) for a in AXES}
 
+    # Each returned player carries their own percentiles, ranked against the
+    # same pooled reference the subject is ranked against. The panel overlays
+    # them on the chart when a name is clicked, and a second round trip for
+    # four numbers we already hold would be the wrong trade.
+    reference = _reference_values(conn, scales)
+
     out = []
     for row in rows:
+        theirs = {a: _z(scales, SIMILARITY_CLASS, a, float(row[a])) for a in AXES}
         distance = math.sqrt(sum(
-            (_z(scales, SIMILARITY_CLASS, axis, float(row[axis])) - subject[axis]) ** 2
-            for axis in AXES))
+            (theirs[axis] - subject[axis]) ** 2 for axis in AXES))
         out.append({"username": row["username"],
                     "elo": round(float(row["mean_elo"])),
-                    "distance": round(distance, 3)})
+                    "distance": round(distance, 3),
+                    "axes": {a: _rank(reference[a], theirs[a]) for a in AXES}})
     out.sort(key=lambda r: r["distance"])
     return out[:SIMILAR_COUNT]

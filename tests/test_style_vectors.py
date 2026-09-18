@@ -355,6 +355,38 @@ def seed_class(conn, time_class, values, start_id=500, elo=2000.0):
             {"p": pid, "tc": time_class, "elo": elo, "v": v})
 
 
+class TestSimilarPlayerAxes:
+    def test_each_neighbour_carries_its_own_percentiles(self, conn):
+        """The panel overlays a pro's profile when their name is clicked. The
+        four numbers are already in hand when the neighbours are computed, so
+        they ride along rather than costing a second round trip."""
+        seed_class(conn, "blitz", [-1.0, 0.0, 1.0] * 4, start_id=500,
+                   elo=ELITE_MIN_ELO + 100)
+        axes = {a: AxisValue(mean=0.0, se=0.0) for a in AXES}
+        out = similar_players(conn, Vector(n=80, axes=axes), time_class="blitz")
+        assert out, "expected neighbours"
+        for row in out:
+            assert set(row["axes"]) == set(AXES)
+            assert all(0 <= v <= 100 for v in row["axes"].values())
+
+    def test_a_neighbours_percentiles_use_the_same_reference_as_the_subject(self, conn):
+        """Otherwise the two series on the chart would be drawn against
+        different scales while appearing directly comparable."""
+        seed_class(conn, "blitz", [-1.0, 0.0, 1.0] * 4, start_id=500,
+                   elo=ELITE_MIN_ELO + 100)
+        scales = class_scales(conn)
+        reference = _reference_values(conn, scales)
+        axes = {a: AxisValue(mean=0.0, se=0.0) for a in AXES}
+        mine = percentile_profile(conn, Vector(n=80, axes=axes), "blitz")
+        # A neighbour whose raw value is also 0.0 must land on the same
+        # percentile the subject does.
+        twin = next(r for r in similar_players(
+            conn, Vector(n=80, axes=axes), time_class="blitz")
+            if r["distance"] == 0.0)
+        assert twin["axes"]["space"] == mine["space"]["percentile"]
+        assert len(reference["space"]) == 12
+
+
 class TestCrossClassNormalisation:
     """Centring equalises spread across time controls but not location.
 
