@@ -7,6 +7,7 @@ either database never reaches into the other.
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, text
+from sqlalchemy.exc import OperationalError
 
 from engine.db import Base, engine
 
@@ -117,10 +118,17 @@ def assert_sqlite_has_math(conn) -> None:
     exp() is gated behind SQLITE_ENABLE_MATH_FUNCTIONS at compile time. Every
     view below is built on it, and a missing build otherwise surfaces as
     "no such function: exp" from whichever query happens to run first.
+
+    Only that specific failure is translated. A locked database or a corrupt
+    sidecar file also raises OperationalError, and relabelling those as a
+    missing compile flag would send someone chasing a rebuild when the real
+    problem is somewhere else entirely, so anything else is re-raised as itself.
     """
     try:
         conn.execute(text("SELECT exp(1.0)")).scalar()
-    except Exception as exc:  # noqa: BLE001 — any failure here means the same thing
+    except OperationalError as exc:
+        if "no such function: exp" not in str(exc):
+            raise
         raise MathFunctionsMissing(
             "This SQLite build lacks exp(). Rebuild with "
             "SQLITE_ENABLE_MATH_FUNCTIONS (SQLite >= 3.35)."
