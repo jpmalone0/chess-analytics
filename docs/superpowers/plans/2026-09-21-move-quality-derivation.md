@@ -299,9 +299,16 @@ from engine.db import (
 
 
 def backfill_coverage_time_class() -> int:
-    """Fill NULL time_class values. Returns the number of rows updated."""
+    """Fill NULL time_class values. Returns the number of rows updated.
+
+    The transaction is managed by hand rather than with sidecar.begin(), and
+    that is load-bearing: begin() commits when its with-block exits, which is
+    after the finally clause has already run DETACH. Detaching a database that
+    still has an open transaction against it makes SQLite raise "database canon
+    is locked", so the commit has to land first.
+    """
     sidecar = create_engine(ENGINE_DATABASE_URL, connect_args={"check_same_thread": False})
-    with sidecar.begin() as conn:
+    with sidecar.connect() as conn:
         conn.exec_driver_sql(
             f"ATTACH DATABASE '{_sqlite_path(CANONICAL_DATABASE_URL)}' AS canon"
         )
@@ -314,7 +321,9 @@ def backfill_coverage_time_class() -> int:
                        )
                 WHERE  time_class IS NULL
             """))
-            return int(result.rowcount)
+            updated = int(result.rowcount)
+            conn.commit()
+            return updated
         finally:
             conn.exec_driver_sql("DETACH DATABASE canon")
 ```
