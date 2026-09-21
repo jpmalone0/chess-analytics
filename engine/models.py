@@ -72,6 +72,11 @@ class GameCoverage(Base):
     status         = Column(String(20), nullable=False)  # complete | partial | failed
     error          = Column(Text)
     completed_at   = Column(DateTime)
+    # Denormalised from games.time_class, because SQLite refuses a view that
+    # references an ATTACHed database ("view X cannot reference objects in
+    # database engine"). Queries may cross the boundary; views may not. Keeping
+    # the fact here is what lets every severity view stay pure sidecar.
+    time_class     = Column(String(20))
 
 
 class WpCurve(Base):
@@ -223,6 +228,14 @@ JOIN windowed AS before
   AND before.ply     = after.ply - 1
 WHERE after.cp_eff IS NOT NULL AND before.cp_eff IS NOT NULL
 """
+
+
+def _add_missing_engine_columns():
+    """Bring an existing sidecar up to the current model (idempotent)."""
+    with engine.begin() as conn:
+        cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(game_coverage)")}
+        if cols and "time_class" not in cols:
+            conn.exec_driver_sql("ALTER TABLE game_coverage ADD COLUMN time_class VARCHAR(20)")
 
 
 def init_engine_db():
