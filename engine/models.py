@@ -6,7 +6,7 @@ either database never reaches into the other.
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, inspect, text
 from sqlalchemy.exc import OperationalError
 
 from engine.db import Base, engine
@@ -230,12 +230,27 @@ WHERE after.cp_eff IS NOT NULL AND before.cp_eff IS NOT NULL
 """
 
 
+# Columns added to an existing table after it was first created. create_all()
+# only creates missing *tables*, so a sidecar made before one of these columns
+# existed keeps working but silently lacks it. Mirrors app.database's
+# _ADDED_COLUMNS -- same problem, same shape, so the next column is a dict
+# entry rather than a new hardcoded function.
+_ADDED_ENGINE_COLUMNS = {
+    "game_coverage": {"time_class": "VARCHAR(20)"},
+}
+
+
 def _add_missing_engine_columns():
     """Bring an existing sidecar up to the current model (idempotent)."""
-    with engine.begin() as conn:
-        cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(game_coverage)")}
-        if cols and "time_class" not in cols:
-            conn.exec_driver_sql("ALTER TABLE game_coverage ADD COLUMN time_class VARCHAR(20)")
+    inspector = inspect(engine)
+    for table, columns in _ADDED_ENGINE_COLUMNS.items():
+        if table not in inspector.get_table_names():
+            continue
+        existing = {c["name"] for c in inspector.get_columns(table)}
+        with engine.begin() as conn:
+            for name, ddl_type in columns.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl_type}"))
 
 
 def init_engine_db():
