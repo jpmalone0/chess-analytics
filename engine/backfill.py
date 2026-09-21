@@ -6,13 +6,13 @@ without this they would have a NULL time_class, and every severity view inner
 joins wp_curve through it, so those games would silently vanish rather than
 error.
 
-Transaction management is manual here, deliberately. `engine.begin()` only
+Transaction management is manual here, deliberately. `sidecar.begin()` only
 commits when its `with` block exits, which is *after* a `finally` clause would
 already have run -- so a naive `with sidecar.begin() as conn: ... finally:
 DETACH` attempts the DETACH while the UPDATE's transaction against `canon` is
 still open, and SQLite refuses with "database canon is locked". Committing by
 hand before the DETACH is what avoids that; don't refactor this back to
-`begin()`.
+`sidecar.begin()`.
 """
 
 from sqlalchemy import create_engine, text
