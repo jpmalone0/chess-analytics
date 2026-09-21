@@ -73,6 +73,60 @@ class GameCoverage(Base):
     completed_at   = Column(DateTime)
 
 
+class WpCurve(Base):
+    """The fitted logistic turning centipawns into expected points.
+
+    One row per time class, because the conversion is not universal: measured on
+    this corpus, rapid fits k=360 and bullet fits k=865. A bullet advantage
+    converts far less reliably than the same advantage in rapid, and using one
+    curve for both overstates every bullet error.
+
+    n, fitted_at and source exist so that refitting stays a deliberate, recorded
+    act. A silent refit would move every historical count without anybody asking.
+    """
+
+    __tablename__ = "wp_curve"
+
+    time_class = Column(String(20), primary_key=True)
+    k          = Column(Float, nullable=False)
+    n          = Column(Integer, nullable=False)
+    fitted_at  = Column(DateTime)
+    source     = Column(Text)
+
+
+# Raw DDL for the same table, for tests that exercise the views as SQLite runs
+# them rather than through the ORM.
+WP_CURVE_DDL = """
+CREATE TABLE IF NOT EXISTS wp_curve (
+    time_class VARCHAR(20) PRIMARY KEY,
+    k          FLOAT   NOT NULL,
+    n          INTEGER NOT NULL,
+    fitted_at  DATETIME,
+    source     TEXT
+)
+"""
+
+
+class MathFunctionsMissing(RuntimeError):
+    """This SQLite build has no exp(), so no severity view can run."""
+
+
+def assert_sqlite_has_math(conn) -> None:
+    """Fail loudly at startup rather than obscurely inside a view.
+
+    exp() is gated behind SQLITE_ENABLE_MATH_FUNCTIONS at compile time. Every
+    view below is built on it, and a missing build otherwise surfaces as
+    "no such function: exp" from whichever query happens to run first.
+    """
+    try:
+        conn.execute(text("SELECT exp(1.0)")).scalar()
+    except Exception as exc:  # noqa: BLE001 — any failure here means the same thing
+        raise MathFunctionsMissing(
+            "This SQLite build lacks exp(). Rebuild with "
+            "SQLITE_ENABLE_MATH_FUNCTIONS (SQLite >= 3.35)."
+        ) from exc
+
+
 # ═══════════════════════════════════════════════════════════
 # Derivation
 # ═══════════════════════════════════════════════════════════
