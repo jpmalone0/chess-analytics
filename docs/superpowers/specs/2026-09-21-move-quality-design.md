@@ -51,6 +51,7 @@ rates are noise. See "Why pooled".
 | Drill-down | Move list, deep-linked to chess.com | No rendering stack needed |
 | Time classes | Filled independently | Each is its own run and its own fitted `k` |
 | Refitting `k` | Only when absent | A refit would silently move every historical count |
+| Band for the job | Median within the time class, pinned at press time | Pooling classes picks a band the player never plays in |
 
 ---
 
@@ -405,13 +406,45 @@ scrape. Brilliant, Great, Best. Refitting `k` automatically.
 
 ---
 
-## Open questions for implementation
+## Which band the job runs at
 
-**Which band does the button default to?** `resolve_band` already picks one
-from the player's median Elo with ±100/±200 widening. Inheriting it is the
-obvious default, but it means the first press analyzes the band you are already
-in—which is the most useful one and also the one where the opponent mirror
-already gives a partial answer.
+`resolve_band` derives a band from `player_median_elo`, which inherits the
+whole filters bar. Two properties of that matter here, and neither is
+theoretical:
+
+| window | rapid | blitz | bullet | pooled |
+|---|---|---|---|---|
+| lifetime | 1464 (1400) | 1264 (1200) | 1188 (1100) | **1297 (1200)** |
+| 365d | 1741 (1700) | 1328 (1300) | 1271 (1200) | **1405 (1400)** |
+| 180d | 1900 (1900) | 1543 (1500) | 1304 (1300) | **1840 (1800)** |
+| 90d | 1903 (1900) | 1575 (1500) | 1455 (1400) | **1888 (1800)** |
+
+**Time class is pooled unless the user picked one**, and pooling is dominated
+by whatever they have played most recently. At 90 days the pooled median is
+1888, which is rapid's band and 448 points above their actual bullet strength.
+A bullet job launched from that band analyzes the wrong players.
+
+So: **the median is derived within the time class being analyzed, never
+pooled.** On "All", that is one job per class rather than one job at a blended
+band. `resolve_band` already refuses to pool classes for the comparison itself
+(`fallback_class = time_class or dominant_time_class(...)`, commented "refuse
+an unconstrained pool"); this extends the same rule to the median that picks
+the band.
+
+**The date range moves the band by up to 500 points**—lifetime rapid is 1464,
+last-90-days rapid is 1903. Tracking the filters bar is right for *display*,
+consistent with every other baseline. But if it also drove the job, narrowing a
+date window would move the band out from under existing coverage. So the band
+is **pinned at press time**: `population_jobs.elo_lo`/`elo_hi` record what
+actually ran, coverage is keyed on that, and the UI resolves a band from
+current filters and looks up whether it has any.
+
+`player_median_elo`'s pooling is pre-existing and the engine-free baselines
+live with it. Nothing here changes their behaviour.
+
+---
+
+## Open questions for implementation
 
 **Does the pooled rate need a minimum move count**, separate from
 `baselines.py`'s game and player floors? A band with 150 games has ~12,000
