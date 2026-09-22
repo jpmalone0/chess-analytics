@@ -24,6 +24,7 @@ import chess
 import chess.engine
 from sqlalchemy import create_engine as sa_create_engine
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from engine.db import CANONICAL_DATABASE_URL, SessionLocal
 from engine.models import AnalysisRun, GameCoverage, PositionEval, init_engine_db
@@ -197,10 +198,16 @@ def _analyze_one(game_id: int, depth: int) -> AnalyzedGame:
         # fails for that reason still records its time class rather than
         # leaving the column NULL.
         time_class = _game_time_class(game_id)
-    except Exception as exc:
-        # A lookup failure (missing table, a transient lock) is a per-game
-        # problem, not a reason to crash the batch — the same invariant
-        # _evaluate_game protects below for a game that will not replay.
+    except DBAPIError as exc:
+        # DBAPIError (OperationalError, IntegrityError, and the rest of that
+        # family) means the database layer could not answer for this game —
+        # a missing table, a transient lock — which is a per-game data problem,
+        # the same invariant _evaluate_game protects below for a game that
+        # will not replay. Deliberately not a bare Exception: a KeyError from
+        # an uninitialised _worker, or an AttributeError from a renamed field,
+        # means this *process* is broken, not this game's data, and must
+        # propagate and stop the batch loudly rather than mark every game
+        # "failed" with a cryptic message and no traceback.
         return AnalyzedGame(game_id, [], "failed", f"lookup failed: {exc}", None)
 
     if not sans:

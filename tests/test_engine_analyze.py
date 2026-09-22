@@ -56,6 +56,30 @@ def rows_for(proc, sans, game_id=1, depth=1):
     return _evaluate_game(proc, game_id, sans, depth)
 
 
+@pytest.fixture
+def canonical():
+    """An in-memory canonical database installed as the worker's.
+
+    StaticPool keeps every connect() on the same in-memory database; without
+    it the analyzer opens a fresh empty one and finds no moves. Module-level
+    so both TestFailureIsolation and TestWorkerLifecycle can use it.
+    """
+    eng = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    with eng.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE moves (game_id INTEGER, ply INTEGER, move_san VARCHAR(10))"
+        ))
+        conn.execute(text(
+            "CREATE TABLE games (game_id INTEGER PRIMARY KEY, time_class VARCHAR(20))"
+        ))
+    _worker.clear()
+    _worker["db"] = eng
+    yield eng
+    _worker.clear()
+
+
 class TestPositionCount:
     def test_a_game_of_n_plies_yields_n_plus_one_positions(self, stub):
         """Centipawn loss compares consecutive positions, so the position before
@@ -130,6 +154,30 @@ class TestFailureIsolation:
         assert "engine error" in error
         assert len(rows) == 2
 
+    def test_a_database_lookup_failure_is_recorded_as_a_failed_game(self, canonical):
+        """A missing table (or a transient lock) means this game's data can't
+        be read — a per-game problem, not a reason to stop a 200,000-game
+        batch. Dropping the table reproduces the database-layer failure
+        without needing a real disk-level lock."""
+        with canonical.begin() as conn:
+            conn.execute(text("DROP TABLE games"))
+        _worker["engine_path"] = "/nonexistent/stockfish"
+
+        result = _analyze_one(99, depth=1)
+
+        assert result.status == "failed"
+        assert "lookup failed" in result.error
+
+    def test_a_broken_worker_propagates_instead_of_being_recorded(self, canonical):
+        """A KeyError from an uninitialised worker (or an AttributeError from a
+        renamed field) means the process is broken, not this game's data — it
+        must stop the batch loudly rather than mark every game 'failed' with a
+        cryptic message and no traceback."""
+        del _worker["db"]
+
+        with pytest.raises(KeyError):
+            _analyze_one(99, depth=1)
+
 
 class TestWorkerLifecycle:
     """A worker must not hold an engine open across games.
@@ -142,28 +190,6 @@ class TestWorkerLifecycle:
     deadlock. Opening per game also stops a reused transposition table making a
     position's evaluation depend on batch ordering.
     """
-
-    @pytest.fixture
-    def canonical(self):
-        """An in-memory canonical database installed as the worker's.
-
-        StaticPool keeps every connect() on the same in-memory database; without
-        it the analyzer opens a fresh empty one and finds no moves.
-        """
-        eng = create_engine(
-            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
-        with eng.begin() as conn:
-            conn.execute(text(
-                "CREATE TABLE moves (game_id INTEGER, ply INTEGER, move_san VARCHAR(10))"
-            ))
-            conn.execute(text(
-                "CREATE TABLE games (game_id INTEGER PRIMARY KEY, time_class VARCHAR(20))"
-            ))
-        _worker.clear()
-        _worker["db"] = eng
-        yield eng
-        _worker.clear()
 
     def test_the_initializer_opens_no_engine(self):
         """The regression itself: an engine parked on the worker is the bug."""
