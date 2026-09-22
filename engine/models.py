@@ -422,3 +422,80 @@ JOIN       played_move_features  AS p
 JOIN       best_move_features    AS b
        ON  b.run_id  = e.run_id  AND b.game_id = e.game_id AND b.ply = e.ply
 """
+
+
+# The tier ladder, in expected points lost. These are chess.com's published
+# cutoffs, and they are comparable because our curve is fitted against results
+# with draws scored 0.5 -- which is expected points, the same quantity their
+# thresholds are denominated in. Lichess uses 0.15 for a blunder rather than
+# 0.20; changing it is this constant and nothing else.
+#
+# Severity is a change in expected result, not in centipawns. A 300cp drop is
+# worth 0.083 from +900 and 0.204 from +200: the same centipawns, two and a half
+# times the cost. Every count in this feature is gated on the second number.
+BLUNDER_WP = 0.20
+MISTAKE_WP = 0.10
+INACCURACY_WP = 0.05
+
+MOVE_SEVERITY_VIEW = f"""
+CREATE VIEW IF NOT EXISTS move_severity AS
+WITH scored AS (
+    SELECT
+        e.run_id,
+        e.game_id,
+        e.ply,
+        e.color,
+        e.cp_before,
+        e.cp_after,
+        -- move_evals exposes cp_before/cp_after unclamped so that "this was
+        -- already lost" survives. The curve needs the clamped window, and
+        -- +/-1000 is the same ceiling Lichess applies before its own curve.
+        MAX(-{EVAL_CLAMP_CP}, MIN({EVAL_CLAMP_CP}, e.cp_before)) AS cb,
+        MAX(-{EVAL_CLAMP_CP}, MIN({EVAL_CLAMP_CP}, e.cp_after))  AS ca,
+        -- Evaluations are White-relative; a loss belongs to whoever moved.
+        CASE WHEN e.color = 'white' THEN 1 ELSE -1 END           AS sgn,
+        -- k is a FLOAT column, so the divisions below are float divisions.
+        -- An integer k would truncate them into a plausible-looking wrong curve.
+        w.k                                                      AS k
+    FROM move_evals    AS e
+    JOIN game_coverage AS c
+      ON  c.run_id = e.run_id AND c.game_id = e.game_id
+    JOIN wp_curve      AS w
+      ON  w.time_class = c.time_class
+),
+curved AS (
+    SELECT
+        run_id, game_id, ply, color, cp_before, cp_after,
+        1.0 / (1.0 + exp(-(sgn * cb) / k)) AS wp_before,
+        1.0 / (1.0 + exp(-(sgn * ca) / k)) AS wp_after
+    FROM scored
+),
+-- wp_loss is computed here rather than in the SELECT below because SQLite
+-- cannot reference a SELECT-list alias elsewhere in the same SELECT list, and
+-- the tier ladder needs it three more times.
+lost AS (
+    SELECT
+        run_id, game_id, ply, color, cp_before, cp_after, wp_before, wp_after,
+        -- The floor at zero absorbs search noise: at fixed depth a move can
+        -- appear to gain evaluation, and a negative loss would drag every
+        -- average it lands in.
+        MAX(0.0, wp_before - wp_after) AS wp_loss
+    FROM curved
+)
+SELECT
+    run_id,
+    game_id,
+    ply,
+    color,
+    cp_before,
+    cp_after,
+    wp_before,
+    wp_after,
+    wp_loss,
+    CASE
+        WHEN wp_loss >= {BLUNDER_WP}    THEN 'blunder'
+        WHEN wp_loss >= {MISTAKE_WP}    THEN 'mistake'
+        WHEN wp_loss >= {INACCURACY_WP} THEN 'inaccuracy'
+    END AS tier
+FROM lost
+"""
