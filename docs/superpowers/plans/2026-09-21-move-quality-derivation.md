@@ -431,12 +431,24 @@ In `analyze_games`, change the unpacking and the `GameCoverage` construction:
             ))
 ```
 
-- [ ] **Step 4: Run the whole analyzer suite**
+- [ ] **Step 4: Fix the existing test the arity change breaks**
+
+`_analyze_one` went from returning four values to five, and one existing test
+unpacks it: `TestWorkerLifecycle::test_a_game_with_no_moves_never_starts_an_engine`.
+Two things break there, not one. The unpack, obviously — and less obviously, that
+class's `canonical` fixture creates only a `moves` table, so `_game_time_class`,
+which is called unconditionally, raises `no such table: games`.
+
+Add an empty `games` table to that fixture and update the assertion. The test's
+purpose is proving no engine is opened for a moveless game; keep that assertion
+intact rather than folding an unrelated `time_class` check into it.
+
+- [ ] **Step 5: Run the whole analyzer suite**
 
 Run: `uv run pytest tests/test_engine_analyze.py -v`
 Expected: PASS, all tests
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add engine/analyze.py tests/test_engine_analyze.py
