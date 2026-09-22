@@ -17,6 +17,7 @@ from engine.analyze import (
     _analyze_one,
     _evaluate_game,
     _evaluate_position,
+    _game_time_class,
     _init_worker,
     _worker,
 )
@@ -180,21 +181,14 @@ class TestWorkerLifecycle:
         and fail wherever Stockfish is not installed."""
         _worker["engine_path"] = "/nonexistent/stockfish"
 
-        _, rows, status, error, time_class = _analyze_one(99, depth=1)
+        result = _analyze_one(99, depth=1)
 
-        assert (rows, status, error, time_class) == ([], "failed", "no moves stored", None)
+        assert (result.rows, result.status, result.error) == ([], "failed", "no moves stored")
 
+    def test_game_time_class_reads_from_the_canonical_database(self, canonical):
+        """New coverage rows carry the time class, so views need no cross-db join."""
+        with canonical.begin() as conn:
+            conn.execute(text("INSERT INTO games VALUES (7, 'blitz')"))
 
-def test_game_time_class_reads_from_the_canonical_database(tmp_path, monkeypatch):
-    """New coverage rows carry the time class, so views need no cross-db join."""
-    from engine import analyze
-
-    canon = tmp_path / "canon.db"
-    eng = create_engine(f"sqlite:///{canon}")
-    with eng.begin() as conn:
-        conn.execute(text("CREATE TABLE games (game_id INTEGER PRIMARY KEY, time_class VARCHAR(20))"))
-        conn.execute(text("INSERT INTO games VALUES (7, 'blitz')"))
-
-    monkeypatch.setitem(analyze._worker, "db", eng)
-    assert analyze._game_time_class(7) == "blitz"
-    assert analyze._game_time_class(999) is None
+        assert _game_time_class(7) == "blitz"
+        assert _game_time_class(999) is None
