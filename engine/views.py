@@ -6,13 +6,19 @@ expected points, when an unpunished error is a Miss. Keeping those decisions in
 view definitions rather than in stored rows is what makes them revisable: a new
 threshold costs a rebuilt view, not a re-run of Stockfish over 17M plies.
 
-The views stack, each reading the one above it:
+The views form a tree rooted at move_evals, not a single chain -- move_errors
+is a sibling branch, not a link in it. init_engine_db drops them deepest-first,
+which is why the shape matters:
 
-    move_evals        the self-join that turns positions into moves
-    move_errors       move kinds, joined to the feature tables
-    move_severity     the win-probability curve and the tier ladder
-    move_quality      the Miss flag
-    game_move_quality per-game, per-colour counts
+    move_evals            the self-join that turns positions into moves
+    |
+    +-- move_errors       move kinds, joined to the feature tables
+    |
+    +-- move_severity     the win-probability curve and the tier ladder
+        |
+        +-- move_quality  the Miss flag
+            |
+            +-- game_move_quality  per-game, per-colour counts
 
 Imports go one way: this module imports engine.models, never the reverse.
 """
