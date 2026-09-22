@@ -12,7 +12,7 @@ from sqlalchemy.exc import OperationalError
 
 from engine import db as engine_db
 from engine.db import attach_engine_db
-from engine.models import MOVE_EVALS_VIEW
+from engine.views import MOVE_EVALS_VIEW
 
 # init_engine_db() creates the view inside the engine database, where it is
 # unqualified. Reached through ATTACH it is engine.move_evals, which is how

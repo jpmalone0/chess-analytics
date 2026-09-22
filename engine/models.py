@@ -6,9 +6,18 @@ either database never reaches into the other.
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, text
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 
-from engine.db import Base, engine
+from engine.db import Base
 
 
 class AnalysisRun(Base):
@@ -71,113 +80,42 @@ class GameCoverage(Base):
     status         = Column(String(20), nullable=False)  # complete | partial | failed
     error          = Column(Text)
     completed_at   = Column(DateTime)
+    # Denormalised from games.time_class, because SQLite refuses a view that
+    # references an ATTACHed database ("view X cannot reference objects in
+    # database engine"). Queries may cross the boundary; views may not. Keeping
+    # the fact here is what lets every severity view stay pure sidecar.
+    time_class     = Column(String(20))
 
 
-# ═══════════════════════════════════════════════════════════
-# Derivation
-# ═══════════════════════════════════════════════════════════
+class WpCurve(Base):
+    """The fitted logistic turning centipawns into expected points.
 
-# A mate is a game-theoretic fact, not a centipawn count, so position_evals
-# stores the distance and leaves cp NULL. These constants turn it into a number
-# only during derivation, where the choice can be revised without re-running the
-# engine. The per-move penalty keeps a mate in 2 ahead of a mate in 8.
-MATE_CP = 10000
-MATE_STEP_CP = 100
-MATE_MAX_PLIES = 50
+    One row per time class, because the conversion is not universal: measured on
+    this corpus, rapid fits k=360 and bullet fits k=865. A bullet advantage
+    converts far less reliably than the same advantage in rapid, and using one
+    curve for both overstates every bullet error.
 
-# Loss is measured inside a clamped evaluation window. Once a game is decided,
-# evaluations swing by thousands of centipawns and every later move books an
-# enormous loss that says nothing about the player: measured on 400 real bullet
-# games, leaving the window open put average loss at 208 cp, which is roughly
-# double what a player at this rating actually plays like. Clamping to +/-1000
-# puts the same games at 76.
-#
-# The clamp applies only to cp_loss. cp_before and cp_after stay unclamped,
-# because "this position was already lost" is exactly the context that makes a
-# small loss unimportant, and throwing it away would hide that.
-EVAL_CLAMP_CP = 1000
-
-
-# Centipawn loss is derived, never stored. Deciding that 300 centipawns is a
-# "blunder" is an interpretation, and interpretations change; keeping thresholds
-# out of the stored rows means revising them costs a view definition instead of
-# a re-run of the whole corpus.
-#
-# The self-join pairs each position with the one before it, so a move's loss is
-# the difference between the evaluation it inherited and the one it produced.
-# That is why a game of N plies is stored as N+1 positions.
-#
-# Evaluations are stored from White's point of view. White wants cp to rise, so
-# White's loss is before-minus-after; Black's is the reverse. The floor at zero
-# absorbs search noise: at fixed depth a move can appear to *gain* evaluation,
-# and a negative loss would drag every average it lands in. The difference is
-# taken inside a clamped window, so a move played in an already-decided position
-# cannot book a five-figure loss.
-MOVE_EVALS_VIEW = f"""
-CREATE VIEW IF NOT EXISTS move_evals AS
-WITH scored AS (
-    SELECT
-        run_id,
-        game_id,
-        ply,
-        CASE
-            WHEN cp IS NOT NULL THEN cp
-            -- mate_in = 0 is a delivered checkmate: the side to move is mated,
-            -- and after an even ply that is White. Resolving the sign from ply
-            -- parity keeps storage free of a signed sentinel.
-            WHEN mate_in = 0 AND ply % 2 = 0 THEN -{MATE_CP}
-            WHEN mate_in = 0 THEN {MATE_CP}
-            WHEN mate_in > 0 THEN
-                 {MATE_CP} - {MATE_STEP_CP} * MIN(mate_in, {MATE_MAX_PLIES})
-            WHEN mate_in < 0 THEN
-                -{MATE_CP} + {MATE_STEP_CP} * MIN(-mate_in, {MATE_MAX_PLIES})
-        END AS cp_eff
-    FROM position_evals
-),
-windowed AS (
-    SELECT run_id, game_id, ply, cp_eff,
-           MAX(-{EVAL_CLAMP_CP}, MIN({EVAL_CLAMP_CP}, cp_eff)) AS cp_capped
-    FROM scored
-)
-SELECT
-    after.run_id                                   AS run_id,
-    after.game_id                                  AS game_id,
-    after.ply                                      AS ply,
-    CASE WHEN after.ply % 2 = 1 THEN 'white'
-         ELSE 'black' END                          AS color,
-    before.cp_eff                                  AS cp_before,
-    after.cp_eff                                   AS cp_after,
-    MAX(
-        0,
-        CASE WHEN after.ply % 2 = 1
-             THEN before.cp_capped - after.cp_capped
-             ELSE after.cp_capped - before.cp_capped
-        END
-    )                                              AS cp_loss
-FROM windowed AS after
-JOIN windowed AS before
-  ON  before.run_id  = after.run_id
-  AND before.game_id = after.game_id
-  AND before.ply     = after.ply - 1
-WHERE after.cp_eff IS NOT NULL AND before.cp_eff IS NOT NULL
-"""
-
-
-def init_engine_db():
-    """Create the engine schema and the derivation view (idempotent).
-
-    The view is dropped and rebuilt every time. It holds no data — it is a
-    definition over position_evals — and CREATE VIEW IF NOT EXISTS would leave a
-    database built by an older revision running the old thresholds while the
-    code claims the new ones. Silently stale interpretation is the failure this
-    design exists to avoid.
+    n, fitted_at and source exist so that refitting stays a deliberate, recorded
+    act. A silent refit would move every historical count without anybody asking.
     """
-    Base.metadata.create_all(bind=engine)
-    with engine.begin() as conn:
-        conn.execute(text("DROP VIEW IF EXISTS move_errors"))
-        conn.execute(text("DROP VIEW IF EXISTS move_evals"))
-        conn.execute(text(MOVE_EVALS_VIEW))
-        conn.execute(text(MOVE_ERRORS_VIEW))
+
+    __tablename__ = "wp_curve"
+
+    time_class = Column(String(20), primary_key=True)
+    k          = Column(Float, nullable=False)
+    n          = Column(Integer, nullable=False)
+    fitted_at  = Column(DateTime)
+    source     = Column(Text)
+
+    __table_args__ = (
+        # A negative k inverts the curve: it grades a 400cp *gain* as a blunder
+        # and a genuine 300cp mistake as no error at all, poisoning the counts
+        # in both directions for that whole time class. k=0 divides by zero and
+        # every severity goes NULL. Neither shows up as a failure anywhere --
+        # the rows just come out wrong -- and k is written by an out-of-band
+        # fitting process, so the schema is the only place to catch it.
+        CheckConstraint("k > 0", name="ck_wp_curve_k_positive"),
+    )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -290,45 +228,3 @@ class PlayerStyleVectors(Base):
     mobility       = Column(Float, nullable=False)
     king_safety    = Column(Float, nullable=False)
     pawn_structure = Column(Float, nullable=False)
-
-
-# A move is "forcing" if it captures or gives check. Crude on purpose: it is the
-# distinction between a move that demands an answer and one that does not, which
-# is what separates "walked past a winning capture" from "drifted in a quiet
-# position". Nothing here tries to say whether the tactic was *sound* — the
-# engine already said that, in cp_loss.
-#
-# No error threshold is applied. Every scored move appears with its cp_loss and
-# its kind; deciding that 150 cp is an error is the caller's call, the same way
-# blunder thresholds are. A threshold in stored rows is one nobody can revise.
-MOVE_ERRORS_VIEW = """
-CREATE VIEW IF NOT EXISTS move_errors AS
-SELECT
-    e.run_id                                        AS run_id,
-    e.game_id                                       AS game_id,
-    e.ply                                           AS ply,
-    e.color                                         AS color,
-    e.cp_loss                                       AS cp_loss,
-    -- Carried through from move_evals: whether the game was still live is the
-    -- context that decides whether an error mattered. Without it, the most
-    -- natural question about a missed tactic -- "was it winnable at the time?"
-    -- -- forces callers back to move_evals and a second join.
-    e.cp_before                                     AS cp_before,
-    e.cp_after                                      AS cp_after,
-    p.piece                                         AS played_piece,
-    b.piece                                         AS best_piece,
-    (p.is_capture OR p.gives_check)                 AS played_forcing,
-    (b.is_capture OR b.gives_check)                 AS best_forcing,
-    CASE
-        WHEN (b.is_capture OR b.gives_check)
-         AND NOT (p.is_capture OR p.gives_check) THEN 'missed_forcing'
-        WHEN (p.is_capture OR p.gives_check)
-         AND NOT (b.is_capture OR b.gives_check) THEN 'forced_when_quiet_better'
-        ELSE 'other'
-    END                                             AS error_kind
-FROM       move_evals            AS e
-JOIN       played_move_features  AS p
-       ON  p.game_id = e.game_id AND p.ply = e.ply
-JOIN       best_move_features    AS b
-       ON  b.run_id  = e.run_id  AND b.game_id = e.game_id AND b.ply = e.ply
-"""

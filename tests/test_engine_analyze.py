@@ -17,6 +17,7 @@ from engine.analyze import (
     _analyze_one,
     _evaluate_game,
     _evaluate_position,
+    _game_time_class,
     _init_worker,
     _worker,
 )
@@ -53,6 +54,30 @@ def stub():
 
 def rows_for(proc, sans, game_id=1, depth=1):
     return _evaluate_game(proc, game_id, sans, depth)
+
+
+@pytest.fixture
+def canonical():
+    """An in-memory canonical database installed as the worker's.
+
+    StaticPool keeps every connect() on the same in-memory database; without
+    it the analyzer opens a fresh empty one and finds no moves. Module-level
+    so both TestFailureIsolation and TestWorkerLifecycle can use it.
+    """
+    eng = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    with eng.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE moves (game_id INTEGER, ply INTEGER, move_san VARCHAR(10))"
+        ))
+        conn.execute(text(
+            "CREATE TABLE games (game_id INTEGER PRIMARY KEY, time_class VARCHAR(20))"
+        ))
+    _worker.clear()
+    _worker["db"] = eng
+    yield eng
+    _worker.clear()
 
 
 class TestPositionCount:
@@ -129,6 +154,30 @@ class TestFailureIsolation:
         assert "engine error" in error
         assert len(rows) == 2
 
+    def test_a_database_lookup_failure_is_recorded_as_a_failed_game(self, canonical):
+        """A missing table (or a transient lock) means this game's data can't
+        be read — a per-game problem, not a reason to stop a 200,000-game
+        batch. Dropping the table reproduces the database-layer failure
+        without needing a real disk-level lock."""
+        with canonical.begin() as conn:
+            conn.execute(text("DROP TABLE games"))
+        _worker["engine_path"] = "/nonexistent/stockfish"
+
+        result = _analyze_one(99, depth=1)
+
+        assert result.status == "failed"
+        assert "lookup failed" in result.error
+
+    def test_a_broken_worker_propagates_instead_of_being_recorded(self, canonical):
+        """A KeyError from an uninitialised worker (or an AttributeError from a
+        renamed field) means the process is broken, not this game's data — it
+        must stop the batch loudly rather than mark every game 'failed' with a
+        cryptic message and no traceback."""
+        del _worker["db"]
+
+        with pytest.raises(KeyError):
+            _analyze_one(99, depth=1)
+
 
 class TestWorkerLifecycle:
     """A worker must not hold an engine open across games.
@@ -141,25 +190,6 @@ class TestWorkerLifecycle:
     deadlock. Opening per game also stops a reused transposition table making a
     position's evaluation depend on batch ordering.
     """
-
-    @pytest.fixture
-    def canonical(self):
-        """An in-memory canonical database installed as the worker's.
-
-        StaticPool keeps every connect() on the same in-memory database; without
-        it the analyzer opens a fresh empty one and finds no moves.
-        """
-        eng = create_engine(
-            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
-        with eng.begin() as conn:
-            conn.execute(text(
-                "CREATE TABLE moves (game_id INTEGER, ply INTEGER, move_san VARCHAR(10))"
-            ))
-        _worker.clear()
-        _worker["db"] = eng
-        yield eng
-        _worker.clear()
 
     def test_the_initializer_opens_no_engine(self):
         """The regression itself: an engine parked on the worker is the bug."""
@@ -177,6 +207,14 @@ class TestWorkerLifecycle:
         and fail wherever Stockfish is not installed."""
         _worker["engine_path"] = "/nonexistent/stockfish"
 
-        _, rows, status, error = _analyze_one(99, depth=1)
+        result = _analyze_one(99, depth=1)
 
-        assert (rows, status, error) == ([], "failed", "no moves stored")
+        assert (result.rows, result.status, result.error) == ([], "failed", "no moves stored")
+
+    def test_game_time_class_reads_from_the_canonical_database(self, canonical):
+        """New coverage rows carry the time class, so views need no cross-db join."""
+        with canonical.begin() as conn:
+            conn.execute(text("INSERT INTO games VALUES (7, 'blitz')"))
+
+        assert _game_time_class(7) == "blitz"
+        assert _game_time_class(999) is None

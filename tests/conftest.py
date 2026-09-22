@@ -1,13 +1,14 @@
 """Shared pytest fixtures — an in-memory database with a hand-seeded corpus."""
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 from app.models import Game, Move, Player
 from engine import db as engine_db
+from engine.views import WP_CURVE_DDL
 
 
 @pytest.fixture(autouse=True)
@@ -154,3 +155,112 @@ def seed_band(db, lo, n_players, games_each=1, move_time=5.0, **kwargs):
             )
     db.commit()
     return players
+
+
+# ═══════════════════════════════════════════════════════════
+# The sidecar, built from raw DDL
+# ═══════════════════════════════════════════════════════════
+
+# The tables the derivation views read. Written out by hand rather than taken
+# from engine.models so that the views are exercised against SQL SQLite parses
+# directly, not against whatever the ORM happens to emit -- which is the same
+# reason WP_CURVE_DDL exists. tests/test_move_severity.py runs the wp_curve
+# constraints against both definitions so the pair cannot drift.
+_POSITION_EVALS_DDL = """
+CREATE TABLE position_evals (
+    run_id        INTEGER NOT NULL,
+    game_id       INTEGER NOT NULL,
+    ply           INTEGER NOT NULL,
+    cp            INTEGER,
+    mate_in       INTEGER,
+    best_move_uci VARCHAR(6),
+    PRIMARY KEY (run_id, game_id, ply)
+)
+"""
+
+_GAME_COVERAGE_DDL = """
+CREATE TABLE game_coverage (
+    run_id         INTEGER NOT NULL,
+    game_id        INTEGER NOT NULL,
+    plies_analyzed INTEGER NOT NULL,
+    status         VARCHAR(20) NOT NULL,
+    error          TEXT,
+    completed_at   DATETIME,
+    time_class     VARCHAR(20),
+    PRIMARY KEY (run_id, game_id)
+)
+"""
+
+# The one fitted curve the seeding helper defaults to. 360 is the measured rapid
+# k, and tests/test_move_severity.py recomputes the curve in Python against the
+# same number.
+RAPID_K = 360.0
+
+
+def build_sidecar(*views, url="sqlite://"):
+    """A sidecar holding the raw tables, a fitted rapid curve, and `views`.
+
+    `views` are CREATE VIEW statements from engine.views, executed in the order
+    given. They stack -- move_severity reads move_evals, move_quality reads
+    move_severity -- so pass them shallowest first, or SQLite has nothing to
+    resolve the deeper one against.
+
+    Built from raw DDL rather than through the ORM so that the view SQL runs
+    exactly as SQLite will run it in the real sidecar.
+
+    `url` defaults to an in-memory database, which is all the view tests need.
+    The route tests pass engine_db.ENGINE_DATABASE_URL instead, because
+    attach_engine_db ATTACHes a *path*: ATTACH ':memory:' opens a new, empty
+    database rather than reaching the one this engine holds, so a sidecar the
+    app is meant to read has to be a file.
+    """
+    eng = create_engine(url)
+    with eng.begin() as conn:
+        conn.execute(text(_POSITION_EVALS_DDL))
+        conn.execute(text(_GAME_COVERAGE_DDL))
+        conn.execute(text(WP_CURVE_DDL))
+        for view in views:
+            conn.execute(text(view))
+        conn.execute(text(
+            "INSERT INTO wp_curve (time_class, k, n, source) "
+            "VALUES ('rapid', :k, 45110, 'test')"
+        ), {"k": RAPID_K})
+    return eng
+
+
+def seed_evals(eng, positions, game_id=1, run_id=1, time_class="rapid"):
+    """Seed one game's evaluations, from White's point of view.
+
+    positions: (ply, cp) pairs, or (ply, cp, mate_in) triples. Most tests never
+    touch mate, so the pair form is the common case and leaves mate_in NULL;
+    the mate tests pass the third element.
+
+    game_coverage gets a matching row, because move_severity joins through it to
+    reach wp_curve — a game with no coverage row produces no severity at all.
+    """
+    with eng.begin() as conn:
+        conn.execute(
+            text("INSERT OR REPLACE INTO game_coverage "
+                 "(run_id, game_id, plies_analyzed, status, time_class) "
+                 "VALUES (:r, :g, :n, 'complete', :tc)"),
+            {"r": run_id, "g": game_id, "n": len(positions), "tc": time_class},
+        )
+        for position in positions:
+            ply, cp, mate_in = position if len(position) == 3 else (*position, None)
+            conn.execute(
+                text("INSERT INTO position_evals (run_id, game_id, ply, cp, mate_in) "
+                     "VALUES (:r, :g, :p, :cp, :m)"),
+                {"r": run_id, "g": game_id, "p": ply, "cp": cp, "m": mate_in},
+            )
+
+
+def view_rows(eng, view, game_id=1):
+    """One game's rows from a per-ply view, keyed by ply."""
+    with eng.connect() as conn:
+        return {
+            r["ply"]: r
+            for r in conn.execute(
+                text(f"SELECT * FROM {view} WHERE game_id = :g ORDER BY ply"),
+                {"g": game_id},
+            ).mappings()
+        }

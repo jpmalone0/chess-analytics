@@ -18,15 +18,17 @@ import sys
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable, Optional
+from typing import Iterable, NamedTuple, Optional
 
 import chess
 import chess.engine
 from sqlalchemy import create_engine as sa_create_engine
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from engine.db import CANONICAL_DATABASE_URL, SessionLocal
-from engine.models import AnalysisRun, GameCoverage, PositionEval, init_engine_db
+from engine.models import AnalysisRun, GameCoverage, PositionEval
+from engine.views import init_engine_db
 
 DEFAULT_DEPTH = 14
 DEFAULT_HASH_MB = 64
@@ -64,6 +66,22 @@ class Summary:
     partial: int = 0
     failed: int = 0
     positions: int = 0
+
+
+class AnalyzedGame(NamedTuple):
+    """What a worker hands back across the process-pool boundary.
+
+    Two of the five fields are strings, so appending a fifth one and unpacking
+    it positionally at every call site made a reorder a silent bug instead of a
+    type error. A NamedTuple keeps that positional unpacking working while
+    giving callers named access too.
+    """
+
+    game_id: int
+    rows: list
+    status: str
+    error: Optional[str]
+    time_class: Optional[str]
 
 
 class EngineNotFound(Exception):
@@ -140,6 +158,15 @@ def _game_moves(game_id: int) -> list[str]:
         ]
 
 
+def _game_time_class(game_id: int) -> Optional[str]:
+    """The stored time class for one game, read from the canonical database."""
+    with _worker["db"].connect() as conn:
+        return conn.execute(
+            text("SELECT time_class FROM games WHERE game_id = :g"),
+            {"g": game_id},
+        ).scalar()
+
+
 def _evaluate_position(proc, board: chess.Board, depth: int):
     """Evaluate one position, always from White's point of view.
 
@@ -160,20 +187,38 @@ def _evaluate_position(proc, board: chess.Board, depth: int):
     return score.score(), score.mate(), best
 
 
-def _analyze_one(game_id: int, depth: int):
+def _analyze_one(game_id: int, depth: int) -> AnalyzedGame:
     """Replay one game and evaluate every position it passes through.
 
     The engine is opened per game and closed by the with-block, while its event
     loop is still alive to process the shutdown. Nothing is left for atexit.
     """
-    sans = _game_moves(game_id)
+    try:
+        sans = _game_moves(game_id)
+        # Read even on the path that turns out to have no moves, so a game that
+        # fails for that reason still records its time class rather than
+        # leaving the column NULL.
+        time_class = _game_time_class(game_id)
+    except DBAPIError as exc:
+        # DBAPIError (OperationalError, IntegrityError, and the rest of that
+        # family) means the database layer could not answer for this game —
+        # a missing table, a transient lock — which is a per-game data problem,
+        # the same invariant _evaluate_game protects below for a game that
+        # will not replay. Deliberately not a bare Exception: a KeyError from
+        # an uninitialised _worker, or an AttributeError from a renamed field,
+        # means this *process* is broken, not this game's data, and must
+        # propagate and stop the batch loudly rather than mark every game
+        # "failed" with a cryptic message and no traceback.
+        return AnalyzedGame(game_id, [], "failed", f"lookup failed: {exc}", None)
+
     if not sans:
         # Checked before opening an engine: starting Stockfish to analyze a game
         # with no moves costs 125 ms to learn nothing.
-        return game_id, [], "failed", "no moves stored"
+        return AnalyzedGame(game_id, [], "failed", "no moves stored", time_class)
 
     with _open_engine() as proc:
-        return _evaluate_game(proc, game_id, sans, depth)
+        gid, rows, status, error = _evaluate_game(proc, game_id, sans, depth)
+        return AnalyzedGame(gid, rows, status, error, time_class)
 
 
 def _evaluate_game(proc, game_id: int, sans: list[str], depth: int):
@@ -275,7 +320,7 @@ def analyze_games(
         futures = [pool.submit(_analyze_one, gid, config.depth) for gid in game_ids]
 
         for done, future in enumerate(futures, start=1):
-            game_id, rows, status, error = future.result()
+            game_id, rows, status, error, time_class = future.result()
 
             if rows:
                 # Re-running a partial game re-evaluates from ply 0, so clear
@@ -298,6 +343,7 @@ def analyze_games(
                 status=status,
                 error=error,
                 completed_at=datetime.utcnow(),
+                time_class=time_class,
             ))
             session.commit()
 

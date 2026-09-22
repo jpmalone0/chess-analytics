@@ -21,7 +21,8 @@ import chess
 from sqlalchemy import text
 
 from engine.db import SessionLocal, analysis_engine
-from engine.models import BestMoveFeatures, PlayedMoveFeatures, init_engine_db
+from engine.models import BestMoveFeatures, PlayedMoveFeatures
+from engine.views import init_engine_db
 
 
 @dataclass

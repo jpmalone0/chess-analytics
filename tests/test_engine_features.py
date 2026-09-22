@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from engine.features import Summary, _extract_game, classify
-from engine.models import MOVE_ERRORS_VIEW, MOVE_EVALS_VIEW
+from engine.views import MOVE_ERRORS_VIEW, MOVE_EVALS_VIEW
 
 
 class TestClassify:

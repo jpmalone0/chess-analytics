@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session  # noqa: F401 — used via Depends(get_db)
 
 from app import baselines, crud, schemas
+from app import move_quality as mq
 from app.database import get_db, init_db
 
 app = FastAPI(title="Chess Analytics", version="1.0.0")
@@ -386,6 +387,31 @@ def style_profile(
         db, player.player_id, time_class,
         start_date, end_date, player_color, opening_names, tz=tz,
     )
+
+
+@app.get("/api/players/{username}/analytics/move-quality")
+def move_quality_by_game(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    tz: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    player = crud.get_player(db, username)
+    if not player:
+        raise HTTPException(404, f"Player '{username}' not found")
+    return mq.player_move_quality(
+        db, player.player_id, time_class, start_date, end_date,
+        player_color, opening_names, tz=tz,
+    )
+
+
+@app.get("/api/games/{game_id}/move-quality")
+def game_move_quality(game_id: int, db: Session = Depends(get_db)):
+    return mq.game_drill_list(db, game_id)
 
 
 # ── Population Baselines ─────────────────────────────────
