@@ -494,6 +494,20 @@
                 <div class="modal-body" id="modal-body"></div>
             </div>
         </div>
+
+        <section id="move-quality-section" class="section hidden">
+            <div class="section-header">
+                <h2>Move Quality</h2>
+                <span class="date-range-label" id="mq-coverage-label"></span>
+            </div>
+            <div class="stats-grid" id="mq-totals"></div>
+            <p class="mq-note">
+                Severity is measured as lost win probability, not centipawns.
+                A Miss overlaps the other three rather than replacing them, so these
+                four numbers do not sum to a total.
+            </p>
+            <table class="mq-table" id="mq-table"></table>
+        </section>
     </main>
 
     <footer class="app-footer">
@@ -503,6 +517,7 @@
 
     <script src="/static/app.js?v=79"></script>
     <script src="/static/style-panel.js?v=9"></script>
+    <script src="/static/move-quality.js?v=1"></script>
 </body>
 
 </html>
