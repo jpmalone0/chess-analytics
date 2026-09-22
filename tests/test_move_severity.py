@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from engine.db import Base
 from engine.models import (
     MOVE_EVALS_VIEW,
     MOVE_SEVERITY_VIEW,
@@ -62,14 +63,54 @@ def test_assert_sqlite_has_math_reraises_unrelated_operational_errors():
         assert_sqlite_has_math(_RaisingConn(orig))
 
 
-def test_wp_curve_ddl_matches_the_model():
-    """The DDL and the WpCurve model describe the same table by hand, and the
-    two can drift. Insert-and-read-back exercises the shape; the constraint
-    checks exercise the part most likely to silently fall out of sync.
-    """
+# wp_curve is defined twice by hand -- once as the WpCurve model, once as the
+# WP_CURVE_DDL string the view tests build their in-memory sidecar from -- and
+# the two can drift. Every case below runs against both, so an edit that touches
+# one definition and not the other fails here instead of surviving until
+# somebody inspects the emitted SQL by hand.
+def _built_from_ddl():
+    """The hand-written DDL string, as the view tests use it."""
     eng = create_engine("sqlite://")
     with eng.begin() as conn:
         conn.execute(text(WP_CURVE_DDL))
+    return eng
+
+
+def _built_from_model():
+    """The ORM metadata, by the same call init_engine_db makes in production.
+
+    create_all() also builds the other sidecar tables, but the wp_curve DDL it
+    emits is byte-identical to WpCurve.__table__.create(), so this costs
+    nothing and stays honest about the path production actually takes.
+    """
+    eng = create_engine("sqlite://")
+    Base.metadata.create_all(eng)
+    return eng
+
+
+BUILDERS = [
+    pytest.param(_built_from_ddl, id="ddl"),
+    pytest.param(_built_from_model, id="model"),
+]
+
+# Rows the table must refuse, whichever definition built it. k is written by an
+# out-of-band fitting process with nothing above the schema checking it: a
+# negative k inverts the curve and grades gains as blunders, a zero k divides
+# by zero and turns every severity NULL, and a missing k or n loses the
+# provenance that keeps a refit a deliberate, recorded act.
+REJECTED_ROWS = [
+    pytest.param({"time_class": "bullet", "k": None, "n": 5}, id="k-null"),
+    pytest.param({"time_class": "bullet", "k": 865.0, "n": None}, id="n-null"),
+    pytest.param({"time_class": "bullet", "k": 0.0, "n": 5}, id="k-zero"),
+    pytest.param({"time_class": "bullet", "k": -360.0, "n": 5}, id="k-negative"),
+]
+
+
+@pytest.mark.parametrize("build", BUILDERS)
+def test_wp_curve_round_trips(build):
+    """Insert-and-read-back exercises the shape both definitions describe."""
+    eng = build()
+    with eng.begin() as conn:
         conn.execute(
             text(
                 "INSERT INTO wp_curve (time_class, k, n, fitted_at, source) "
@@ -81,28 +122,20 @@ def test_wp_curve_ddl_matches_the_model():
         ).fetchone()
     assert row == ("rapid", 360.0, 128000)
 
+
+@pytest.mark.parametrize("values", REJECTED_ROWS)
+@pytest.mark.parametrize("build", BUILDERS)
+def test_wp_curve_rejects_bad_rows(build, values):
+    eng = build()
     with eng.begin() as conn:
         with pytest.raises(IntegrityError):
             conn.execute(
-                text("INSERT INTO wp_curve (time_class, k, n) VALUES ('bullet', NULL, 5)")
+                text(
+                    "INSERT INTO wp_curve (time_class, k, n) "
+                    "VALUES (:time_class, :k, :n)"
+                ),
+                values,
             )
-
-    with eng.begin() as conn:
-        with pytest.raises(IntegrityError):
-            conn.execute(
-                text("INSERT INTO wp_curve (time_class, k, n) VALUES ('bullet', 865.0, NULL)")
-            )
-
-    # A negative k inverts the curve and grades gains as blunders; a zero k
-    # divides by zero and yields NULL severities. Both are accepted silently by
-    # every layer above the schema, so the constraint is the only guard.
-    for bad_k in (0.0, -360.0):
-        with eng.begin() as conn:
-            with pytest.raises(IntegrityError):
-                conn.execute(
-                    text("INSERT INTO wp_curve (time_class, k, n) VALUES ('bullet', :k, 5)"),
-                    {"k": bad_k},
-                )
 
 
 @pytest.fixture
