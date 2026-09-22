@@ -1,10 +1,12 @@
-"""Backfill, Miss, and per-game aggregation."""
+"""Backfill, Miss, per-game aggregation, and the init_engine_db wiring."""
 
 import pytest
 from sqlalchemy import create_engine, text
 
+from engine import views
 from engine.backfill import backfill_coverage_time_class
 from engine.views import (
+    GAME_MOVE_QUALITY_VIEW,
     MOVE_EVALS_VIEW,
     MOVE_QUALITY_VIEW,
     MOVE_SEVERITY_VIEW,
@@ -109,8 +111,10 @@ def test_backfill_propagates_the_original_error_not_the_detach_failure(coverage_
 
 @pytest.fixture
 def mq():
-    """The same sidecar as tests/test_move_severity.py's, one view deeper."""
-    return build_sidecar(MOVE_EVALS_VIEW, MOVE_SEVERITY_VIEW, MOVE_QUALITY_VIEW)
+    """The same sidecar as tests/test_move_severity.py's, two views deeper."""
+    return build_sidecar(
+        MOVE_EVALS_VIEW, MOVE_SEVERITY_VIEW, MOVE_QUALITY_VIEW, GAME_MOVE_QUALITY_VIEW
+    )
 
 
 def mq_rows(eng, game_id=1):
@@ -181,3 +185,109 @@ class TestMiss:
         # wp(180) - wp(105) = 0.05006, just over INACCURACY_WP.
         seed_mq(mq, [(0, 0), (1, -180), (2, -105)])
         assert mq_rows(mq)[2]["is_miss"] == 1
+
+
+class TestPerGameCounts:
+    def test_counts_are_split_by_colour(self, mq):
+        """Both sides of every analyzed game are scored, so the row must say whose."""
+        # ply 1, White 0 -> -310: wp_loss 0.2029, a blunder.
+        # ply 2, Black -310 -> -250: wp_loss 0.0359, under the 0.05 inaccuracy
+        #   floor -- so no tier, and no Miss either despite following a blunder.
+        # ply 3, White -250 -> -250: no loss at all.
+        seed_mq(mq, [(0, 0), (1, -310), (2, -250), (3, -250)])
+        with mq.connect() as conn:
+            got = {
+                r["color"]: r
+                for r in conn.execute(text(
+                    "SELECT * FROM game_move_quality WHERE game_id = 1"
+                )).mappings()
+            }
+        assert got["white"]["blunders"] == 1
+        assert got["white"]["moves_scored"] == 2
+        assert got["black"]["moves_scored"] == 1
+        assert got["black"]["blunders"] == 0
+
+    def test_every_scored_move_is_counted_once(self, mq):
+        seed_mq(mq, [(0, 0), (1, -310), (2, -250)])
+        with mq.connect() as conn:
+            total = conn.execute(text(
+                "SELECT SUM(moves_scored) FROM game_move_quality WHERE game_id = 1"
+            )).scalar()
+            plies = conn.execute(text(
+                "SELECT COUNT(*) FROM move_quality WHERE game_id = 1"
+            )).scalar()
+        assert total == plies
+
+    def test_misses_are_counted_alongside_their_tier_not_instead_of_it(self, mq):
+        """The four numbers deliberately do not sum to a total."""
+        seed_mq(mq, [(0, 0), (1, -180), (2, -60)])
+        with mq.connect() as conn:
+            black = conn.execute(text(
+                "SELECT * FROM game_move_quality WHERE game_id = 1 AND color = 'black'"
+            )).mappings().one()
+        assert black["misses"] == 1
+        assert black["inaccuracies"] == 1
+
+
+class TestInitEngineDb:
+    """The wiring: one call builds the whole stack, and rebuilds it every time.
+
+    These patch `engine.views.engine` rather than relying on conftest's autouse
+    _isolate_engine_db. That fixture rebinds engine.db.ENGINE_DATABASE_URL, but
+    engine/db.py constructs its Engine object at import time, so the Engine is
+    already pointed at the real chess_engine.db by then and rebinding the URL
+    does not move it. engine/views.py holds its own reference to that same
+    object, and `engine` is the name init_engine_db actually reads -- so
+    patching the URL alone would leave these tests dropping and rebuilding
+    views on the production sidecar.
+    """
+
+    @pytest.fixture
+    def sidecar(self, tmp_path, monkeypatch):
+        eng = create_engine(f"sqlite:///{tmp_path / 'sidecar.db'}")
+        monkeypatch.setattr(views, "engine", eng)
+        return eng
+
+    def _views_in(self, eng):
+        with eng.connect() as conn:
+            return {
+                r[0] for r in conn.execute(
+                    text("SELECT name FROM sqlite_master WHERE type = 'view'")
+                )
+            }
+
+    def test_running_it_twice_leaves_all_five_views_in_place(self, sidecar):
+        """Idempotent, including over an existing sidecar: init runs on every
+        analyze and feature-extraction entry point, not just on a fresh file."""
+        views.init_engine_db()
+        views.init_engine_db()
+        assert self._views_in(sidecar) == {
+            "move_evals",
+            "move_errors",
+            "move_severity",
+            "move_quality",
+            "game_move_quality",
+        }
+
+    def test_a_view_from_an_older_revision_is_replaced_not_kept(self, sidecar):
+        """Why the views are dropped rather than CREATE VIEW IF NOT EXISTS.
+
+        A sidecar built before a threshold moved holds the old definition. IF
+        NOT EXISTS would leave it running the old numbers while the code claims
+        the new ones -- wrong counts that nothing reports as a failure.
+        """
+        views.init_engine_db()
+        with sidecar.begin() as conn:
+            conn.execute(text("DROP VIEW move_quality"))
+            conn.execute(text(
+                "CREATE VIEW move_quality AS SELECT 1 AS stale_marker"
+            ))
+
+        views.init_engine_db()
+
+        with sidecar.connect() as conn:
+            columns = {
+                r[1] for r in conn.execute(text("PRAGMA table_info(move_quality)"))
+            }
+        assert "stale_marker" not in columns
+        assert "is_miss" in columns

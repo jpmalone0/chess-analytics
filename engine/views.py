@@ -12,6 +12,7 @@ The views stack, each reading the one above it:
     move_errors       move kinds, joined to the feature tables
     move_severity     the win-probability curve and the tier ladder
     move_quality      the Miss flag
+    game_move_quality per-game, per-colour counts
 
 Imports go one way: this module imports engine.models, never the reverse.
 """
@@ -316,6 +317,28 @@ LEFT JOIN move_severity AS prev
 """
 
 
+# One row per analyzed side of an analyzed game. Both colours are scored, so the
+# colour is part of the key rather than a filter -- a caller that drops it is
+# adding one player's errors to their opponent's.
+GAME_MOVE_QUALITY_VIEW = """
+CREATE VIEW IF NOT EXISTS game_move_quality AS
+SELECT
+    run_id,
+    game_id,
+    color,
+    COUNT(*)                                          AS moves_scored,
+    SUM(CASE WHEN tier = 'inaccuracy' THEN 1 ELSE 0 END) AS inaccuracies,
+    SUM(CASE WHEN tier = 'mistake'    THEN 1 ELSE 0 END) AS mistakes,
+    SUM(CASE WHEN tier = 'blunder'    THEN 1 ELSE 0 END) AS blunders,
+    -- Overlaps the three above rather than partitioning them. Any caller
+    -- presenting these as a total is presenting a wrong number.
+    SUM(is_miss)                                      AS misses,
+    SUM(wp_loss)                                      AS wp_lost
+FROM  move_quality
+GROUP BY run_id, game_id, color
+"""
+
+
 # Columns added to an existing table after it was first created. create_all()
 # only creates missing *tables*, so a sidecar made before one of these columns
 # existed keeps working but silently lacks it. Mirrors app.database's
@@ -340,17 +363,31 @@ def _add_missing_engine_columns():
 
 
 def init_engine_db():
-    """Create the engine schema and the derivation view (idempotent).
+    """Create the engine schema and the derivation views (idempotent).
 
-    The view is dropped and rebuilt every time. It holds no data — it is a
-    definition over position_evals — and CREATE VIEW IF NOT EXISTS would leave a
-    database built by an older revision running the old thresholds while the
+    Views are dropped and rebuilt every time. They hold no data -- they are
+    definitions over position_evals -- and CREATE VIEW IF NOT EXISTS would leave
+    a database built by an older revision running the old thresholds while the
     code claims the new ones. Silently stale interpretation is the failure this
     design exists to avoid.
+
+    Dropped in dependency order, deepest first: game_move_quality reads
+    move_quality, which reads move_severity, which reads move_evals.
     """
     Base.metadata.create_all(bind=engine)
+    _add_missing_engine_columns()
     with engine.begin() as conn:
-        conn.execute(text("DROP VIEW IF EXISTS move_errors"))
-        conn.execute(text("DROP VIEW IF EXISTS move_evals"))
+        assert_sqlite_has_math(conn)
+        for view in (
+            "game_move_quality",
+            "move_quality",
+            "move_severity",
+            "move_errors",
+            "move_evals",
+        ):
+            conn.execute(text(f"DROP VIEW IF EXISTS {view}"))
         conn.execute(text(MOVE_EVALS_VIEW))
         conn.execute(text(MOVE_ERRORS_VIEW))
+        conn.execute(text(MOVE_SEVERITY_VIEW))
+        conn.execute(text(MOVE_QUALITY_VIEW))
+        conn.execute(text(GAME_MOVE_QUALITY_VIEW))
