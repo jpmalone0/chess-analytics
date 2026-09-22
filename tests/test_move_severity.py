@@ -12,7 +12,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from engine.db import Base
-from engine.models import (
+from engine.views import (
     MOVE_EVALS_VIEW,
     MOVE_SEVERITY_VIEW,
     WP_CURVE_DDL,

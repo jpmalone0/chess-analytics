@@ -27,7 +27,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
 from engine.db import CANONICAL_DATABASE_URL, SessionLocal
-from engine.models import AnalysisRun, GameCoverage, PositionEval, init_engine_db
+from engine.models import AnalysisRun, GameCoverage, PositionEval
+from engine.views import init_engine_db
 
 DEFAULT_DEPTH = 14
 DEFAULT_HASH_MB = 64

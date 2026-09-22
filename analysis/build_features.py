@@ -20,7 +20,7 @@ from sqlalchemy import text
 
 from analysis.metrics import SNAPSHOT_PLY, STYLE_AXES
 from engine.db import analysis_engine
-from engine.models import init_engine_db
+from engine.views import init_engine_db
 
 #: A (time class, opening, colour) cell below this many observations cannot
 #: define a reliable centre; its games fall back to the coarse '*' cell.

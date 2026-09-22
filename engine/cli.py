@@ -27,8 +27,8 @@ from engine.analyze import (
 )
 from engine.db import analysis_engine
 from engine.features import extract_features
-from engine.models import init_engine_db
 from engine.scope import Scope, UnknownPlayer, resolve_scope, unanalyzed
+from engine.views import init_engine_db
 
 # Search cost per position at each depth, measured over 150 positions sampled
 # from real bullet games across every phase.

@@ -9,7 +9,7 @@ numbers still aggregate, they just describe the wrong thing.
 import pytest
 from sqlalchemy import create_engine, text
 
-from engine.models import EVAL_CLAMP_CP, MATE_CP, MOVE_EVALS_VIEW
+from engine.views import EVAL_CLAMP_CP, MATE_CP, MOVE_EVALS_VIEW
 
 
 @pytest.fixture

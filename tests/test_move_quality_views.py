@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from engine.backfill import backfill_coverage_time_class
-from engine.models import (
+from engine.views import (
     MOVE_EVALS_VIEW,
     MOVE_QUALITY_VIEW,
     MOVE_SEVERITY_VIEW,
