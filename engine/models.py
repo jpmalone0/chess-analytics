@@ -521,3 +521,42 @@ SELECT
     END AS tier
 FROM lost
 """
+
+
+# A Miss is the opponent's unpunished error, seen from the other side of the
+# board: they handed over at least a mistake, and the reply gave at least an
+# inaccuracy of it back.
+#
+# Chess.com's Miss is mutually exclusive with mistake and blunder. Ours is not,
+# on purpose. Exclusivity needs an arbitrary precedence rule and destroys
+# information -- a 0.40 blunder that was also a miss would be counted once,
+# making blunders silently undercount. A flag keeps both facts and lets the
+# caller cut either way.
+MISS_HANDED_WP = MISTAKE_WP
+MISS_RETURNED_WP = INACCURACY_WP
+
+MOVE_QUALITY_VIEW = f"""
+CREATE VIEW IF NOT EXISTS move_quality AS
+SELECT
+    s.run_id,
+    s.game_id,
+    s.ply,
+    s.color,
+    s.cp_before,
+    s.cp_after,
+    s.wp_before,
+    s.wp_after,
+    s.wp_loss,
+    s.tier,
+    -- COALESCE, not a bare comparison: ply 1 has no predecessor, and a NULL
+    -- here would propagate into every count downstream as NULL rather than 0.
+    COALESCE(
+        prev.wp_loss >= {MISS_HANDED_WP} AND s.wp_loss >= {MISS_RETURNED_WP},
+        0
+    ) AS is_miss
+FROM      move_severity AS s
+LEFT JOIN move_severity AS prev
+       ON prev.run_id  = s.run_id
+      AND prev.game_id = s.game_id
+      AND prev.ply     = s.ply - 1
+"""

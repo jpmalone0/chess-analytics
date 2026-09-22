@@ -4,6 +4,12 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from engine.backfill import backfill_coverage_time_class
+from engine.models import (
+    MOVE_EVALS_VIEW,
+    MOVE_QUALITY_VIEW,
+    MOVE_SEVERITY_VIEW,
+    WP_CURVE_DDL,
+)
 
 GAMES_DDL = "CREATE TABLE games (game_id INTEGER PRIMARY KEY, time_class VARCHAR(20))"
 GAME_COVERAGE_DDL = (
@@ -98,3 +104,90 @@ def test_backfill_propagates_the_original_error_not_the_detach_failure(coverage_
 
     with pytest.raises(Boom):
         backfill_coverage_time_class()
+
+
+@pytest.fixture
+def mq():
+    eng = create_engine("sqlite://")
+    with eng.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE position_evals (
+                run_id INTEGER NOT NULL, game_id INTEGER NOT NULL, ply INTEGER NOT NULL,
+                cp INTEGER, mate_in INTEGER, best_move_uci VARCHAR(6),
+                PRIMARY KEY (run_id, game_id, ply))
+        """))
+        conn.execute(text("""
+            CREATE TABLE game_coverage (
+                run_id INTEGER NOT NULL, game_id INTEGER NOT NULL,
+                plies_analyzed INTEGER NOT NULL, status VARCHAR(20) NOT NULL,
+                error TEXT, completed_at DATETIME, time_class VARCHAR(20),
+                PRIMARY KEY (run_id, game_id))
+        """))
+        conn.execute(text(WP_CURVE_DDL))
+        conn.execute(text(MOVE_EVALS_VIEW))
+        conn.execute(text(MOVE_SEVERITY_VIEW))
+        conn.execute(text(MOVE_QUALITY_VIEW))
+        conn.execute(text(
+            "INSERT INTO wp_curve (time_class, k, n, source) VALUES ('rapid', 360.0, 1, 'test')"
+        ))
+    return eng
+
+
+def seed_mq(eng, positions, game_id=1, run_id=1):
+    with eng.begin() as conn:
+        conn.execute(
+            text("INSERT OR REPLACE INTO game_coverage "
+                 "(run_id, game_id, plies_analyzed, status, time_class) "
+                 "VALUES (:r, :g, :n, 'complete', 'rapid')"),
+            {"r": run_id, "g": game_id, "n": len(positions)},
+        )
+        for ply, cp in positions:
+            conn.execute(
+                text("INSERT INTO position_evals (run_id, game_id, ply, cp) "
+                     "VALUES (:r, :g, :p, :cp)"),
+                {"r": run_id, "g": game_id, "p": ply, "cp": cp},
+            )
+
+
+def mq_rows(eng, game_id=1):
+    with eng.connect() as conn:
+        return {
+            r["ply"]: r
+            for r in conn.execute(
+                text("SELECT * FROM move_quality WHERE game_id = :g ORDER BY ply"),
+                {"g": game_id},
+            ).mappings()
+        }
+
+
+class TestMiss:
+    """A Miss is failing to take what the opponent just handed you.
+
+    Chess.com makes it a fourth exclusive label. Here it is a flag, so a move can
+    be both a blunder by magnitude and a miss by context and both survive.
+    """
+
+    def test_giving_back_what_the_opponent_handed_over_is_a_miss(self, mq):
+        # White drops 0.1225 at ply 1; Black gives back 0.0809 at ply 2.
+        seed_mq(mq, [(0, 0), (1, -180), (2, -60)])
+        assert mq_rows(mq)[2]["is_miss"] == 1
+
+    def test_taking_what_was_offered_is_not_a_miss(self, mq):
+        # White drops 0.1225; Black concedes only 0.0298, below the 0.05 floor.
+        seed_mq(mq, [(0, 0), (1, -180), (2, -135)])
+        assert mq_rows(mq)[2]["is_miss"] == 0
+
+    def test_an_error_after_a_quiet_opponent_move_is_not_a_miss(self, mq):
+        """Nothing was handed over, so nothing was missed — it is just an error."""
+        seed_mq(mq, [(0, 0), (1, 0), (2, 310)])
+        r = mq_rows(mq)[2]
+        assert r["tier"] == "blunder"
+        assert r["is_miss"] == 0
+
+    def test_a_miss_keeps_its_own_tier(self, mq):
+        seed_mq(mq, [(0, 0), (1, -180), (2, -60)])
+        assert mq_rows(mq)[2]["tier"] == "inaccuracy"
+
+    def test_the_first_ply_has_no_predecessor_and_is_never_a_miss(self, mq):
+        seed_mq(mq, [(0, 0), (1, -310)])
+        assert mq_rows(mq)[1]["is_miss"] == 0
