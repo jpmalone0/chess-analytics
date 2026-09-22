@@ -19,8 +19,8 @@ from engine.views import (
     MathFunctionsMissing,
     assert_sqlite_has_math,
 )
-
-RAPID_K = 360.0
+from tests.conftest import RAPID_K, build_sidecar, view_rows
+from tests.conftest import seed_evals as seed
 
 
 def wp(cp, white=True):
@@ -140,71 +140,12 @@ def test_wp_curve_rejects_bad_rows(build, values):
 
 @pytest.fixture
 def sev():
-    """An in-memory sidecar holding the tables and both views.
-
-    Built from raw DDL rather than the ORM so that the view SQL is exercised
-    exactly as SQLite will run it.
-    """
-    eng = create_engine("sqlite://")
-    with eng.begin() as conn:
-        conn.execute(text("""
-            CREATE TABLE position_evals (
-                run_id        INTEGER NOT NULL,
-                game_id       INTEGER NOT NULL,
-                ply           INTEGER NOT NULL,
-                cp            INTEGER,
-                mate_in       INTEGER,
-                best_move_uci VARCHAR(6),
-                PRIMARY KEY (run_id, game_id, ply)
-            )
-        """))
-        conn.execute(text("""
-            CREATE TABLE game_coverage (
-                run_id         INTEGER NOT NULL,
-                game_id        INTEGER NOT NULL,
-                plies_analyzed INTEGER NOT NULL,
-                status         VARCHAR(20) NOT NULL,
-                error          TEXT,
-                completed_at   DATETIME,
-                time_class     VARCHAR(20),
-                PRIMARY KEY (run_id, game_id)
-            )
-        """))
-        conn.execute(text(WP_CURVE_DDL))
-        conn.execute(text(MOVE_EVALS_VIEW))
-        conn.execute(text(MOVE_SEVERITY_VIEW))
-        conn.execute(text(
-            "INSERT INTO wp_curve (time_class, k, n, source) VALUES ('rapid', 360.0, 45110, 'test')"
-        ))
-    return eng
-
-
-def seed(eng, positions, game_id=1, run_id=1, time_class="rapid"):
-    """positions: [(ply, cp, mate_in)] — evaluations from White's point of view."""
-    with eng.begin() as conn:
-        conn.execute(
-            text("INSERT OR REPLACE INTO game_coverage "
-                 "(run_id, game_id, plies_analyzed, status, time_class) "
-                 "VALUES (:r, :g, :n, 'complete', :tc)"),
-            {"r": run_id, "g": game_id, "n": len(positions), "tc": time_class},
-        )
-        for ply, cp, mate_in in positions:
-            conn.execute(
-                text("INSERT INTO position_evals (run_id, game_id, ply, cp, mate_in) "
-                     "VALUES (:r, :g, :p, :cp, :m)"),
-                {"r": run_id, "g": game_id, "p": ply, "cp": cp, "m": mate_in},
-            )
+    """An in-memory sidecar holding the tables and the curve/ladder views."""
+    return build_sidecar(MOVE_EVALS_VIEW, MOVE_SEVERITY_VIEW)
 
 
 def rows(eng, game_id=1):
-    with eng.connect() as conn:
-        return {
-            r["ply"]: r
-            for r in conn.execute(
-                text("SELECT * FROM move_severity WHERE game_id = :g ORDER BY ply"),
-                {"g": game_id},
-            ).mappings()
-        }
+    return view_rows(eng, "move_severity", game_id=game_id)
 
 
 class TestCurve:

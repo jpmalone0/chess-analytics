@@ -8,8 +8,9 @@ from engine.views import (
     MOVE_EVALS_VIEW,
     MOVE_QUALITY_VIEW,
     MOVE_SEVERITY_VIEW,
-    WP_CURVE_DDL,
 )
+from tests.conftest import build_sidecar, view_rows
+from tests.conftest import seed_evals as seed_mq
 
 GAMES_DDL = "CREATE TABLE games (game_id INTEGER PRIMARY KEY, time_class VARCHAR(20))"
 GAME_COVERAGE_DDL = (
@@ -108,56 +109,12 @@ def test_backfill_propagates_the_original_error_not_the_detach_failure(coverage_
 
 @pytest.fixture
 def mq():
-    eng = create_engine("sqlite://")
-    with eng.begin() as conn:
-        conn.execute(text("""
-            CREATE TABLE position_evals (
-                run_id INTEGER NOT NULL, game_id INTEGER NOT NULL, ply INTEGER NOT NULL,
-                cp INTEGER, mate_in INTEGER, best_move_uci VARCHAR(6),
-                PRIMARY KEY (run_id, game_id, ply))
-        """))
-        conn.execute(text("""
-            CREATE TABLE game_coverage (
-                run_id INTEGER NOT NULL, game_id INTEGER NOT NULL,
-                plies_analyzed INTEGER NOT NULL, status VARCHAR(20) NOT NULL,
-                error TEXT, completed_at DATETIME, time_class VARCHAR(20),
-                PRIMARY KEY (run_id, game_id))
-        """))
-        conn.execute(text(WP_CURVE_DDL))
-        conn.execute(text(MOVE_EVALS_VIEW))
-        conn.execute(text(MOVE_SEVERITY_VIEW))
-        conn.execute(text(MOVE_QUALITY_VIEW))
-        conn.execute(text(
-            "INSERT INTO wp_curve (time_class, k, n, source) VALUES ('rapid', 360.0, 1, 'test')"
-        ))
-    return eng
-
-
-def seed_mq(eng, positions, game_id=1, run_id=1):
-    with eng.begin() as conn:
-        conn.execute(
-            text("INSERT OR REPLACE INTO game_coverage "
-                 "(run_id, game_id, plies_analyzed, status, time_class) "
-                 "VALUES (:r, :g, :n, 'complete', 'rapid')"),
-            {"r": run_id, "g": game_id, "n": len(positions)},
-        )
-        for ply, cp in positions:
-            conn.execute(
-                text("INSERT INTO position_evals (run_id, game_id, ply, cp) "
-                     "VALUES (:r, :g, :p, :cp)"),
-                {"r": run_id, "g": game_id, "p": ply, "cp": cp},
-            )
+    """The same sidecar as tests/test_move_severity.py's, one view deeper."""
+    return build_sidecar(MOVE_EVALS_VIEW, MOVE_SEVERITY_VIEW, MOVE_QUALITY_VIEW)
 
 
 def mq_rows(eng, game_id=1):
-    with eng.connect() as conn:
-        return {
-            r["ply"]: r
-            for r in conn.execute(
-                text("SELECT * FROM move_quality WHERE game_id = :g ORDER BY ply"),
-                {"g": game_id},
-            ).mappings()
-        }
+    return view_rows(eng, "move_quality", game_id=game_id)
 
 
 class TestMiss:
