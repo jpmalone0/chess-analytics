@@ -197,8 +197,8 @@ CREATE TABLE game_coverage (
 RAPID_K = 360.0
 
 
-def build_sidecar(*views):
-    """An in-memory sidecar: the raw tables, a fitted rapid curve, and `views`.
+def build_sidecar(*views, url="sqlite://"):
+    """A sidecar holding the raw tables, a fitted rapid curve, and `views`.
 
     `views` are CREATE VIEW statements from engine.views, executed in the order
     given. They stack -- move_severity reads move_evals, move_quality reads
@@ -207,8 +207,14 @@ def build_sidecar(*views):
 
     Built from raw DDL rather than through the ORM so that the view SQL runs
     exactly as SQLite will run it in the real sidecar.
+
+    `url` defaults to an in-memory database, which is all the view tests need.
+    The route tests pass engine_db.ENGINE_DATABASE_URL instead, because
+    attach_engine_db ATTACHes a *path*: ATTACH ':memory:' opens a new, empty
+    database rather than reaching the one this engine holds, so a sidecar the
+    app is meant to read has to be a file.
     """
-    eng = create_engine("sqlite://")
+    eng = create_engine(url)
     with eng.begin() as conn:
         conn.execute(text(_POSITION_EVALS_DDL))
         conn.execute(text(_GAME_COVERAGE_DDL))
