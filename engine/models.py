@@ -6,7 +6,18 @@ either database never reaches into the other.
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, inspect, text
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    inspect,
+    text,
+)
 from sqlalchemy.exc import OperationalError
 
 from engine.db import Base, engine
@@ -99,6 +110,16 @@ class WpCurve(Base):
     fitted_at  = Column(DateTime)
     source     = Column(Text)
 
+    __table_args__ = (
+        # A negative k inverts the curve: it grades a 400cp *gain* as a blunder
+        # and a genuine 300cp mistake as no error at all, poisoning the counts
+        # in both directions for that whole time class. k=0 divides by zero and
+        # every severity goes NULL. Neither shows up as a failure anywhere --
+        # the rows just come out wrong -- and k is written by an out-of-band
+        # fitting process, so the schema is the only place to catch it.
+        CheckConstraint("k > 0", name="ck_wp_curve_k_positive"),
+    )
+
 
 # Raw DDL for the same table, for tests that exercise the views as SQLite runs
 # them rather than through the ORM.
@@ -108,7 +129,8 @@ CREATE TABLE IF NOT EXISTS wp_curve (
     k          FLOAT   NOT NULL,
     n          INTEGER NOT NULL,
     fitted_at  DATETIME,
-    source     TEXT
+    source     TEXT,
+    CONSTRAINT ck_wp_curve_k_positive CHECK (k > 0)
 )
 """
 

@@ -93,6 +93,17 @@ def test_wp_curve_ddl_matches_the_model():
                 text("INSERT INTO wp_curve (time_class, k, n) VALUES ('bullet', 865.0, NULL)")
             )
 
+    # A negative k inverts the curve and grades gains as blunders; a zero k
+    # divides by zero and yields NULL severities. Both are accepted silently by
+    # every layer above the schema, so the constraint is the only guard.
+    for bad_k in (0.0, -360.0):
+        with eng.begin() as conn:
+            with pytest.raises(IntegrityError):
+                conn.execute(
+                    text("INSERT INTO wp_curve (time_class, k, n) VALUES ('bullet', :k, 5)"),
+                    {"k": bad_k},
+                )
+
 
 @pytest.fixture
 def sev():
