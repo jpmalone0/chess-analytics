@@ -18,7 +18,7 @@ async function loadMoveQuality(username) {
             `/api/players/${username}/analytics/move-quality`
             + colorParams(queryColor(), currentOpeningFilter)
         );
-    } catch (e) {
+    } catch {
         section.classList.add('hidden');
         return;
     }
