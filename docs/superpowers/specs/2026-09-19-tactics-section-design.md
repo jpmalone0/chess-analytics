@@ -1,7 +1,7 @@
 # Tactics section
 
 **Date:** 2026-09-19
-**Status:** design, approved, not implemented
+**Status:** design; Stage 1 superseded and shipped, Stages 2-3 not implemented
 **Depends on:** [2026-09-16-style-vs-ability-findings.md](2026-09-16-style-vs-ability-findings.md)
 
 ---
@@ -368,11 +368,22 @@ that moves that number should do so visibly.
 This is too large for a single implementation plan. Three stages, each shippable
 and each answering something on its own:
 
-**Stage 1 — severity, on existing data.** `wp_curve`, the `move_severity` view,
-and the fit script. No engine re-run, no new search. Ends with the mate-depth
-curve and the 13 bullet disasters visible in the API, which is the thin vertical
-slice: it forces the board and the drill-list UI into existence, and everything
-later reuses both.
+**Stage 1 — severity, on existing data.** ~~`wp_curve`, the `move_severity` view,
+and the fit script.~~ **Superseded and shipped.** Built instead under
+[2026-09-21-move-quality-design.md](2026-09-21-move-quality-design.md), which
+narrowed it to per-game counts plus a population comparison.
+
+Two claims here turned out to be wrong, and they matter for the stages below:
+
+*It does not force the board into existence.* The drill-list UI deep-links to
+chess.com, which already renders positions, so the shipped feature needed no
+chessboard, no FEN generation and no piece rendering. Whether the board is worth
+building is now a question for Stage 2 alone — motifs genuinely need it, because
+an arrow on a position is the only useful way to show a fork.
+
+*The fitted curve is per time class, not global.* Rapid fits k=360 and bullet
+k=865, a 2.4x spread, so a single curve would misprice one of them badly.
+Blitz has no curve until blitz games are analysed.
 
 **Stage 2 — motifs.** The classifier, its fixture suite, `move_motifs`, and the
 motif table. Still no re-run; runs off `best_move_uci`, which already exists on
