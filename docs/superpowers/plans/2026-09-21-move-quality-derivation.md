@@ -878,7 +878,27 @@ git commit -m "feat: flag missed punishments as a Miss"
 
 **Files:**
 - Modify: `engine/models.py`
+- Create: `engine/views.py`
 - Test: `tests/test_move_quality_views.py`
+
+This task also **splits the derivation layer out of `engine/models.py`**. By the
+end of Task 5 that file holds five views plus the mate and clamp constants, the
+tier ladder, the `exp()` guard and `init_engine_db`, and it is over 500 lines of
+two different things: table definitions and SQL interpretation.
+
+The seam is the existing `# Derivation` section divider. Everything from there
+down—`MATE_CP`, `MATE_STEP_CP`, `MATE_MAX_PLIES`, `EVAL_CLAMP_CP`, the three
+`*_WP` thresholds, every `*_VIEW` constant, `MathFunctionsMissing`,
+`assert_sqlite_has_math`, `_ADDED_ENGINE_COLUMNS`, `_add_missing_engine_columns`
+and `init_engine_db`—moves to `engine/views.py`. `engine/models.py` keeps the
+ORM classes and nothing else.
+
+Do this **before** adding `game_move_quality`, so the new view lands in its
+final home rather than being written twice. Every import site needs updating:
+`engine/cli.py`, `engine/analyze.py`, `engine/backfill.py`, `app/`, and the
+test files. Re-export from `engine/models.py` only if the import churn proves
+unmanageable, and say so if you do—a compatibility shim that nobody removes is
+worse than the churn.
 
 - [ ] **Step 1: Write the failing test**
 
