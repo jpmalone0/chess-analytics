@@ -894,7 +894,13 @@ and `init_engine_db`—moves to `engine/views.py`. `engine/models.py` keeps the
 ORM classes and nothing else.
 
 Do this **before** adding `game_move_quality`, so the new view lands in its
-final home rather than being written twice. Every import site needs updating:
+final home rather than being written twice.
+
+While splitting, extract the shared test setup. `tests/test_move_severity.py`
+has `sev`/`seed`/`rows`, `tests/test_move_quality_views.py` has
+`mq`/`seed_mq`/`mq_rows`, and they are the same fixture differing by one
+`CREATE VIEW`. This task would add a third. Put one parameterised builder
+where both can import it, before the third copy exists. Every import site needs updating:
 `engine/cli.py`, `engine/analyze.py`, `engine/backfill.py`, `app/`, and the
 test files. Re-export from `engine/models.py` only if the import churn proves
 unmanageable, and say so if you do—a compatibility shim that nobody removes is
@@ -1289,6 +1295,23 @@ Expected, within a few rows: `blunder 2475`, `mistake 4195`, `inaccuracy 7170`, 
 ---
 
 ## Task 9: The two API routes
+
+**Read this before writing the queries.** `move_quality` LEFT JOINs
+`move_severity` to itself, and `move_severity` is three CTEs over `move_evals`,
+which is itself a self-join over `position_evals`. Measured during Task 5's
+review with `EXPLAIN QUERY PLAN`: SQLite materialises the self-join's `prev`
+side **without pushing the outer `WHERE` down**, so a single-game lookup costs
+proportional to the whole analyzed corpus rather than to that game.
+
+At today's 102,790 plies, `WHERE game_id = ?` against `move_quality` takes
+~0.10s where the same filter against `move_severity` alone takes ~0ms. At ten
+times the data it was ~1.05s. The drill-list route hits exactly this shape.
+
+The fix is to push the filter inside, before the self-join, rather than
+filtering the outer result. Pre-filter `move_severity` by `run_id`/`game_id` on
+both sides of the join in the query itself; at 1M plies that took the identical
+lookup from ~1.05s to ~0.00s. Do not try to fix it in the view — a view cannot
+know the caller's filter.
 
 **Files:**
 - Create: `app/move_quality.py`
