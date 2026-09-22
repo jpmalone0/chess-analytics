@@ -191,3 +191,36 @@ class TestMiss:
     def test_the_first_ply_has_no_predecessor_and_is_never_a_miss(self, mq):
         seed_mq(mq, [(0, 0), (1, -310)])
         assert mq_rows(mq)[1]["is_miss"] == 0
+
+    def test_a_miss_can_also_be_a_blunder_by_magnitude(self, mq):
+        """The reason Miss is a flag, not a tier: both facts must survive together."""
+        seed_mq(mq, [(0, 0), (1, -180), (2, 300)])
+        r = mq_rows(mq)[2]
+        assert r["tier"] == "blunder"
+        assert r["is_miss"] == 1
+
+    def test_a_predecessor_just_under_the_mistake_floor_is_not_a_miss(self, mq):
+        # White drops 145: wp(0) - wp(-145) = 0.09935, just under MISTAKE_WP
+        # (0.10). Black's reply, -145 -> 100, loses 0.16836 -- well clear of
+        # INACCURACY_WP -- so only the predecessor side is in question here.
+        seed_mq(mq, [(0, 0), (1, -145), (2, 100)])
+        assert mq_rows(mq)[2]["is_miss"] == 0
+
+    def test_a_predecessor_just_over_the_mistake_floor_is_a_miss(self, mq):
+        # White drops 146: wp(0) - wp(-146) = 0.10002, just over MISTAKE_WP.
+        # Same reply shape as above (-146 -> 100), loss 0.16902.
+        seed_mq(mq, [(0, 0), (1, -146), (2, 100)])
+        assert mq_rows(mq)[2]["is_miss"] == 1
+
+    def test_a_reply_just_under_the_inaccuracy_floor_is_not_a_miss(self, mq):
+        # White drops 180 (loss 0.1225, well clear of MISTAKE_WP). Black's
+        # reply, -180 -> -106, loses wp(180) - wp(106) = 0.04938, just under
+        # INACCURACY_WP (0.05).
+        seed_mq(mq, [(0, 0), (1, -180), (2, -106)])
+        assert mq_rows(mq)[2]["is_miss"] == 0
+
+    def test_a_reply_just_over_the_inaccuracy_floor_is_a_miss(self, mq):
+        # Same predecessor. Black's reply, -180 -> -105, loses
+        # wp(180) - wp(105) = 0.05006, just over INACCURACY_WP.
+        seed_mq(mq, [(0, 0), (1, -180), (2, -105)])
+        assert mq_rows(mq)[2]["is_miss"] == 1

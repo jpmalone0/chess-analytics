@@ -455,6 +455,10 @@ JOIN       best_move_features    AS b
 # Severity is a change in expected result, not in centipawns. A 300cp drop is
 # worth 0.083 from +900 and 0.204 from +200: the same centipawns, two and a half
 # times the cost. Every count in this feature is gated on the second number.
+#
+# MISTAKE_WP and INACCURACY_WP are reused below as MOVE_QUALITY_VIEW's Miss
+# thresholds (MISS_HANDED_WP, MISS_RETURNED_WP). Retuning either one here also
+# retunes what counts as a Miss.
 BLUNDER_WP = 0.20
 MISTAKE_WP = 0.10
 INACCURACY_WP = 0.05
