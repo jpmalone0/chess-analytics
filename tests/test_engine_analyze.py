@@ -156,6 +156,9 @@ class TestWorkerLifecycle:
             conn.execute(text(
                 "CREATE TABLE moves (game_id INTEGER, ply INTEGER, move_san VARCHAR(10))"
             ))
+            conn.execute(text(
+                "CREATE TABLE games (game_id INTEGER PRIMARY KEY, time_class VARCHAR(20))"
+            ))
         _worker.clear()
         _worker["db"] = eng
         yield eng
@@ -177,6 +180,21 @@ class TestWorkerLifecycle:
         and fail wherever Stockfish is not installed."""
         _worker["engine_path"] = "/nonexistent/stockfish"
 
-        _, rows, status, error = _analyze_one(99, depth=1)
+        _, rows, status, error, time_class = _analyze_one(99, depth=1)
 
-        assert (rows, status, error) == ([], "failed", "no moves stored")
+        assert (rows, status, error, time_class) == ([], "failed", "no moves stored", None)
+
+
+def test_game_time_class_reads_from_the_canonical_database(tmp_path, monkeypatch):
+    """New coverage rows carry the time class, so views need no cross-db join."""
+    from engine import analyze
+
+    canon = tmp_path / "canon.db"
+    eng = create_engine(f"sqlite:///{canon}")
+    with eng.begin() as conn:
+        conn.execute(text("CREATE TABLE games (game_id INTEGER PRIMARY KEY, time_class VARCHAR(20))"))
+        conn.execute(text("INSERT INTO games VALUES (7, 'blitz')"))
+
+    monkeypatch.setitem(analyze._worker, "db", eng)
+    assert analyze._game_time_class(7) == "blitz"
+    assert analyze._game_time_class(999) is None

@@ -140,6 +140,16 @@ def _game_moves(game_id: int) -> list[str]:
         ]
 
 
+def _game_time_class(game_id: int) -> Optional[str]:
+    """The stored time class for one game, read from the canonical database."""
+    with _worker["db"].connect() as conn:
+        row = conn.execute(
+            text("SELECT time_class FROM games WHERE game_id = :g"),
+            {"g": game_id},
+        ).first()
+    return row[0] if row else None
+
+
 def _evaluate_position(proc, board: chess.Board, depth: int):
     """Evaluate one position, always from White's point of view.
 
@@ -167,13 +177,15 @@ def _analyze_one(game_id: int, depth: int):
     loop is still alive to process the shutdown. Nothing is left for atexit.
     """
     sans = _game_moves(game_id)
+    time_class = _game_time_class(game_id)
     if not sans:
         # Checked before opening an engine: starting Stockfish to analyze a game
         # with no moves costs 125 ms to learn nothing.
-        return game_id, [], "failed", "no moves stored"
+        return game_id, [], "failed", "no moves stored", time_class
 
     with _open_engine() as proc:
-        return _evaluate_game(proc, game_id, sans, depth)
+        gid, rows, status, error = _evaluate_game(proc, game_id, sans, depth)
+        return gid, rows, status, error, time_class
 
 
 def _evaluate_game(proc, game_id: int, sans: list[str], depth: int):
@@ -275,7 +287,7 @@ def analyze_games(
         futures = [pool.submit(_analyze_one, gid, config.depth) for gid in game_ids]
 
         for done, future in enumerate(futures, start=1):
-            game_id, rows, status, error = future.result()
+            game_id, rows, status, error, time_class = future.result()
 
             if rows:
                 # Re-running a partial game re-evaluates from ply 0, so clear
@@ -298,6 +310,7 @@ def analyze_games(
                 status=status,
                 error=error,
                 completed_at=datetime.utcnow(),
+                time_class=time_class,
             ))
             session.commit()
 
