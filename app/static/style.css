@@ -1796,3 +1796,32 @@ body.compare-mode #stat-winrate     { order: 8; }
     font-variant-numeric: tabular-nums;
     font-size: 0.85em;
 }
+
+/* ── Move quality: population ────────────────────────────── */
+
+.mq-population {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary, #8b9ab8);
+}
+
+.mq-population:empty,
+.mq-jobs:empty {
+    display: none;
+}
+
+.mq-job {
+    font-family: var(--font-mono, monospace);
+    color: var(--accent-light);
+}
+
+.mq-jobs {
+    margin-bottom: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary, #8b9ab8);
+}

@@ -118,6 +118,32 @@ class WpCurve(Base):
     )
 
 
+class PopulationJob(Base):
+    """One press of the Analyze population button: a band, and how far it got.
+
+    The band is recorded as it was at press time rather than re-derived, because
+    the band a player's filters resolve to moves with the date range. What was
+    actually sampled is games_total, which can fall short of target_games when a
+    band runs out of unanalyzed games.
+    """
+
+    __tablename__ = "population_jobs"
+
+    job_id            = Column(Integer, primary_key=True, autoincrement=True)
+    time_class        = Column(String(20), nullable=False)
+    elo_lo            = Column(Integer, nullable=False)
+    elo_hi            = Column(Integer, nullable=False)
+    exclude_player_id = Column(Integer)
+    target_games      = Column(Integer, nullable=False)
+    games_total       = Column(Integer)
+    games_done        = Column(Integer, nullable=False, default=0)
+    status            = Column(String(20), nullable=False)  # queued | running | complete | failed
+    created_at        = Column(DateTime, nullable=False, default=datetime.utcnow)
+    started_at        = Column(DateTime)
+    finished_at       = Column(DateTime)
+    error             = Column(Text)
+
+
 # ═══════════════════════════════════════════════════════════
 # Move features
 # ═══════════════════════════════════════════════════════════

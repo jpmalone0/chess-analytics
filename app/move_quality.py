@@ -11,8 +11,9 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import crud
+from app import baselines, crud
 from engine.db import attach_engine_db
+from engine.population import POPULATION_PER_PLAYER_CAP, band_sides_sql
 from engine.views import MISS_HANDED_WP, MISS_RETURNED_WP
 
 # A game analyzed under several runs would otherwise appear once per run.
@@ -161,3 +162,114 @@ def game_drill_list(db: Session, game_id: int) -> dict[str, Any]:
     """), {"game_id": game_id}).mappings().all()
 
     return {"game_id": game_id, "moves": [dict(r) for r in rows]}
+
+
+# ═══════════════════════════════════════════════════════════
+# Population
+# ═══════════════════════════════════════════════════════════
+
+
+
+def resolve_mq_band(
+    db: Session,
+    player_id: int,
+    elo_band: Optional[str],
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    tz: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    """The band the Compare-to selector names, within one time class.
+
+    Not baselines.resolve_band: that one widens a band until the *corpus* is
+    thick enough, and here the question is what has been engine-analyzed. A
+    widened band would name games the button never sampled.
+
+    A time class is always settled first, and a derived band comes from the
+    median within it. On "All", pooling classes picks a band the player never
+    plays in: at 90 days their pooled median is rapid's, 448 points above
+    their bullet.
+    """
+    filters = dict(
+        start_date=start_date, end_date=end_date,
+        player_color=player_color, opening_names=opening_names, tz=tz,
+    )
+    tc = time_class or baselines.dominant_time_class(db, player_id, **filters)
+    if tc is None:
+        return None
+    if elo_band == "all":
+        return {"time_class": tc, "elo_lo": 0, "elo_hi": 4000, "source": "all"}
+    if elo_band:
+        lo = int(elo_band)
+        return {"time_class": tc, "elo_lo": lo, "elo_hi": lo + 99, "source": "selected"}
+    median = baselines.player_median_elo(db, player_id, time_class=tc, **filters)
+    if median is None:
+        return None
+    lo = (median // 100) * 100
+    return {"time_class": tc, "elo_lo": lo, "elo_hi": lo + 99, "source": "derived"}
+
+
+def band_move_quality(
+    db: Session,
+    band: dict[str, Any],
+    exclude_player_id: int,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+) -> dict[str, Any]:
+    """Pooled rates over the analyzed in-band sides, capped per player.
+
+    Only the in-band side's moves count; counting both would make it a rate
+    over games in the band, not over players in it. The same cap and exclusion
+    as the sampler, so the rate describes the games the button analyzed.
+    """
+    attach_engine_db(db.connection())
+    params: dict[str, Any] = {
+        "time_class": band["time_class"], "elo_lo": band["elo_lo"],
+        "elo_hi": band["elo_hi"], "exclude_player_id": exclude_player_id,
+        "cap": POPULATION_PER_PLAYER_CAP,
+    }
+    extra = ""
+    if player_color in ("white", "black"):
+        extra += " AND s.color = :player_color"
+        params["player_color"] = player_color
+    if opening_names:
+        ops = [o.strip() for o in opening_names.split("|") if o.strip()]
+        if ops:
+            extra += " AND (" + " OR ".join(
+                f"g.opening_name LIKE :op_{i}" for i in range(len(ops))) + ")"
+            params.update({f"op_{i}": op + "%" for i, op in enumerate(ops)})
+
+    row = db.execute(text(f"""
+        WITH sides AS ({band_sides_sql()}),
+        scored AS (
+            SELECT s.pid, s.game_id, q.moves_scored,
+                   q.inaccuracies, q.mistakes, q.blunders, q.misses,
+                   ROW_NUMBER() OVER (PARTITION BY s.pid ORDER BY s.h, s.game_id) AS rn
+            FROM   sides s
+            JOIN   games g ON g.game_id = s.game_id
+            JOIN   engine.game_move_quality q
+                   ON q.game_id = s.game_id AND q.color = s.color
+            WHERE  {_LATEST_RUN} {extra}
+        )
+        SELECT COUNT(DISTINCT pid) AS n_players, COUNT(DISTINCT game_id) AS n_games,
+               COALESCE(SUM(moves_scored), 0) AS moves_scored,
+               COALESCE(SUM(inaccuracies), 0) AS inaccuracies,
+               COALESCE(SUM(mistakes), 0) AS mistakes,
+               COALESCE(SUM(blunders), 0) AS blunders,
+               COALESCE(SUM(misses), 0) AS misses
+        FROM   scored WHERE rn <= :cap
+    """), params).mappings().one()
+
+    curve = db.execute(
+        text("SELECT 1 FROM engine.wp_curve WHERE time_class = :tc"),
+        {"tc": band["time_class"]},
+    ).first()
+    totals = dict(row)
+    return {
+        "band": band,
+        "totals": totals,
+        "viable": baselines._band_is_viable(totals),
+        "curve_fitted": curve is not None,
+    }
