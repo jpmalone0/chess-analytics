@@ -32,14 +32,19 @@ async function loadMoveQuality(username) {
         document.getElementById('mq-table').innerHTML = '';
         return;
     }
+    const o = data.opponents;
     label.textContent =
-        `${t.games_analyzed} analyzed games, ${t.moves_scored.toLocaleString()} scored moves`;
+        `${t.games_analyzed} analyzed games, ${t.moves_scored.toLocaleString()} scored moves`
+        + (o.avg_elo ? ` · opponents averaged ${o.avg_elo}` : '');
 
+    // Compared per 100 moves, not per game: the two seats of a game can play
+    // a different number of moves, and per game would fold that in.
     document.getElementById('mq-totals').innerHTML = MQ_TIERS.map((k) => `
         <div class="stat-card">
             <div class="stat-label">${k[0].toUpperCase() + k.slice(1)}</div>
             <div class="stat-value">${(t[k] / t.games_analyzed).toFixed(2)}</div>
             <div class="stat-sub">per game · ${mqPct(t[k], t.moves_scored)} of moves</div>
+            <div class="stat-sub mq-mirror">opponents ${mqPct(o[k], o.moves_scored)} of moves</div>
         </div>`).join('');
 
     document.getElementById('mq-table').innerHTML = `

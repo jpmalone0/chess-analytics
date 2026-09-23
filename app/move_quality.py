@@ -50,10 +50,8 @@ _MISS = (
 def _empty() -> dict[str, Any]:
     return {
         "games": [],
-        "totals": {
-            "games_analyzed": 0, "moves_scored": 0,
-            "inaccuracies": 0, "mistakes": 0, "blunders": 0, "misses": 0,
-        },
+        "totals": _totals([], ""),
+        "opponents": {**_totals([], "opp_"), "avg_elo": None},
     }
 
 
@@ -80,9 +78,19 @@ def player_move_quality(
     rows = db.execute(text(f"""
         SELECT g.game_id, g.date_played, g.time_class, g.opening_name,
                g.chess_com_url, q.color, q.moves_scored,
-               q.inaccuracies, q.mistakes, q.blunders, q.misses
+               q.inaccuracies, q.mistakes, q.blunders, q.misses,
+               o.moves_scored AS opp_moves_scored,
+               o.inaccuracies AS opp_inaccuracies, o.mistakes AS opp_mistakes,
+               o.blunders AS opp_blunders, o.misses AS opp_misses,
+               CASE WHEN g.white_player_id = :player_id
+                    THEN g.black_elo ELSE g.white_elo END AS opp_elo
         FROM   games g
         JOIN   engine.game_move_quality q ON q.game_id = g.game_id
+        -- The other seat of the same game, under the same run. LEFT because a
+        -- side with no scored moves has no row, and the game still counts.
+        LEFT JOIN engine.game_move_quality o
+               ON o.game_id = q.game_id AND o.run_id = q.run_id
+              AND o.color <> q.color
         WHERE  {where}
           AND  {_LATEST_RUN}
           AND  q.color = CASE WHEN g.white_player_id = :player_id
@@ -94,16 +102,26 @@ def player_move_quality(
         return _empty()
 
     games = [dict(r) for r in rows]
+    elos = [g["opp_elo"] for g in games if g["opp_elo"] is not None]
     return {
         "games": games,
-        "totals": {
-            "games_analyzed": len(games),
-            "moves_scored": sum(g["moves_scored"] for g in games),
-            "inaccuracies": sum(g["inaccuracies"] for g in games),
-            "mistakes": sum(g["mistakes"] for g in games),
-            "blunders": sum(g["blunders"] for g in games),
-            "misses": sum(g["misses"] for g in games),
+        "totals": _totals(games, ""),
+        # The opponent mirror: the same games from the other seat. Not an
+        # independent baseline -- both sides share every position, and a Miss
+        # needs the other side's error the ply before -- but it is rated like
+        # the player and filtered exactly like them.
+        "opponents": {
+            **_totals(games, "opp_"),
+            "avg_elo": round(sum(elos) / len(elos)) if elos else None,
         },
+    }
+
+
+def _totals(games: list[dict[str, Any]], prefix: str) -> dict[str, Any]:
+    return {
+        "games_analyzed": len(games),
+        **{k: sum(g[prefix + k] or 0 for g in games)
+           for k in ("moves_scored", "inaccuracies", "mistakes", "blunders", "misses")},
     }
 
 
