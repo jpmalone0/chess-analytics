@@ -1280,6 +1280,7 @@ function applyOpeningFilter(op, filterColor = currentOpeningFilterColor) {
     gamesPage = 0;
     loadColorAnalytics(currentUsername, currentOpeningColor, op, currentOpeningFilterColor);
     loadGames(currentUsername);
+    loadMoveQuality(currentUsername);
     if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
 }
 
@@ -1293,6 +1294,7 @@ function applyOpeningColor(color) {
     gamesPage = 0;
     loadColorAnalytics(currentUsername, color, '', '');
     loadGames(currentUsername);
+    loadMoveQuality(currentUsername);
     if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
 }
 
