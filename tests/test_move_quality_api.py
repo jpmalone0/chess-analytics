@@ -172,3 +172,30 @@ def test_the_filter_bar_reaches_the_counts(client, db, sidecar):
     assert client.get(
         "/api/players/me/analytics/move-quality?time_class=blitz"
     ).json()["totals"]["games_analyzed"] == 0
+
+
+def test_the_opponent_mirror_totals_the_other_seat(client, db, sidecar):
+    """`me` blunders at ply 1; `them` blunders it back at ply 2, a Miss."""
+    me = make_player(db, "me")
+    them = make_player(db, "them")
+    g = make_game(db, me, them, 1900, 1850)
+    db.commit()
+    seed_evals(sidecar, [(0, 0), (1, -310), (2, 310)], game_id=g.game_id)
+
+    body = client.get("/api/players/me/analytics/move-quality").json()
+    assert body["totals"]["blunders"] == 1
+    assert body["totals"]["misses"] == 0
+    opp = body["opponents"]
+    assert opp["games_analyzed"] == 1
+    assert opp["moves_scored"] == 1
+    assert opp["blunders"] == 1
+    assert opp["misses"] == 1
+    assert opp["avg_elo"] == 1850
+
+
+def test_the_empty_result_carries_an_empty_mirror(client, db, sidecar):
+    make_player(db, "me")
+    db.commit()
+    opp = client.get("/api/players/me/analytics/move-quality").json()["opponents"]
+    assert opp["games_analyzed"] == 0
+    assert opp["avg_elo"] is None
