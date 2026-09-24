@@ -32,9 +32,9 @@ async function loadMoveQuality(username) {
             fetchJSON(
                 `/api/players/${username}/analytics/move-quality`
                 + colorParams(queryColor(), currentOpeningFilter)),
-            mqFetchFresh(
+            mqFetchFresh(mqBaseUrl = (
                 `/api/players/${username}/analytics/move-quality/baseline`
-                + baselineParams(queryColor(), currentOpeningFilter))
+                + baselineParams(queryColor(), currentOpeningFilter)))
                 .catch(() => null),
         ]);
     } catch {
@@ -119,6 +119,7 @@ async function toggleMqDrill(gameId) {
 
 let mqPollTimer = null;
 let mqActiveCount = 0;
+let mqBaseUrl = null;   // the baseline the section last loaded, re-polled for progress
 
 function renderMqPopulation(base) {
     const el = document.getElementById('mq-population');
@@ -176,8 +177,13 @@ function mqPoll() {
         renderMqJobs(active);
         const finished = active.length < mqActiveCount;
         mqActiveCount = active.length;
-        if (finished || !active.length) loadMoveQuality(currentUsername);
         if (!active.length) { clearInterval(mqPollTimer); mqPollTimer = null; }
+        if (finished || !active.length) {
+            loadMoveQuality(currentUsername);
+        } else if (mqBaseUrl) {
+            // The band line carries the running job's count; redraw it.
+            try { renderMqPopulation(await mqFetchFresh(mqBaseUrl)); } catch { /* next tick */ }
+        }
     }, 5000);
 }
 
