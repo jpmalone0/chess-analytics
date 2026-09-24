@@ -140,7 +140,7 @@ function renderMqPopulation(base) {
             ? '<span class="mq-job">Queued</span>'
             : `<span class="mq-job">Analyzing ${job.games_done}/${total}</span>`;
     } else {
-        action = `<button class="btn-sm" onclick="startMqPopulation(this)">
+        action = `<button class="btn-sm" onclick="startMqPopulation(this, ${base.default_games})">
             Analyze ${base.default_games} more (~${Math.round(base.estimated_minutes)} min)</button>`;
     }
     el.innerHTML = `
@@ -149,13 +149,13 @@ function renderMqPopulation(base) {
     if (job) mqPoll();
 }
 
-async function startMqPopulation(btn) {
+async function startMqPopulation(btn, games) {
     btn.disabled = true;
     const q = baselineParams(queryColor(), currentOpeningFilter);
     try {
         await mqFetchFresh(
             `/api/players/${currentUsername}/analytics/move-quality/population`
-            + q + (q ? '&' : '?') + 'games=600',
+            + q + (q ? '&' : '?') + `games=${games}`,
             { method: 'POST' });
     } catch (e) {
         btn.disabled = false;
