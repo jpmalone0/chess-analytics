@@ -32,10 +32,17 @@ if os.path.isdir(STATIC_DIR):
 async def no_store_api_responses(request: Request, call_next):
     """Analytics answers change whenever the database grows, so a browser
     holding a heuristically-cached copy will show stale player counts against a
-    freshly-loaded dropdown. Nothing under /api is cacheable."""
+    freshly-loaded dropdown. Nothing under /api is cacheable.
+
+    The page itself must revalidate too. Its ?v= query strings are what bust
+    the script and stylesheet caches, and a heuristically-cached index.html
+    keeps requesting the old versions -- which has twice hidden a merged
+    feature behind a reload."""
     response = await call_next(request)
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
+    elif request.url.path == "/":
+        response.headers["Cache-Control"] = "no-cache"
     return response
 
 
