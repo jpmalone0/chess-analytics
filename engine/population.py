@@ -30,7 +30,7 @@ from engine.models import PopulationJob
 # per engine-minute.
 POPULATION_PER_PLAYER_CAP = 5
 
-DEFAULT_TARGET_GAMES = 600
+DEFAULT_TARGET_GAMES = 300
 MAX_TARGET_GAMES = 3000
 
 ACTIVE = ("queued", "running")
