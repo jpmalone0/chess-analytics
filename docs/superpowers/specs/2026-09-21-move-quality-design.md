@@ -280,8 +280,9 @@ than a modification of it—`Scope` is username-keyed through
 
 - Select **player-games**: a side whose Elo falls in the band, in the requested
   time class, with >= 2 stored moves.
-- Exclude games where the in-band side is the player being viewed, mirroring
-  `baselines._player_filter_sql`.
+- Exclude every game the player being viewed is in, not just their seat. The
+  opponent mirror already covers those games, and keeping them would make the
+  population partly a sample of people playing the viewed player.
 - Cap 5 games per player. The corpus averages ~2 anyway, so a tight cap costs
   almost nothing and buys breadth per engine-minute.
 - Drop games already complete under this run via the existing `unanalyzed()`.
@@ -320,9 +321,14 @@ filters bar works without special-casing.
 | `GET /api/players/{u}/analytics/move-quality` | per-game rows plus totals |
 | `GET /api/players/{u}/analytics/move-quality/baseline` | pooled band rate |
 | `GET /api/games/{game_id}/move-quality` | the drill list |
-| `POST /api/population/analyze` | starts a job, returns `job_id` |
-| `GET /api/population/jobs/{job_id}` | progress |
-| `GET /api/population/coverage` | analyzed games per band, so the button knows whether to offer itself |
+| `POST /api/players/{u}/analytics/move-quality/population` | queues a job for the Compare-to band, or returns the one in flight |
+| `GET /api/population/jobs` | active jobs, then recent finished ones |
+
+As built, the band comes from the filter bar's Compare-to selector rather
+than always from the player's median, and presses queue: jobs run one at a
+time, because one job already uses every core but one. The baseline route
+carries the band's analyzed coverage and any job in flight, which is what a
+separate coverage route would have returned.
 
 ---
 

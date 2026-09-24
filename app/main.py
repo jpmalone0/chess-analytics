@@ -16,6 +16,9 @@ from sqlalchemy.orm import Session  # noqa: F401 — used via Depends(get_db)
 from app import baselines, crud, schemas
 from app import move_quality as mq
 from app.database import get_db, init_db
+from engine.analyze import DEFAULT_DEPTH, default_workers
+from engine.cli import estimated_minutes
+from engine.population import DEFAULT_TARGET_GAMES, MAX_TARGET_GAMES, JobRunner
 
 app = FastAPI(title="Chess Analytics", version="1.0.0")
 
@@ -412,6 +415,123 @@ def move_quality_by_game(
 @app.get("/api/games/{game_id}/move-quality")
 def game_move_quality(game_id: int, db: Session = Depends(get_db)):
     return mq.game_drill_list(db, game_id)
+
+
+# ── Move-quality population ──────────────────────────────
+
+_population_runner: Optional[JobRunner] = None
+
+
+def get_population_runner() -> JobRunner:
+    """The process's one job runner, built on first use.
+
+    Lazy so that importing the app -- which every test does -- never opens the
+    real sidecar. Tests replace this dependency with a runner over temporary
+    files.
+    """
+    global _population_runner
+    if _population_runner is None:
+        from contextlib import contextmanager
+
+        from app.database import engine as canonical
+        from engine import db as engine_db
+        from engine.analyze import RunConfig, analyze_games, get_or_create_run
+        from engine.models import PopulationJob
+
+        PopulationJob.__table__.create(bind=engine_db.engine, checkfirst=True)
+
+        @contextmanager
+        def connect():
+            with canonical.connect() as conn:
+                engine_db.attach_engine_db(conn)
+                yield conn
+
+        runner = JobRunner(
+            sessions=engine_db.SessionLocal,
+            connect=connect,
+            run_id=lambda: get_or_create_run(RunConfig()),
+            analyze=lambda ids, run_id, progress: analyze_games(
+                ids, RunConfig(), run_id=run_id, progress=progress),
+        )
+        runner.recover_interrupted()
+        _population_runner = runner
+    return _population_runner
+
+
+def _mq_band_or_404(db, username, elo_band, time_class, start_date, end_date,
+                    player_color, opening_names, tz):
+    player = crud.get_player(db, username)
+    if not player:
+        raise HTTPException(404, f"Player '{username}' not found")
+    band = mq.resolve_mq_band(
+        db, player.player_id, elo_band, time_class, start_date, end_date,
+        player_color, opening_names, tz,
+    )
+    return player, band
+
+
+@app.get("/api/players/{username}/analytics/move-quality/baseline")
+def move_quality_baseline(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    tz: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    elo_band: Optional[str] = None,
+    db: Session = Depends(get_db),
+    runner: JobRunner = Depends(get_population_runner),
+):
+    """The pooled rate for the Compare-to band, plus what pressing would cost."""
+    player, band = _mq_band_or_404(
+        db, username, elo_band, time_class, start_date, end_date,
+        player_color, opening_names, tz)
+    if band is None:
+        return {"band": None}
+    out = mq.band_move_quality(
+        db, band, player.player_id, player_color, opening_names)
+    out["job"] = runner.active_job(band["time_class"], band["elo_lo"], band["elo_hi"])
+    out["default_games"] = DEFAULT_TARGET_GAMES
+    out["estimated_minutes"] = round(
+        estimated_minutes(DEFAULT_TARGET_GAMES, default_workers(), DEFAULT_DEPTH), 1)
+    return out
+
+
+@app.post("/api/players/{username}/analytics/move-quality/population")
+def analyze_population(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    tz: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    elo_band: Optional[str] = None,
+    games: int = Query(DEFAULT_TARGET_GAMES, ge=1, le=MAX_TARGET_GAMES),
+    db: Session = Depends(get_db),
+    runner: JobRunner = Depends(get_population_runner),
+):
+    """Queue an engine job for the Compare-to band, or return the one in flight.
+
+    The band is pinned here, at press time: the date range moves a derived
+    band by up to 500 points, and coverage must not move with it.
+    """
+    player, band = _mq_band_or_404(
+        db, username, elo_band, time_class, start_date, end_date,
+        player_color, opening_names, tz)
+    if band is None:
+        raise HTTPException(422, "No band to analyze under these filters")
+    job, created = runner.enqueue(
+        time_class=band["time_class"], elo_lo=band["elo_lo"], elo_hi=band["elo_hi"],
+        target_games=games, exclude_player_id=player.player_id,
+    )
+    return {"job": job, "created": created}
+
+
+@app.get("/api/population/jobs")
+def population_jobs(runner: JobRunner = Depends(get_population_runner)):
+    return {"jobs": runner.jobs()}
 
 
 # ── Population Baselines ─────────────────────────────────

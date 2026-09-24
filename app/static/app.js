@@ -243,6 +243,7 @@ async function refreshBaselineOverlays() {
 
 async function onBaselineBandChange() {
     selectedBaselineBand = document.getElementById('baseline-band').value;
+    loadMoveQuality(currentUsername);
     await refreshBaselineOverlays();
 }
 
