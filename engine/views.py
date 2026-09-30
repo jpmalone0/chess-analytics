@@ -352,6 +352,8 @@ GROUP BY run_id, game_id, color
 # entry rather than a new hardcoded function.
 _ADDED_ENGINE_COLUMNS = {
     "game_coverage": {"time_class": "VARCHAR(20)"},
+    # Runs recorded before this column existed searched one line each.
+    "analysis_runs": {"multipv": "INTEGER NOT NULL DEFAULT 1"},
 }
 
 
