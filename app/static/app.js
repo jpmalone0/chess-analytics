@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    Chess Analytics — Frontend JS
    ═══════════════════════════════════════════════════════════ */
-/* global loadStylePanel, loadMoveQuality */
+/* global loadStylePanel, loadMoveQuality, loadScorecard */
 
 const API = '';
 let currentUsername = '';
@@ -244,6 +244,7 @@ async function refreshBaselineOverlays() {
 async function onBaselineBandChange() {
     selectedBaselineBand = document.getElementById('baseline-band').value;
     loadMoveQuality(currentUsername);
+    loadScorecard(currentUsername);
     await refreshBaselineOverlays();
 }
 
@@ -593,6 +594,7 @@ async function refreshAll() {
         loadGames(currentUsername),
         initRepertoireTabs(currentUsername),
         loadMoveQuality(currentUsername),
+        loadScorecard(currentUsername),
     ];
     if (compareMode && currentCompareUsername) {
         promises.push(loadCompareStats(currentCompareUsername));
@@ -1282,6 +1284,7 @@ function applyOpeningFilter(op, filterColor = currentOpeningFilterColor) {
     loadColorAnalytics(currentUsername, currentOpeningColor, op, currentOpeningFilterColor);
     loadGames(currentUsername);
     loadMoveQuality(currentUsername);
+    loadScorecard(currentUsername);
     if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
 }
 
@@ -1296,6 +1299,7 @@ function applyOpeningColor(color) {
     loadColorAnalytics(currentUsername, color, '', '');
     loadGames(currentUsername);
     loadMoveQuality(currentUsername);
+    loadScorecard(currentUsername);
     if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
 }
 

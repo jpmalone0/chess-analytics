@@ -1825,3 +1825,106 @@ body.compare-mode #stat-winrate     { order: 8; }
     font-size: 0.75rem;
     color: var(--text-secondary, #8b9ab8);
 }
+
+/* ── Scorecard ─────────────────────────────────────────── */
+
+.sc-warning {
+    display: inline-block;
+    margin-left: 0.35rem;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    line-height: 1.1rem;
+    text-align: center;
+    vertical-align: middle;
+    color: var(--text-muted);
+    border: 1px solid var(--border-light);
+    cursor: help;
+}
+
+.sc-radar {
+    max-width: 420px;
+    margin: 0 auto 1rem;
+}
+
+.sc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.sc-table th,
+.sc-table td {
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.sc-table th {
+    font-weight: 500;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.sc-range-head {
+    text-align: center !important;
+}
+
+.sc-label {
+    color: var(--text-primary);
+}
+
+.sc-muted {
+    color: var(--text-muted);
+}
+
+.sc-range {
+    width: 30%;
+    min-width: 120px;
+}
+
+.sc-track {
+    position: relative;
+    height: 14px;
+}
+
+/* Lower-is-better rows are mirrored so "better" is always to the right. */
+.sc-flip .sc-track {
+    transform: scaleX(-1);
+}
+
+.sc-zero {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    border-left: 1px dashed var(--border-light);
+}
+
+.sc-whisker {
+    position: absolute;
+    top: 6px;
+    height: 2px;
+    background: currentColor;
+}
+
+.sc-dot {
+    position: absolute;
+    top: 3px;
+    width: 8px;
+    height: 8px;
+    margin-left: -4px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.sc-good { color: var(--green); }
+.sc-bad { color: var(--red); }
+.sc-noise { color: var(--text-muted); }
+
+@media (max-width: 700px) {
+    .sc-table { font-size: 0.75rem; }
+    .sc-table td:nth-child(5) .sc-muted { display: none; }
+}
