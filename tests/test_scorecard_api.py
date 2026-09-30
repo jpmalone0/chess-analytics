@@ -98,3 +98,19 @@ def test_an_unreplayable_game_is_skipped_not_fatal(client, db, sidecar):
     r = client.get("/api/players/me/analytics/scorecard")
     assert r.status_code == 200
     assert r.json()["games"] == 0
+
+
+def test_clocks_reach_the_scorecard(db, sidecar):
+    """Time management reads each move's clock."""
+    me, them = make_player(db, "me"), make_player(db, "them")
+    g = make_game(db, me, them, 1900, 1900, white_move_times=[5.0, 5.0],
+                  black_move_times=[5.0], white_clocks=[595.0, 590.0],
+                  black_clocks=[595.0])
+    for m in db.query(Move).filter(Move.game_id == g.game_id):
+        m.move_san = ["e4", "e5", "Nf3"][m.ply - 1]
+    db.commit()
+    seed_evals(sidecar, [(p, 0) for p in range(4)], game_id=g.game_id)
+    engine_db.attach_engine_db(db.connection())
+
+    inputs = scorecard_module._load_inputs(db, [(g.game_id, 1)])
+    assert inputs[g.game_id].clocks == [595.0, 595.0, 590.0]

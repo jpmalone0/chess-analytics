@@ -62,23 +62,54 @@ class TestPhaseSums:
         assert sides["black"].middlegame == 0
 
 
-class TestFlag:
-    def test_loser_on_time_loses_their_expected_score(self):
-        g = game(["e4", "e5"], flat(2, 1000), result="0-1",
-                 termination="x won on time")
-        sides = game_sides(g, K, division=Division(None, None))
-        # White flagged while +1000: the whole expected score is lost.
-        assert sides["white"].flag_loss == pytest.approx(1 / (1 + 2.718281828 ** (-1000 / K)))
-        assert sides["black"].flag_loss == 0
+class TestClock:
+    """At each of your moves: your clock after it against your opponent's
+    clock after their last move."""
 
-    def test_timeout_vs_insufficient_counts_the_part_above_half(self):
-        # Two plies played, so White was to move when the flag fell.
-        g = game(["e4", "e5"], flat(2, 1000), result="1/2-1/2",
-                 termination="Game drawn by timeout vs insufficient material")
-        sides = game_sides(g, K, division=Division(None, None))
-        wp = 1 / (1 + 2.718281828 ** (-1000 / K))
-        assert sides["white"].flag_loss == pytest.approx(wp - 0.5)
-        assert sides["black"].flag_loss == 0
+    SANS = ["e4", "e5", "Nf3", "Nc6", "Bc4"]
+
+    def sides(self, clocks):
+        g = GameInput(game_id=1, sans=self.SANS, evals=flat(5), clocks=clocks)
+        return game_sides(g, K, division=Division(None, None))
+
+    def test_ahead_even_and_behind(self):
+        # White's first move has no opponent clock yet, so it is skipped.
+        # Black 500 vs 590: behind (90s apart, more than 10% of 590).
+        # White 580 vs 500: ahead.  Black 560 vs 580: even.  White 570 vs 560: even.
+        s = self.sides([590, 500, 580, 560, 570])
+        w, b = s["white"], s["black"]
+        assert (w.clock_ahead, w.clock_even, w.clock_behind) == (1, 1, 0)
+        assert (b.clock_ahead, b.clock_even, b.clock_behind) == (0, 1, 1)
+
+    def test_even_scales_with_the_clock(self):
+        """30s against 20s is not even; 300s against 290s is."""
+        tight = self.sides([30, 20, 30, 20, 30])["white"]
+        loose = self.sides([300, 290, 300, 290, 300])["white"]
+        assert tight.clock_ahead == 2
+        assert loose.clock_even == 2
+
+    def test_moves_without_a_clock_are_left_out(self):
+        s = self.sides([None, None, None, None, None])
+        assert s["white"].clock_ahead + s["white"].clock_even + s["white"].clock_behind == 0
+
+    def test_the_row_scores_even_as_half(self):
+        s = SideFacts(clock_ahead=6, clock_even=2, clock_behind=2)
+        assert unit_counts("time", s) == (7.0, 10.0)
+        assert calibration_counts("time", s) == (7.0, 10.0)
+
+    def test_time_management_has_no_elo(self):
+        xs = [600 + 200 * (i % 8) for i in range(200)]
+        fit = fit_band(xs, [0.5 + 0.0001 * x for x in xs], [10] * 200)
+        sides = [SideFacts(clock_ahead=6, clock_even=2, clock_behind=2)] * 40
+        row = {r["key"]: r for r in compare_to_band(sides, {"time": fit}, 1500)}["time"]
+        assert row["band"] is not None
+        assert row["elo"] is None and row["elo_lo"] is None
+        assert row["has_elo"] is False
+
+    def test_the_row_carries_the_breakdown(self):
+        sides = [SideFacts(clock_ahead=6, clock_even=2, clock_behind=2)] * 3
+        row = {r["key"]: r for r in compare_to_band(sides, {}, 1500)}["time"]
+        assert row["breakdown"] == pytest.approx({"ahead": 0.6, "even": 0.2, "behind": 0.2})
 
 
 class TestSwings:

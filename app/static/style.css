@@ -1884,6 +1884,11 @@ body.compare-mode #stat-winrate     { order: 8; }
     color: var(--text-muted);
 }
 
+.sc-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
 .sc-range {
     width: 18%;
     min-width: 100px;

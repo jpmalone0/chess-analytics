@@ -27,7 +27,7 @@ function scFmt(row, v, signed, bare) {
     if (row.unit === 'per_move') {
         return minus(sign + (100 * v).toFixed(2)) + (bare ? '' : ' /100 moves');
     }
-    return minus(sign + v.toFixed(3)) + (bare ? '' : ' lost/game');
+    return minus(sign + v.toFixed(3)) + (bare ? '' : ' pts/game');
 }
 
 /** "any" when the range spans the whole scale: the slope could be zero, so
@@ -36,6 +36,14 @@ function scEloRange(row) {
     if (row.elo_lo === null) return '—';
     if (row.elo_lo <= 0 && row.elo_hi >= 3000) return 'any';
     return `${row.elo_lo}–${row.elo_hi}`;
+}
+
+/** Time management's ahead / even / behind split, under its label. */
+function scBreakdown(row) {
+    const b = row.breakdown;
+    if (!b) return '';
+    const pct = (v) => `${Math.round(100 * v)}%`;
+    return `<div class="sc-sub">${pct(b.ahead)} ahead · ${pct(b.even)} even · ${pct(b.behind)} behind</div>`;
 }
 
 function scBetter(row) {
@@ -151,7 +159,8 @@ async function loadScorecard(username) {
     label.textContent = `${data.games} analyzed games · average rating ${data.own_avg_elo}`
         + ` · band from ${data.band_games} other player-games`;
 
-    drawScorecardRadar(data.rows, data.own_avg_elo);
+    // Rows without a meaningful Elo (time management) stay in the table only.
+    drawScorecardRadar(data.rows.filter((r) => r.has_elo), data.own_avg_elo);
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
@@ -160,7 +169,7 @@ async function loadScorecard(username) {
         </tr></thead>
         <tbody>${data.rows.map((r) => `
             <tr>
-                <td class="sc-label">${r.label}</td>
+                <td class="sc-label">${r.label}${scBreakdown(r)}</td>
                 <td>${r.elo === null ? '—' : r.elo} <span class="sc-muted">${r.elo === null ? '' : `(${scEloRange(r)})`}</span></td>
                 <td>${scFmt(r, r.you)}</td>
                 <td class="sc-muted">${scFmt(r, r.band)}</td>

@@ -33,6 +33,11 @@ RESOURCE_WP = 0.25
 TACTIC_GAP_WP = 0.10
 TACTIC_FOUND_WP = 0.05
 
+# Two clocks are even when they are within this share of the larger one, so
+# "even" tightens as the clocks run down: 5:00 vs 4:35 is even, 0:30 vs 0:20
+# is not.
+CLOCK_EVEN_SHARE = 0.10
+
 
 # Fewer analyzed games than this and the section shows a "!".
 SMALL_SAMPLE_GAMES = 300
@@ -127,13 +132,15 @@ class GameInput:
     pvs: dict[int, list[tuple[str, Optional[int], Optional[int]]]] = field(default_factory=dict)
     result: str = "1/2-1/2"
     termination: str = ""
+    # Seconds left on the mover's clock after each move, by move index; None
+    # where the clock is missing.
+    clocks: list[Optional[float]] = field(default_factory=list)
 
 
 class SideFacts(NamedTuple):
     opening: float = 0.0
     middlegame: float = 0.0
     endgame: float = 0.0
-    flag_loss: float = 0.0
     reached: bool = False
     won: bool = False
     fell: bool = False
@@ -144,6 +151,10 @@ class SideFacts(NamedTuple):
     opening_moves: int = 0
     middlegame_moves: int = 0
     endgame_moves: int = 0
+    # Moves made ahead of, even with, or behind the opponent on the clock.
+    clock_ahead: int = 0
+    clock_even: int = 0
+    clock_behind: int = 0
 
 
 def _white_cp(cp: Optional[int], mate_in: Optional[int], index: int) -> Optional[float]:
@@ -179,17 +190,25 @@ def _phase(index: int, division: Division) -> str:
     return "middlegame"
 
 
-def _flag_loss(game: GameInput, color: str, final_wp: Optional[float]) -> float:
-    if final_wp is None:
-        return 0.0
-    term = game.termination.lower()
-    if "won on time" in term:
-        loser = "black" if game.result == "1-0" else "white" if game.result == "0-1" else None
-        return final_wp if loser == color else 0.0
-    if "timeout vs insufficient material" in term:
-        flagged = _mover(len(game.sans))
-        return max(0.0, final_wp - 0.5) if flagged == color else 0.0
-    return 0.0
+def _clock_counts(game: GameInput) -> dict[str, list[int]]:
+    """Each side's [ahead, even, behind] move counts.
+
+    At each move, the mover's clock after it against the opponent's clock after
+    their previous move. White's first move has nothing to compare with.
+    """
+    out = {"white": [0, 0, 0], "black": [0, 0, 0]}
+    for i in range(1, len(game.clocks)):
+        mine, theirs = game.clocks[i], game.clocks[i - 1]
+        if mine is None or theirs is None:
+            continue
+        counts = out[_mover(i)]
+        if abs(mine - theirs) <= CLOCK_EVEN_SHARE * max(mine, theirs):
+            counts[1] += 1
+        elif mine > theirs:
+            counts[0] += 1
+        else:
+            counts[2] += 1
+    return out
 
 
 def _boards(sans: Sequence[str]) -> tuple[list[chess.Board], list[chess.Move]]:
@@ -274,23 +293,23 @@ def game_sides(game: GameInput, k: float,
         elif loss >= BLUNDER_WP:
             side["blunders"] += 1
 
-    final = cps[-1] if cps else None
+    clock = _clock_counts(game)
     out = {}
     for color in ("white", "black"):
         won = game.result == ("1-0" if color == "white" else "0-1")
         drew = game.result == "1/2-1/2"
-        final_wp = _wp(final, color, k) if final is not None else None
         side = acc[color]
         out[color] = SideFacts(
             opening=side["opening"], middlegame=side["middlegame"],
             endgame=side["endgame"],
-            flag_loss=_flag_loss(game, color, final_wp),
             reached=side["reached"], won=won and side["reached"],
             fell=side["fell"], saved=(won or drew) and side["fell"],
             chances=side["chances"], found=side["found"], blunders=side["blunders"],
             opening_moves=side["opening_moves"],
             middlegame_moves=side["middlegame_moves"],
             endgame_moves=side["endgame_moves"],
+            clock_ahead=clock[color][0], clock_even=clock[color][1],
+            clock_behind=clock[color][2],
         )
     return out
 
@@ -300,15 +319,19 @@ def game_sides(game: GameInput, k: float,
 class Dimension(NamedTuple):
     key: str
     label: str
-    unit: str            # "points" | "percent" | "per_game"
+    unit: str
     higher_is_better: bool
+    # False where a rating equivalent means nothing: clock share averages about
+    # 50% at every rating in rating-matched games, and a beginner can have a
+    # perfect clock.
+    has_elo: bool = True
 
 
 DIMENSIONS = (
     Dimension("opening", "Opening", "points_per_move", True),
     Dimension("middlegame", "Middlegame", "points_per_move", True),
     Dimension("endgame", "Endgame", "points_per_move", True),
-    Dimension("time", "Time management", "points", False),
+    Dimension("time", "Time management", "percent", True, has_elo=False),
     Dimension("advantage", "Advantage capitalization", "percent", True),
     Dimension("resourcefulness", "Resourcefulness", "percent", True),
     Dimension("tactics", "Tactics found", "percent", True),
@@ -324,7 +347,9 @@ def unit_counts(key: str, s: SideFacts) -> tuple[float, float]:
     if key in ("opening", "middlegame", "endgame"):
         return getattr(s, key), 1.0
     if key == "time":
-        return s.flag_loss, 1.0
+        # Even counts half, as a draw does: 50% is level with your opponents.
+        return (s.clock_ahead + 0.5 * s.clock_even,
+                float(s.clock_ahead + s.clock_even + s.clock_behind))
     if key == "advantage":
         return float(s.won), float(s.reached)
     if key == "resourcefulness":
@@ -469,15 +494,22 @@ def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
                      "higher_is_better": dim.higher_is_better, "n": float(den),
                      "you": None, "band": None, "diff": None, "lo": None, "hi": None,
                      "verdict": None, "elo": None, "elo_lo": None, "elo_hi": None,
-                     "band_games": fit.n if fit else None}
+                     "has_elo": dim.has_elo, "band_games": fit.n if fit else None}
+        if dim.key == "time":
+            moves = [sum(getattr(s, f"clock_{c}") for s in sides)
+                     for c in ("ahead", "even", "behind")]
+            total = sum(moves)
+            row["breakdown"] = ({c: n / total for c, n in zip(("ahead", "even", "behind"), moves)}
+                                if total else None)
         if len(sides) and den > 0:
             you, var_you = ratio_and_variance(counts)
             row["you"] = you
-            if fit is not None:
+            if fit is not None and dim.has_elo:
                 elo = fit.elo_for(you)
                 row["elo"] = round(elo) if elo is not None else None
                 elo_lo, elo_hi = elo_range(you, var_you, fit)
                 row["elo_lo"], row["elo_hi"] = round(elo_lo), round(elo_hi)
+            if fit is not None:
                 band = fit.at(rating)
                 se = math.sqrt(var_you + fit.se_at(rating) ** 2)
                 diff = you - band

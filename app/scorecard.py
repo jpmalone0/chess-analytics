@@ -43,9 +43,12 @@ def _load_inputs(db: Session, keys: list[tuple[int, int]]) -> dict[int, sc.GameI
     games = {r.game_id: r for r in db.execute(text(
         f"SELECT game_id, result, termination FROM games WHERE game_id IN ({ids})"))}
     sans: dict[int, list[str]] = {g: [] for g, _ in keys}
+    clocks: dict[int, list[Optional[float]]] = {g: [] for g, _ in keys}
     for r in db.execute(text(
-            f"SELECT game_id, move_san FROM moves WHERE game_id IN ({ids}) ORDER BY game_id, ply")):
+            f"SELECT game_id, move_san, clock_seconds FROM moves "
+            f"WHERE game_id IN ({ids}) ORDER BY game_id, ply")):
         sans[r.game_id].append(r.move_san)
+        clocks[r.game_id].append(r.clock_seconds)
     evals: dict[int, dict[int, tuple]] = {g: {} for g, _ in keys}
     for r in db.execute(text(
             f"SELECT run_id, game_id, ply, cp, mate_in FROM engine.position_evals "
@@ -66,6 +69,7 @@ def _load_inputs(db: Session, keys: list[tuple[int, int]]) -> dict[int, sc.GameI
             evals=[evals[gid].get(p, (None, None)) for p in range(n + 1)],
             pvs=pvs[gid], result=games[gid].result,
             termination=games[gid].termination or "",
+            clocks=clocks[gid],
         )
     return out
 

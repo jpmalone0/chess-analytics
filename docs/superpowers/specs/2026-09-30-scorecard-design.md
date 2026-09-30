@@ -157,3 +157,27 @@ can be trusted rather than a pass/fail mark.
 On the same data: Opening 2132 (1913–2456), Middlegame 1494 (744–2044),
 Blunders 1864 (1551–2262); Endgame, Time, Advantage cap., Resourcefulness and
 Tactics found span the whole scale.
+
+## Revision: time management is clock share, with no Elo
+
+**The measure.** At each of your moves, your clock after it against your
+opponent's clock after their last move: ahead, even, or behind. Two clocks are
+even within 10% of the larger one, so "even" tightens as the clocks run down.
+Score = % ahead + ½ × % even, so 50% is level. Flags are ignored for now
+(Jonathan's call). No Elo, and the row is off the radar: anyone can keep pace,
+and in rating-matched games the band sits near 50% at every rating.
+
+**Tried and set aside (stash: "time allocation").**
+- *Time allocation*: time on each move against a budget divided by engine
+  difficulty (floor + √ of the best-vs-second gap, later also the third). The
+  band line fell with rating (t ≈ −4.7). Scoring players' own times shuffled
+  onto other moves gave nearly the same score at every rating, so the metric
+  measured pacing shape, not allocation. Players at every rating beat random by
+  only about 1 point.
+- *Time on critical moves vs ordinary ones, against an elite baseline*: other
+  players sat near 1× at every rating. Magnus, over 51 rapid games, spends 0.53×
+  on engine-critical moves (his opponents, averaging 2682, 0.64×). The engine's
+  high-stakes moves are the ones strong players see instantly, so an elite
+  baseline would tell a 1900 to halve their time exactly where they need it.
+- Shared lesson: engine stakes measure what is objectively at stake, not what is
+  hard for the player.

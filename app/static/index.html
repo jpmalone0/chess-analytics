@@ -12,7 +12,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/static/style.css?v=44">
+    <link rel="stylesheet" href="/static/style.css?v=45">
 </head>
 
 <body>
@@ -511,8 +511,9 @@
                     the table, for its 95% range; "any" means too few games stand behind that line
                     to say how it changes with rating. Rows compare
                     you with that line at your rating; your opponents are left out of it,
-                    because in the same games some dimensions are mirror images. The time row
-                    leaves out resignations, abandonments and agreed or claimed draws.
+                    because in the same games some dimensions are mirror images. Time management is
+                    the share of your moves made ahead of your opponent on the clock, counting even
+                    (within 10% of the larger clock) as half; it has no Elo, since anyone can keep pace.
                 </p>
             </div>
         </section>
@@ -544,7 +545,7 @@
     <script src="/static/app.js?v=83"></script>
     <script src="/static/style-panel.js?v=9"></script>
     <script src="/static/move-quality.js?v=5"></script>
-    <script src="/static/scorecard.js?v=10"></script>
+    <script src="/static/scorecard.js?v=11"></script>
 </body>
 
 </html>
