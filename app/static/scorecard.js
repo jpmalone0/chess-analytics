@@ -4,8 +4,8 @@
  * rating; your opponents are left out of it, because against the same games
  * some dimensions are mirror images of each other. The radar shows each
  * dimension as an Elo (the rating whose players typically play that way),
- * with your actual rating as a dashed ring. A spoke whose line has no
- * trustworthy slope is marked rather than guessed. */
+ * with your average rating as a dashed ring. A spoke whose line does not
+ * yet clearly rise with rating is drawn hollow and marked "?". */
 /* global fetchJSON, colorParams, queryColor, currentOpeningFilter */
 
 let scorecardChart = null;
@@ -58,16 +58,17 @@ function drawScorecardRadar(rows, rating) {
     scorecardChart = new Chart(ctx, {
         type: 'radar',
         data: {
-            // A spoke with no Elo yet is marked, so its collapse toward the
-            // centre is not read as a rating of zero.
-            labels: rows.map((r) => (r.elo === null ? `${r.label} —` : r.label)),
+            // A spoke whose line does not yet clearly rise with rating is still
+            // drawn, but marked: its Elo can swing to either end of the scale.
+            labels: rows.map((r) => (r.elo_trusted ? r.label : `${r.label} ?`)),
             datasets: [
                 {
                     label: 'you',
                     data: rows.map((r) => r.elo),
                     borderColor: accent,
                     backgroundColor: accent + '33',
-                    pointBackgroundColor: accent,
+                    pointBackgroundColor: rows.map((r) => (r.elo_trusted ? accent : 'transparent')),
+                    pointBorderColor: accent,
                     spanGaps: false,
                 },
                 {
@@ -89,7 +90,7 @@ function drawScorecardRadar(rows, rating) {
                     grid: { color: grid },
                     angleLines: { color: grid },
                     pointLabels: {
-                        color: (c) => (rows[c.index].elo === null ? muted : text),
+                        color: (c) => (rows[c.index].elo_trusted ? text : muted),
                         font: { size: 11 },
                     },
                 },
@@ -101,7 +102,10 @@ function drawScorecardRadar(rows, rating) {
                     callbacks: {
                         label: (c) => {
                             const r = rows[c.dataIndex];
-                            return r.elo === null ? 'no Elo yet' : `plays like ${r.elo}`;
+                            if (r.elo === null) return 'no Elo';
+                            return r.elo_trusted
+                                ? `plays like ${r.elo}`
+                                : `plays like ${r.elo} (unreliable: too few games behind this line)`;
                         },
                     },
                 },

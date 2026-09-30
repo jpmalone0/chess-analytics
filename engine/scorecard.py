@@ -42,9 +42,9 @@ SMALL_SAMPLE_GAMES = 300
 # A spoke's Elo is clamped to this range.
 RATING_MIN, RATING_MAX = 0, 3000
 
-# A band line exists only with this much spread behind it. Turning a value
-# into an Elo additionally needs a slope in the expected direction and |t| of
-# at least FIT_MIN_T; comparing to the band at a rating needs only the level.
+# A band line exists only with this much spread behind it. An Elo is trusted
+# only when the slope also runs the expected way with |t| of at least
+# FIT_MIN_T; untrusted Elos are still shown, marked.
 FIT_MIN_OBS = 30
 FIT_MIN_BANDS = 3
 FIT_BAND_WIDTH = 200
@@ -376,12 +376,20 @@ class Fit(NamedTuple):
         """Standard error of the line's level at `rating`."""
         return math.sqrt(self.s2 * (1 / self.sw + (rating - self.xm) ** 2 / self.sxx))
 
-    def elo_for(self, value: float, direction: int) -> Optional[float]:
-        """The rating whose players typically produce `value`, if the slope
-        is trustworthy enough to invert."""
-        if self.b * direction <= 0 or abs(self.t) < FIT_MIN_T:
+    def elo_for(self, value: float) -> Optional[float]:
+        """The rating at which the line reaches `value`, clamped.
+
+        Computed whether or not the slope is trustworthy (see `trusted`): a
+        weak slope sends this to the ends of the range, and a slope in the
+        wrong direction reverses its meaning. Only a flat line has no answer."""
+        if self.b == 0:
             return None
         return max(RATING_MIN, min(RATING_MAX, (value - self.a) / self.b))
+
+    def trusted(self, direction: int) -> bool:
+        """The slope runs the way better play should, clearly enough to read
+        the line backwards."""
+        return self.b * direction > 0 and abs(self.t) >= FIT_MIN_T
 
 
 def fit_band(xs: Sequence[float], ys: Sequence[float], ws: Sequence[float]) -> Optional[Fit]:
@@ -430,13 +438,15 @@ def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
         row: dict = {"key": dim.key, "label": dim.label, "unit": dim.unit,
                      "higher_is_better": dim.higher_is_better, "n": float(den),
                      "you": None, "band": None, "diff": None, "lo": None, "hi": None,
-                     "verdict": None, "elo": None, "band_games": fit.n if fit else None}
+                     "verdict": None, "elo": None, "elo_trusted": False,
+                     "band_games": fit.n if fit else None}
         if n and den > 0:
             you = counts[:, 0].sum() / den
             row["you"] = float(you)
             if fit is not None:
-                elo = fit.elo_for(you, 1 if dim.higher_is_better else -1)
+                elo = fit.elo_for(you)
                 row["elo"] = round(elo) if elo is not None else None
+                row["elo_trusted"] = fit.trusted(1 if dim.higher_is_better else -1)
                 assert idx is not None
                 boot = _ratio(counts[idx, 0].sum(1), counts[idx, 1].sum(1))
                 boot = boot[~np.isnan(boot)]

@@ -142,19 +142,27 @@ class TestBandLine:
 
     def test_elo_is_the_rating_that_plays_that_way(self):
         fit = fit_band(*line())
-        assert fit.elo_for(1.5, direction=1) == pytest.approx(1500, abs=50)
+        assert fit.elo_for(1.5) == pytest.approx(1500, abs=50)
 
-    def test_wrong_direction_has_no_elo(self):
+    def test_a_clear_slope_is_trusted(self):
+        assert fit_band(*line()).trusted(direction=1)
+
+    def test_wrong_direction_still_gives_an_elo_but_not_a_trusted_one(self):
         fit = fit_band(*line())
-        assert fit.elo_for(1.5, direction=-1) is None
+        assert fit.elo_for(1.5) == pytest.approx(1500, abs=50)
+        assert not fit.trusted(direction=-1)
+
+    def test_a_weak_slope_is_not_trusted(self):
+        fit = fit_band(*line(slope=0.00002, noise=0.5))
+        assert fit is not None and not fit.trusted(direction=1)
 
     def test_a_flat_line_still_gives_the_band_value(self):
         """Comparing to the band needs only the line's level at your rating;
-        converting to an Elo needs a slope."""
+        a line with no slope at all cannot be read backwards."""
         fit = fit_band(*line(slope=0.0))
         assert fit is not None
         assert fit.at(1900) == pytest.approx(0.0, abs=0.01)
-        assert fit.elo_for(0.0, direction=1) is None
+        assert fit.elo_for(0.0) is None
 
     def test_too_few_bands_is_no_line(self):
         xs = [1800 + (i % 2) for i in range(200)]
@@ -182,6 +190,11 @@ class TestCompareToBand:
         row = self.rows([self.side(1 + i % 2) for i in range(60)], self.flat_band(0.15))["blunders"]
         assert row["band"] == pytest.approx(0.15, abs=0.001)
         assert row["verdict"] == "noise"
+
+    def test_the_row_says_whether_its_elo_is_trusted(self):
+        row = self.rows([self.side(1)] * 40, fit_band(*line(slope=-0.00001, noise=0.01)))["blunders"]
+        assert row["elo"] is not None
+        assert row["elo_trusted"] is True
 
     def test_a_consistent_gap_is_real(self):
         row = self.rows([self.side(3) for _ in range(60)], self.flat_band(0.1))["blunders"]
