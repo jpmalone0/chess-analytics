@@ -1,6 +1,10 @@
 # Scorecard: eight dimensions, scored against rating
 
 **Date:** 2026-09-30
+**Revised 2026-09-30 (Jonathan):** rows compare against the rating band, not the
+opponents, and the radar shows Elos directly instead of a 0–100 score. See
+"Revision" at the end.
+
 **Status:** approved (self-approved: Jonathan was away and delegated approval.
 The decisions below were all made with him on 2026-09-29/30; the calibration
 method and the concrete cutoffs are mine and are the parts to review first)
@@ -112,3 +116,25 @@ the calibration line at the opponents' rating instead of against the mirror.
 - Tuning the 10%/5% tactic cutoffs: they are named constants, to revisit once
   enough three-line positions exist.
 - Per-row sample thresholds.
+
+## Revision: the band, not the opponents; Elos, not scores
+
+Jonathan's call, for the reason the mirror symmetry exposed: against the
+same-game opponents, some dimensions are mirror images of each other.
+
+- **Every row compares you with the band line at your average rating**, in the
+  unit that line is fitted on (per move for the phase rows and blunders, shown
+  per 100 moves). Range: a game-level bootstrap of your value, combined in
+  quadrature with the line's standard error at your rating.
+- **The band pool drops every game you played**, both seats. Your opponents'
+  sides are your games seen from the other chair.
+- **A row needs only a line's level** (≥30 side-games, ≥3 bands), so a flat
+  line still gives a band value. **An Elo additionally needs** the slope in
+  the expected direction with |t| ≥ 2.
+- **The radar is in Elo** (0–3000), with your rating as a dashed ring, which is
+  the band's position on every spoke by definition.
+
+First result on the same data (100 of your games; the band from 84 games by
+other players): Opening real, better than the band (Elo 2132); Time management
+real, better; everything else noise at this sample. Elos: Opening 2132,
+Middlegame 1494, Blunders 1864.

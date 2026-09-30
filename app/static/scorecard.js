@@ -1,14 +1,17 @@
-/* Scorecard: eight dimensions, you against your opponents in the same games.
+/* Scorecard: eight dimensions, you against the rating band.
  *
- * The radar puts each dimension on a rating-anchored 0-100 scale (500 -> 30,
- * 2500 -> 80) so both shapes can be read against each other; the rows beneath
- * carry the real numbers, each difference with its 95% range. A spoke whose
- * calibration is not yet trustworthy is left blank rather than guessed. */
+ * The band is a line fitted over other players' analyzed games, read at your
+ * rating; your opponents are left out of it, because against the same games
+ * some dimensions are mirror images of each other. The radar shows each
+ * dimension as an Elo (the rating whose players typically play that way),
+ * with your actual rating as a dashed ring. A spoke whose line has no
+ * trustworthy slope is marked rather than guessed. */
 /* global fetchJSON, colorParams, queryColor, currentOpeningFilter */
 
 let scorecardChart = null;
 
-/** `bare` drops the unit, for the ends of a range printed after its value. */
+/** `bare` drops the unit, for the ends of a range printed after its value.
+ *  Per-move rows are shown per 100 moves, where the numbers are readable. */
 function scFmt(row, v, signed, bare) {
     if (v === null || v === undefined) return '—';
     const sign = signed && v > 0 ? '+' : '';
@@ -16,10 +19,13 @@ function scFmt(row, v, signed, bare) {
     if (row.unit === 'percent') {
         return minus(sign + (100 * v).toFixed(1)) + (bare ? '' : signed ? ' pts' : '%');
     }
-    const digits = row.unit === 'per_game' ? 2 : 3;
-    const unit = row.unit === 'per_game' ? ' /game'
-        : row.key === 'time' ? ' lost/game' : ' pts/game';
-    return minus(sign + v.toFixed(digits)) + (bare ? '' : unit);
+    if (row.unit === 'points_per_move') {
+        return minus(sign + (100 * v).toFixed(2)) + (bare ? '' : ' pts/100 moves');
+    }
+    if (row.unit === 'per_move') {
+        return minus(sign + (100 * v).toFixed(2)) + (bare ? '' : ' /100 moves');
+    }
+    return minus(sign + v.toFixed(3)) + (bare ? '' : ' lost/game');
 }
 
 function scBetter(row) {
@@ -40,7 +46,7 @@ function scRangeBar(row) {
     </div>`;
 }
 
-function drawScorecardRadar(rows) {
+function drawScorecardRadar(rows, rating) {
     const ctx = document.getElementById('scorecard-chart');
     if (scorecardChart) scorecardChart.destroy();
     const css = window.getComputedStyle(document.documentElement);
@@ -52,26 +58,25 @@ function drawScorecardRadar(rows) {
     scorecardChart = new Chart(ctx, {
         type: 'radar',
         data: {
-            // A spoke with no score yet is marked, so its collapse toward the
-            // centre is not read as a score of zero.
-            labels: rows.map((r) => (r.you_score === null ? `${r.label} —` : r.label)),
+            // A spoke with no Elo yet is marked, so its collapse toward the
+            // centre is not read as a rating of zero.
+            labels: rows.map((r) => (r.elo === null ? `${r.label} —` : r.label)),
             datasets: [
                 {
                     label: 'you',
-                    data: rows.map((r) => r.you_score),
+                    data: rows.map((r) => r.elo),
                     borderColor: accent,
                     backgroundColor: accent + '33',
                     pointBackgroundColor: accent,
                     spanGaps: false,
                 },
                 {
-                    label: 'opponents',
-                    data: rows.map((r) => r.opp_score),
+                    label: `your rating (${rating})`,
+                    data: rows.map(() => rating),
                     borderColor: muted,
                     backgroundColor: 'transparent',
                     borderDash: [4, 4],
-                    pointBackgroundColor: muted,
-                    spanGaps: false,
+                    pointRadius: 0,
                 },
             ],
         },
@@ -79,12 +84,12 @@ function drawScorecardRadar(rows) {
             animation: false,
             scales: {
                 r: {
-                    min: 0, max: 100,
-                    ticks: { display: false, stepSize: 20 },
+                    min: 0, max: 3000,
+                    ticks: { stepSize: 500, color: muted, backdropColor: 'transparent', font: { size: 9 } },
                     grid: { color: grid },
                     angleLines: { color: grid },
                     pointLabels: {
-                        color: (c) => (rows[c.index].you_score === null ? muted : text),
+                        color: (c) => (rows[c.index].elo === null ? muted : text),
                         font: { size: 11 },
                     },
                 },
@@ -92,14 +97,11 @@ function drawScorecardRadar(rows) {
             plugins: {
                 legend: { position: 'bottom', labels: { color: text, boxWidth: 12 } },
                 tooltip: {
+                    filter: (c) => c.datasetIndex === 0,
                     callbacks: {
                         label: (c) => {
                             const r = rows[c.dataIndex];
-                            const side = c.datasetIndex === 0 ? 'you' : 'opp';
-                            const score = r[side + '_score'];
-                            return score === null
-                                ? `${c.dataset.label}: not calibrated yet`
-                                : `${c.dataset.label}: ${Math.round(score)} (plays like ${r[side + '_rating']})`;
+                            return r.elo === null ? 'no Elo yet' : `plays like ${r.elo}`;
                         },
                     },
                 },
@@ -136,21 +138,21 @@ async function loadScorecard(username) {
         return;
     }
     body.classList.remove('hidden');
-    label.textContent = `${data.games} analyzed games`
-        + (data.opp_avg_elo ? ` · opponents averaged ${data.opp_avg_elo}` : '');
+    label.textContent = `${data.games} analyzed games at ${data.own_avg_elo}`
+        + ` · band from ${data.band_games} other player-games`;
 
-    drawScorecardRadar(data.rows);
+    drawScorecardRadar(data.rows, data.own_avg_elo);
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
-            <th></th><th>You</th><th>Opponents</th>
+            <th></th><th>You</th><th>Band at ${data.own_avg_elo}</th>
             <th class="sc-range-head">worse · even · better</th><th>Difference (95% range)</th><th></th>
         </tr></thead>
         <tbody>${data.rows.map((r) => `
             <tr>
                 <td class="sc-label">${r.label}</td>
                 <td>${scFmt(r, r.you)}</td>
-                <td class="sc-muted">${scFmt(r, r.opp)}</td>
+                <td class="sc-muted">${scFmt(r, r.band)}</td>
                 <td class="sc-range ${r.higher_is_better ? '' : 'sc-flip'}">${scRangeBar(r)}</td>
                 <td>${scFmt(r, r.diff, true)}
                     <span class="sc-muted">${r.lo === null ? '' : `(${scFmt(r, r.lo, true, true)} to ${scFmt(r, r.hi, true, true)})`}</span></td>

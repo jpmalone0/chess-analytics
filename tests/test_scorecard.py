@@ -4,15 +4,15 @@ import chess
 import pytest
 
 from engine.scorecard import (
+    DIMENSIONS,
     Division,
     GameInput,
     SideFacts,
     calibration_counts,
+    compare_to_band,
     divide_boards,
-    fit_line,
+    fit_band,
     game_sides,
-    rating_score,
-    summarize,
     unit_counts,
 )
 
@@ -127,60 +127,81 @@ class TestTactics:
         assert (white.chances, white.blunders) == (0, 1)
 
 
-class TestSummarize:
-    @staticmethod
-    def sides(opening, blunders):
-        return game_sides(
-            game(["e4"], [(0, None), (opening, None)]), K, division=Division(None, None)
-        )["white"]._replace(blunders=blunders)
-
-    def test_identical_sides_are_noise(self):
-        s = self.sides(0, 1)
-        rows = {r["key"]: r for r in summarize([(s, s)] * 50)}
-        assert rows["blunders"]["diff"] == 0
-        assert rows["blunders"]["verdict"] == "noise"
-
-    def test_consistent_gap_is_real(self):
-        pairs = [(self.sides(0, 0), self.sides(0, 1 + i % 2)) for i in range(60)]
-        row = {r["key"]: r for r in summarize(pairs)}["blunders"]
-        assert row["diff"] == pytest.approx(-1.5)
-        assert row["hi"] < 0 and row["verdict"] == "real"
-
-    def test_same_input_same_range(self):
-        pairs = [(self.sides(0, i % 3), self.sides(0, i % 2)) for i in range(40)]
-        a = {r["key"]: r for r in summarize(pairs)}["blunders"]
-        b = {r["key"]: r for r in summarize(pairs)}["blunders"]
-        assert (a["lo"], a["hi"]) == (b["lo"], b["hi"])
-
-    def test_rate_with_no_chances_is_none(self):
-        s = self.sides(0, 0)
-        row = {r["key"]: r for r in summarize([(s, s)] * 5)}["advantage"]
-        assert row["you"] is None and row["verdict"] is None
+def line(slope=0.001, noise=0.05, n=200):
+    xs = [600 + 200 * (i % 8) for i in range(n)]
+    ys = [slope * x + (noise if (i // 8) % 2 else -noise) for i, x in enumerate(xs)]
+    return xs, ys, [1] * n
 
 
-class TestScale:
-    def test_anchor_points(self):
-        assert rating_score(500) == pytest.approx(30)
-        assert rating_score(2500) == pytest.approx(80)
-        assert rating_score(-5000) == 0 and rating_score(9000) == 100
-
-    def test_line_recovers_slope(self):
-        xs = [600 + 200 * (i % 8) for i in range(200)]
-        ys = [0.001 * x + (0.05 if i % 2 else -0.05) for i, x in enumerate(xs)]
-        fit = fit_line(xs, ys, [1] * 200, direction=1)
+class TestBandLine:
+    def test_recovers_slope(self):
+        fit = fit_band(*line())
         assert fit is not None
         assert fit.b == pytest.approx(0.001, rel=0.05)
-        assert fit.rating_for(1.5) == pytest.approx(1500, abs=50)
+        assert fit.at(1500) == pytest.approx(1.5, abs=0.01)
 
-    def test_wrong_direction_is_no_fit(self):
-        xs = [600 + 200 * (i % 8) for i in range(200)]
-        ys = [0.001 * x for x in xs]
-        assert fit_line(xs, ys, [1] * 200, direction=-1) is None
+    def test_elo_is_the_rating_that_plays_that_way(self):
+        fit = fit_band(*line())
+        assert fit.elo_for(1.5, direction=1) == pytest.approx(1500, abs=50)
 
-    def test_too_few_bands_is_no_fit(self):
+    def test_wrong_direction_has_no_elo(self):
+        fit = fit_band(*line())
+        assert fit.elo_for(1.5, direction=-1) is None
+
+    def test_a_flat_line_still_gives_the_band_value(self):
+        """Comparing to the band needs only the line's level at your rating;
+        converting to an Elo needs a slope."""
+        fit = fit_band(*line(slope=0.0))
+        assert fit is not None
+        assert fit.at(1900) == pytest.approx(0.0, abs=0.01)
+        assert fit.elo_for(0.0, direction=1) is None
+
+    def test_too_few_bands_is_no_line(self):
         xs = [1800 + (i % 2) for i in range(200)]
-        ys = [0.001 * x + i % 3 for i, x in enumerate(xs)]
-        assert fit_line(xs, ys, [1] * 200, direction=1) is None
+        assert fit_band(xs, [0.0] * 200, [1] * 200) is None
+
+    def test_too_few_observations_is_no_line(self):
+        assert fit_band(*line(n=20)) is None
+
+
+class TestCompareToBand:
+    @staticmethod
+    def side(blunders, moves=10):
+        return SideFacts(blunders=blunders, opening_moves=moves)
+
+    @staticmethod
+    def flat_band(value):
+        xs = [600 + 200 * (i % 8) for i in range(200)]
+        return fit_band(xs, [value + (0.01 if (i // 8) % 2 else -0.01) for i in range(200)], [10] * 200)
+
+    def rows(self, sides, band):
+        fits = {d.key: band for d in DIMENSIONS}
+        return {r["key"]: r for r in compare_to_band(sides, fits, 1900)}
+
+    def test_matching_the_band_is_noise(self):
+        row = self.rows([self.side(1 + i % 2) for i in range(60)], self.flat_band(0.15))["blunders"]
+        assert row["band"] == pytest.approx(0.15, abs=0.001)
+        assert row["verdict"] == "noise"
+
+    def test_a_consistent_gap_is_real(self):
+        row = self.rows([self.side(3) for _ in range(60)], self.flat_band(0.1))["blunders"]
+        assert row["diff"] == pytest.approx(0.2, abs=0.001)
+        assert row["lo"] > 0 and row["verdict"] == "real"
+
+    def test_same_input_same_range(self):
+        sides = [self.side(i % 3) for i in range(40)]
+        a = self.rows(sides, self.flat_band(0.1))["blunders"]
+        b = self.rows(sides, self.flat_band(0.1))["blunders"]
+        assert (a["lo"], a["hi"]) == (b["lo"], b["hi"])
+
+    def test_no_band_line_means_no_comparison(self):
+        row = {r["key"]: r for r in compare_to_band([self.side(1)] * 40, {}, 1900)}["blunders"]
+        assert row["you"] == pytest.approx(0.1)
+        assert row["band"] is None and row["verdict"] is None
+
+    def test_rate_with_no_chances_is_none(self):
+        row = self.rows([self.side(0)] * 5, self.flat_band(0.5))["advantage"]
+        assert row["you"] is None and row["verdict"] is None
 
 
 class TestCalibrationUnits:
@@ -208,7 +229,7 @@ class TestCalibrationUnits:
         """A side-game with 40 moves is one observation, not 40."""
         xs = [600 + 200 * (i % 8) for i in range(60)]
         ys = [0.001 * x + (0.3 if i % 3 else -0.6) for i, x in enumerate(xs)]
-        light = fit_line(xs, ys, [1] * 60, direction=1)
-        heavy = fit_line(xs, ys, [40] * 60, direction=1)
+        light = fit_band(xs, ys, [1] * 60)
+        heavy = fit_band(xs, ys, [40] * 60)
         assert light is not None and heavy is not None
         assert heavy.t == pytest.approx(light.t)

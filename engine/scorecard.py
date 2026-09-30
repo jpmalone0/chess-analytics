@@ -39,16 +39,18 @@ BOOTSTRAP_SEED = 0
 # Fewer analyzed games than this and the section shows a "!".
 SMALL_SAMPLE_GAMES = 300
 
-# Scores put a rating equivalent on a fixed 0-100 scale: 500 -> 30, 2500 -> 80.
-SCORE_OFFSET = 700
-SCORE_PER_POINT = 40
+# A spoke's Elo is clamped to this range.
 RATING_MIN, RATING_MAX = 0, 3000
 
-# A calibration line is used only when it clears all of these.
+# A band line exists only with this much spread behind it. Turning a value
+# into an Elo additionally needs a slope in the expected direction and |t| of
+# at least FIT_MIN_T; comparing to the band at a rating needs only the level.
 FIT_MIN_OBS = 30
 FIT_MIN_BANDS = 3
 FIT_BAND_WIDTH = 200
 FIT_MIN_T = 2.0
+
+Z95 = 1.96
 
 
 class Division(NamedTuple):
@@ -307,14 +309,14 @@ class Dimension(NamedTuple):
 
 
 DIMENSIONS = (
-    Dimension("opening", "Opening", "points", True),
-    Dimension("middlegame", "Middlegame", "points", True),
-    Dimension("endgame", "Endgame", "points", True),
+    Dimension("opening", "Opening", "points_per_move", True),
+    Dimension("middlegame", "Middlegame", "points_per_move", True),
+    Dimension("endgame", "Endgame", "points_per_move", True),
     Dimension("time", "Time management", "points", False),
     Dimension("advantage", "Advantage capitalization", "percent", True),
     Dimension("resourcefulness", "Resourcefulness", "percent", True),
     Dimension("tactics", "Tactics found", "percent", True),
-    Dimension("blunders", "Blunders", "per_game", False),
+    Dimension("blunders", "Blunders", "per_move", False),
 )
 
 
@@ -354,85 +356,101 @@ def calibration_counts(key: str, s: SideFacts) -> tuple[float, float]:
     return unit_counts(key, s)
 
 
-def _ratio(num: np.ndarray, den: np.ndarray) -> np.ndarray:
-    with np.errstate(invalid="ignore", divide="ignore"):
-        return np.where(den > 0, num / np.where(den > 0, den, 1), np.nan)
-
-
-def summarize(pairs: Sequence[tuple[SideFacts, SideFacts]]) -> list[dict]:
-    """One row per dimension: you, opponents, their difference and its range."""
-    n = len(pairs)
-    rng = np.random.default_rng(BOOTSTRAP_SEED)
-    idx = rng.integers(0, n, size=(BOOTSTRAP_RESAMPLES, n)) if n else None
-    rows = []
-    for dim in DIMENSIONS:
-        you = np.array([unit_counts(dim.key, p[0]) for p in pairs]).reshape(n, 2)
-        opp = np.array([unit_counts(dim.key, p[1]) for p in pairs]).reshape(n, 2)
-        y_den, o_den = you[:, 1].sum(), opp[:, 1].sum()
-        row = {"key": dim.key, "label": dim.label, "unit": dim.unit,
-               "higher_is_better": dim.higher_is_better,
-               "you_n": float(y_den), "opp_n": float(o_den),
-               "you": None, "opp": None, "diff": None, "lo": None, "hi": None,
-               "verdict": None}
-        if n and y_den > 0 and o_den > 0:
-            y_val, o_val = you[:, 0].sum() / y_den, opp[:, 0].sum() / o_den
-            assert idx is not None
-            boot = (_ratio(you[idx, 0].sum(1), you[idx, 1].sum(1))
-                    - _ratio(opp[idx, 0].sum(1), opp[idx, 1].sum(1)))
-            boot = boot[~np.isnan(boot)]
-            lo, hi = (np.percentile(boot, [2.5, 97.5]) if boot.size
-                      else (np.nan, np.nan))
-            row.update(
-                you=float(y_val), opp=float(o_val), diff=float(y_val - o_val),
-                lo=float(lo), hi=float(hi),
-                verdict="real" if (lo > 0 or hi < 0) else "noise",
-            )
-        rows.append(row)
-    return rows
-
-
-# ── Rating scale
+# ── The rating band
 
 class Fit(NamedTuple):
+    """A weighted least-squares line of a metric on rating."""
     a: float
     b: float
-    n: float
+    n: int          # side-games behind it
     t: float
+    xm: float
+    sxx: float
+    s2: float       # residual variance at unit weight
+    sw: float       # total weight
 
-    def rating_for(self, value: float) -> float:
+    def at(self, rating: float) -> float:
+        return self.a + self.b * rating
+
+    def se_at(self, rating: float) -> float:
+        """Standard error of the line's level at `rating`."""
+        return math.sqrt(self.s2 * (1 / self.sw + (rating - self.xm) ** 2 / self.sxx))
+
+    def elo_for(self, value: float, direction: int) -> Optional[float]:
+        """The rating whose players typically produce `value`, if the slope
+        is trustworthy enough to invert."""
+        if self.b * direction <= 0 or abs(self.t) < FIT_MIN_T:
+            return None
         return max(RATING_MIN, min(RATING_MAX, (value - self.a) / self.b))
 
 
-def fit_line(xs: Sequence[float], ys: Sequence[float], ws: Sequence[float],
-             direction: int) -> Optional[Fit]:
-    """Weighted least squares of a metric on rating, or None if untrustworthy.
+def fit_band(xs: Sequence[float], ys: Sequence[float], ws: Sequence[float]) -> Optional[Fit]:
+    """The band line, or None when too few games or ratings stand behind it.
 
     Weights are each observation's denominator (chances, or moves), so a
-    side-game's rate counts in proportion to how much it rests on.
+    side-game's rate counts in proportion to how much it rests on. They set
+    precision, not sample size: the moves of one game are not independent
+    draws, so the count of side-games is the n for the threshold and for the
+    residual variance alike.
     """
     x, y, w = (np.asarray(v, dtype=float) for v in (xs, ys, ws))
     keep = w > 0
     x, y, w = x[keep], y[keep], w[keep]
-    # Weights set each observation's precision, not how many observations
-    # there are: the moves of one game are not independent draws. The count
-    # of observations is the sample size, for the threshold and for the
-    # residual variance alike.
     n = len(x)
     if n < FIT_MIN_OBS or len(set((x // FIT_BAND_WIDTH).tolist())) < FIT_MIN_BANDS:
         return None
     xm, ym = np.average(x, weights=w), np.average(y, weights=w)
-    sxx = (w * (x - xm) ** 2).sum()
+    sxx = float((w * (x - xm) ** 2).sum())
     if sxx <= 0:
         return None
-    b = (w * (x - xm) * (y - ym)).sum() / sxx
-    a = ym - b * xm
-    resid = (w * (y - a - b * x) ** 2).sum() / max(n - 2, 1)
-    se = math.sqrt(resid / sxx) if resid > 0 else 0.0
-    t = b / se if se > 0 else math.inf * np.sign(b)
-    if b * direction <= 0 or abs(t) < FIT_MIN_T:
-        return None
-    return Fit(float(a), float(b), float(n), float(t))
+    b = float((w * (x - xm) * (y - ym)).sum() / sxx)
+    a = float(ym - b * xm)
+    s2 = float((w * (y - a - b * x) ** 2).sum() / (n - 2))
+    se = math.sqrt(s2 / sxx) if s2 > 0 else 0.0
+    t = b / se if se > 0 else (math.inf if b else 0.0)
+    return Fit(a, b, n, float(t), float(xm), sxx, s2, float(w.sum()))
 
 
-def rating_score(rating: float) -> float:
-    return max(0.0, min(100.0, (rating + SCORE_OFFSET) / SCORE_PER_POINT))
+def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
+                    rating: float) -> list[dict]:
+    """One row per dimension: the player's value against the band's at their rating.
+
+    The player's value is a ratio of sums over their games, in the unit the
+    band line was fitted on. Its uncertainty is a game-level bootstrap; the
+    line's is its standard error at the rating; the range combines the two.
+    """
+    n = len(sides)
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    idx = rng.integers(0, n, size=(BOOTSTRAP_RESAMPLES, n)) if n else None
+    rows = []
+    for dim in DIMENSIONS:
+        counts = np.array([calibration_counts(dim.key, s) for s in sides]).reshape(n, 2)
+        den = counts[:, 1].sum()
+        fit = fits.get(dim.key)
+        row: dict = {"key": dim.key, "label": dim.label, "unit": dim.unit,
+                     "higher_is_better": dim.higher_is_better, "n": float(den),
+                     "you": None, "band": None, "diff": None, "lo": None, "hi": None,
+                     "verdict": None, "elo": None, "band_games": fit.n if fit else None}
+        if n and den > 0:
+            you = counts[:, 0].sum() / den
+            row["you"] = float(you)
+            if fit is not None:
+                elo = fit.elo_for(you, 1 if dim.higher_is_better else -1)
+                row["elo"] = round(elo) if elo is not None else None
+                assert idx is not None
+                boot = _ratio(counts[idx, 0].sum(1), counts[idx, 1].sum(1))
+                boot = boot[~np.isnan(boot)]
+                band = fit.at(rating)
+                se = math.sqrt((float(np.std(boot)) if boot.size else 0.0) ** 2
+                               + fit.se_at(rating) ** 2)
+                diff = you - band
+                lo, hi = diff - Z95 * se, diff + Z95 * se
+                row.update(band=float(band), diff=float(diff), lo=float(lo), hi=float(hi),
+                           verdict="real" if (lo > 0 or hi < 0) else "noise")
+        rows.append(row)
+    return rows
+
+
+def _ratio(num: np.ndarray, den: np.ndarray) -> np.ndarray:
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(den > 0, num / np.where(den > 0, den, 1), np.nan)

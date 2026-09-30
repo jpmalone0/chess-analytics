@@ -93,24 +93,30 @@ def _facts(db: Session, rows: Sequence[Any], curves: dict[str, float]
 
 def _calibration(db: Session, time_class: str, exclude_player_id: int,
                  curves: dict[str, float]) -> dict[str, Optional[sc.Fit]]:
-    """One line per dimension over every analyzed side but the player's own."""
+    """One band line per dimension, over analyzed games the player is not in.
+
+    Their opponents are dropped too, not just their own seat: an opponent's
+    side of the player's game is the player's game seen from the other chair,
+    and keeping it would bring back the mirror symmetry this comparison exists
+    to avoid (your conversion is exactly their failure to save).
+    """
     rows = db.execute(text(f"""
         SELECT g.game_id, c.run_id, g.time_class,
                g.white_player_id, g.black_player_id, g.white_elo, g.black_elo
         FROM   games g
         JOIN   engine.game_coverage c ON c.game_id = g.game_id
         WHERE  g.time_class = :tc AND g.variant IS NULL AND c.status = 'complete'
+          AND  g.white_player_id <> :pid AND g.black_player_id <> :pid
           AND  {_LATEST_RUN}
-    """), {"tc": time_class}).all()
+    """), {"tc": time_class, "pid": exclude_player_id}).all()
     facts = _facts(db, rows, curves)
     obs: list[tuple[float, sc.SideFacts]] = []
     for r in rows:
         f = facts.get(r.game_id)
         if f is None:
             continue
-        for color, pid, elo in (("white", r.white_player_id, r.white_elo),
-                                ("black", r.black_player_id, r.black_elo)):
-            if pid != exclude_player_id and elo:
+        for color, elo in (("white", r.white_elo), ("black", r.black_elo)):
+            if elo:
                 obs.append((float(elo), f[color]))
     fits = {}
     for dim in sc.DIMENSIONS:
@@ -121,7 +127,7 @@ def _calibration(db: Session, time_class: str, exclude_player_id: int,
                 xs.append(elo)
                 ys.append(num / den)
                 ws.append(den)
-        fits[dim.key] = sc.fit_line(xs, ys, ws, 1 if dim.higher_is_better else -1)
+        fits[dim.key] = sc.fit_band(xs, ys, ws)
     return fits
 
 
@@ -153,45 +159,34 @@ def player_scorecard(
 
     curves = _curves(db)
     facts = _facts(db, rows, curves)
-    pairs, used = [], []
+    sides, used = [], []
     for r in rows:
         f = facts.get(r.game_id)
         if f is None:
             continue
-        opp = "black" if r.color == "white" else "white"
-        pairs.append((f[r.color], f[opp]))
+        sides.append(f[r.color])
         used.append(r)
 
     tc = time_class or (Counter(r.time_class for r in used).most_common(1)[0][0]
                         if used else None)
     fits = _calibration(db, tc, player_id, curves) if tc in curves else {}
 
-    out_rows = sc.summarize(pairs)
-    for row in out_rows:
-        fit = fits.get(row["key"])
-        for i, side in enumerate(("you", "opp")):
-            # The radar reads the same unit its line was fitted on, which for
-            # some rows is per move rather than the row's per game.
-            num = sum(sc.calibration_counts(row["key"], p[i])[0] for p in pairs)
-            den = sum(sc.calibration_counts(row["key"], p[i])[1] for p in pairs)
-            value = num / den if den else None
-            rating = fit.rating_for(value) if fit and value is not None else None
-            row[f"{side}_rating"] = round(rating) if rating is not None else None
-            row[f"{side}_score"] = (round(sc.rating_score(rating), 1)
-                                    if rating is not None else None)
-        row["calibration_n"] = round(fit.n) if fit else None
-
     def avg(xs):
         xs = [x for x in xs if x]
         return round(sum(xs) / len(xs)) if xs else None
 
+    rating = avg(r.own_elo for r in used)
+    out_rows = sc.compare_to_band(sides, fits, rating) if rating else sc.compare_to_band(sides, {}, 0)
+
     return {
-        "games": len(pairs),
-        "small_sample": len(pairs) < sc.SMALL_SAMPLE_GAMES,
+        "games": len(sides),
+        "small_sample": len(sides) < sc.SMALL_SAMPLE_GAMES,
         "sample_threshold": sc.SMALL_SAMPLE_GAMES,
         "time_class": tc,
         "curve_fitted": bool(tc and tc in curves),
-        "own_avg_elo": avg(r.own_elo for r in used),
+        "own_avg_elo": rating,
         "opp_avg_elo": avg(r.opp_elo for r in used),
+        # Side-games behind the band lines: other players' games only.
+        "band_games": max((f.n for f in fits.values() if f), default=0),
         "rows": out_rows,
     }

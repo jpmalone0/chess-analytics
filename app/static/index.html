@@ -504,12 +504,12 @@
                 <div class="sc-radar"><canvas id="scorecard-chart"></canvas></div>
                 <div class="sc-table-wrap"><table class="sc-table" id="sc-table"></table></div>
                 <p class="mq-note">
-                    Each spoke is scored 0&ndash;100 by the rating whose players typically
-                    play that way (500 is about 30, 2500 about 80); a spoke marked &mdash; does not yet have
-                    enough games at other ratings to anchor it. Rows compare you with
-                    your opponents in the same games. The opening, middlegame, endgame and
-                    time rows leave out resignations, abandonments, agreed or claimed draws
-                    and the &plusmn;1000cp evaluation cap, so they do not add up to your score.
+                    Each spoke is an Elo: the rating whose players typically play that way,
+                    from a line fitted over other players' analyzed games. The dashed ring is
+                    your rating. A spoke marked &mdash; has no trustworthy slope yet. Rows compare
+                    you with that line at your rating; your opponents are left out of it,
+                    because in the same games some dimensions are mirror images. The time row
+                    leaves out resignations, abandonments and agreed or claimed draws.
                 </p>
             </div>
         </section>
@@ -541,7 +541,7 @@
     <script src="/static/app.js?v=83"></script>
     <script src="/static/style-panel.js?v=9"></script>
     <script src="/static/move-quality.js?v=5"></script>
-    <script src="/static/scorecard.js?v=3"></script>
+    <script src="/static/scorecard.js?v=4"></script>
 </body>
 
 </html>

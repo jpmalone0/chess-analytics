@@ -82,8 +82,11 @@ def test_an_analyzed_game_gives_eight_rows_from_the_players_seat(client, db, sid
     rows = {r["key"]: r for r in body["rows"]}
     assert list(rows) == [d.key for d in DIMENSIONS]
     assert rows["opening"]["you"] < 0
-    assert rows["opening"]["opp"] == pytest.approx(0)
-    assert body["opp_avg_elo"] == 1900
+    # The band is other players' games only; with none analyzed there is no
+    # comparison, and the opponent in this game does not stand in for one.
+    assert rows["opening"]["band"] is None
+    assert body["band_games"] == 0
+    assert body["own_avg_elo"] == 1900
 
 
 def test_an_unreplayable_game_is_skipped_not_fatal(client, db, sidecar):
