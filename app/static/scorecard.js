@@ -6,9 +6,11 @@
  * dimension as an Elo (the rating whose players typically play that way),
  * with your average rating as a dashed ring. Each Elo's 95% range (Fieller's
  * method) is in the tooltip and the table; "any" means no usable Elo yet. */
-/* global fetchJSON, colorParams, queryColor, currentOpeningFilter */
+/* global fetchJSON, colorParams, queryColor, currentOpeningFilter, currentTimeClass,
+   currentUsername, requestCache, mqFetchFresh, loadMoveQuality, setInterval, clearInterval */
 
 let scorecardChart = null;
+let scPollTimer = null;
 
 /** `bare` drops the unit, for the ends of a range printed after its value.
  *  Per-move rows are shown per 100 moves, where the numbers are readable. */
@@ -129,6 +131,7 @@ async function loadScorecard(username) {
         return;
     }
     section.classList.remove('hidden');
+    renderScAnalyze(username);
 
     const label = document.getElementById('sc-coverage-label');
     const warn = document.getElementById('sc-sample-warning');
@@ -167,4 +170,67 @@ async function loadScorecard(username) {
                 <td class="sc-verdict ${r.verdict === 'real' ? (scBetter(r) ? 'sc-good' : 'sc-bad') : 'sc-muted'}">${r.verdict || '—'}</td>
             </tr>`).join('')}
         </tbody>`;
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// The button: analyze more of your own games
+// ═══════════════════════════════════════════════════════════
+
+function scJobUrl(username) {
+    const q = currentTimeClass ? `?time_class=${currentTimeClass}` : '';
+    return `/api/players/${username}/analytics/scorecard/job${q}`;
+}
+
+/** Your newest games not yet analyzed, in the scorecard's time class. Each
+ *  press reaches further back; the date filter only decides what is shown. */
+async function renderScAnalyze(username) {
+    const el = document.getElementById('sc-analyze');
+    let st;
+    try { st = await mqFetchFresh(scJobUrl(username)); } catch { el.innerHTML = ''; return; }
+    if (st.job) {
+        const total = st.job.games_total ?? st.job.target_games;
+        el.innerHTML = `<span>Your ${st.time_class} games</span>
+            <span class="mq-job">${st.job.status === 'queued'
+        ? 'Queued' : `Analyzing ${st.job.games_done}/${total}`}</span>`;
+        scPoll(username);
+    } else {
+        el.innerHTML = `<span>Your newest ${st.time_class} games not yet analyzed, further back each press</span>
+            <button class="btn-sm" onclick="startScAnalyze(this)">
+            Analyze ${st.default_games} more of my games (~${Math.max(1, Math.round(st.estimated_minutes))} min)</button>`;
+    }
+}
+
+// eslint-disable-next-line no-unused-vars -- called from the button's onclick
+async function startScAnalyze(btn) {
+    btn.disabled = true;
+    const q = currentTimeClass ? `?time_class=${currentTimeClass}` : '';
+    try {
+        await mqFetchFresh(`/api/players/${currentUsername}/analytics/scorecard/analyze${q}`,
+            { method: 'POST' });
+    } catch (e) {
+        btn.disabled = false;
+        btn.textContent = 'Failed to start';
+        console.warn('Analysis job failed to start:', e);
+        return;
+    }
+    renderScAnalyze(currentUsername);
+}
+
+/** Poll while the job runs; when it finishes, drop the cached scorecard and
+ *  move-quality responses so both sections pick up the new games. */
+function scPoll(username) {
+    if (scPollTimer) return;
+    scPollTimer = setInterval(async () => {
+        let st;
+        try { st = await mqFetchFresh(scJobUrl(username)); } catch { return; }
+        if (st.job) { renderScAnalyze(username); return; }
+        clearInterval(scPollTimer);
+        scPollTimer = null;
+        for (const k of Object.keys(requestCache)) {
+            if (k.includes('/scorecard') || k.includes('/move-quality')) delete requestCache[k];
+        }
+        loadScorecard(username);
+        loadMoveQuality(username);
+    }, 5000);
 }

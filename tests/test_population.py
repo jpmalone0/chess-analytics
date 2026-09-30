@@ -17,7 +17,12 @@ from app.main import app, get_population_runner
 from engine import db as engine_db
 from engine.analyze import Summary
 from engine.models import PopulationJob
-from engine.population import POPULATION_PER_PLAYER_CAP, JobRunner, sample_band
+from engine.population import (
+    POPULATION_PER_PLAYER_CAP,
+    JobRunner,
+    sample_band,
+    sample_player,
+)
 from engine.views import (
     GAME_MOVE_QUALITY_VIEW,
     MOVE_EVALS_VIEW,
@@ -270,3 +275,111 @@ def test_a_press_analyzes_30_games_by_default(client, db, runner):
     r = client.post("/api/players/me/analytics/move-quality/population"
                     "?time_class=rapid&elo_band=1800").json()
     assert r["job"]["target_games"] == 30
+
+
+
+# ── Your own games ────────────────────────────────────────
+
+def _sample_player(db, player, **kw):
+    conn = db.connection()
+    engine_db.attach_engine_db(conn)
+    args = dict(player_id=player.player_id, time_class="rapid", run_id=1, limit=100)
+    return sample_player(conn, **{**args, **kw})
+
+
+def test_your_games_are_taken_newest_first(db, sidecar):
+    me, a = make_player(db, "me"), make_player(db, "a")
+    old = make_game(db, me, a, 1900, 1900)
+    new = make_game(db, a, me, 1900, 1900)
+    db.commit()
+    assert _sample_player(db, me) == [new.game_id, old.game_id]
+    assert _sample_player(db, me, limit=1) == [new.game_id]
+
+
+def test_analyzed_games_are_skipped_so_a_press_reaches_further_back(db, sidecar):
+    me, a = make_player(db, "me"), make_player(db, "a")
+    old = make_game(db, me, a, 1900, 1900)
+    new = make_game(db, me, a, 1900, 1900)
+    db.commit()
+    seed_evals(sidecar, WHITE_BLUNDERS, game_id=new.game_id)
+    assert _sample_player(db, me) == [old.game_id]
+
+
+def test_only_your_games_in_the_time_class(db, sidecar):
+    me, a, b = (make_player(db, n) for n in ("me", "a", "b"))
+    mine = make_game(db, me, a, 1900, 1900)
+    make_game(db, me, a, 1900, 1900, time_class="bullet")
+    make_game(db, a, b, 1900, 1900)
+    db.commit()
+    assert _sample_player(db, me) == [mine.game_id]
+
+
+def test_a_player_job_analyzes_their_games(db, runner):
+    me, a = make_player(db, "me"), make_player(db, "a")
+    make_game(db, me, a, 1900, 1900)
+    make_game(db, a, me, 1900, 1900)
+    db.commit()
+
+    job, created = runner.enqueue_player(player_id=me.player_id, time_class="rapid",
+                                         target_games=30)
+    assert created and job["player_id"] == me.player_id
+    runner.run_pending()
+
+    done = runner.jobs()[0]
+    assert done["status"] == "complete" and done["games_total"] == 2
+    assert runner.active_player_job(me.player_id, "rapid") is None
+
+
+def test_a_second_press_for_your_games_returns_the_same_job(runner):
+    first, _ = runner.enqueue_player(player_id=7, time_class="rapid", target_games=30)
+    again, created = runner.enqueue_player(player_id=7, time_class="rapid", target_games=30)
+    assert not created and again["job_id"] == first["job_id"]
+
+
+def test_your_job_does_not_block_a_band_job(runner):
+    runner.enqueue_player(player_id=7, time_class="rapid", target_games=30)
+    assert runner.enqueue(**_band())[1]
+    assert runner.active_job("rapid", 1800, 1899)["player_id"] is None
+
+
+def test_the_scorecard_button_queues_30_of_your_games(client, db, runner):
+    me, a = make_player(db, "me"), make_player(db, "a")
+    make_game(db, me, a, 1900, 1900)
+    db.commit()
+
+    state = client.get("/api/players/me/analytics/scorecard/job?time_class=rapid").json()
+    assert state["job"] is None and state["default_games"] == 30
+
+    r = client.post("/api/players/me/analytics/scorecard/analyze?time_class=rapid").json()
+    assert r["created"] and r["job"]["target_games"] == 30
+
+    state = client.get("/api/players/me/analytics/scorecard/job?time_class=rapid").json()
+    assert state["job"]["job_id"] == r["job"]["job_id"]
+
+
+def test_the_app_runner_upgrades_an_older_sidecar(tmp_path, monkeypatch):
+    """A sidecar made before population_jobs.player_id existed must gain it
+    when the app builds its runner, not only when an analysis starts."""
+    from sqlalchemy import create_engine, text
+
+    import app.main as main
+    from engine import views
+
+    eng = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with eng.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE population_jobs (job_id INTEGER PRIMARY KEY, "
+            "time_class VARCHAR(20) NOT NULL, elo_lo INTEGER NOT NULL, "
+            "elo_hi INTEGER NOT NULL, exclude_player_id INTEGER, "
+            "target_games INTEGER NOT NULL, games_total INTEGER, "
+            "games_done INTEGER NOT NULL, status VARCHAR(20) NOT NULL, "
+            "created_at DATETIME NOT NULL, started_at DATETIME, "
+            "finished_at DATETIME, error TEXT)"
+        ))
+    monkeypatch.setattr(views, "engine", eng)
+    monkeypatch.setattr(engine_db, "engine", eng)
+    monkeypatch.setattr(engine_db, "SessionLocal", sessionmaker(bind=eng))
+    monkeypatch.setattr(main, "_population_runner", None)
+
+    runner = main.get_population_runner()
+    assert runner.active_player_job(1, "rapid") is None

@@ -354,6 +354,8 @@ _ADDED_ENGINE_COLUMNS = {
     "game_coverage": {"time_class": "VARCHAR(20)"},
     # Runs recorded before this column existed searched one line each.
     "analysis_runs": {"multipv": "INTEGER NOT NULL DEFAULT 1"},
+    # Jobs recorded before this column existed were all band jobs.
+    "population_jobs": {"player_id": "INTEGER"},
 }
 
 
