@@ -4,8 +4,8 @@
  * rating; your opponents are left out of it, because against the same games
  * some dimensions are mirror images of each other. The radar shows each
  * dimension as an Elo (the rating whose players typically play that way),
- * with your average rating as a dashed ring and a shaded 95% range from
- * Fieller's method. A range across the whole scale means no usable Elo yet. */
+ * with your average rating as a dashed ring. Each Elo's 95% range (Fieller's
+ * method) is in the tooltip and the table; "any" means no usable Elo yet. */
 /* global fetchJSON, colorParams, queryColor, currentOpeningFilter */
 
 let scorecardChart = null;
@@ -84,23 +84,6 @@ function drawScorecardRadar(rows, rating) {
                     borderDash: [4, 4],
                     pointRadius: 0,
                 },
-                // The 95% range as a band between two invisible outlines. A
-                // spoke whose band runs the whole scale has no usable Elo yet.
-                {
-                    label: 'range-hi',
-                    data: rows.map((r) => r.elo_hi),
-                    borderWidth: 0,
-                    pointRadius: 0,
-                    backgroundColor: 'transparent',
-                },
-                {
-                    label: '95% range',
-                    data: rows.map((r) => r.elo_lo),
-                    borderWidth: 0,
-                    pointRadius: 0,
-                    backgroundColor: accent + '1f',
-                    fill: '-1',
-                },
             ],
         },
         options: {
@@ -118,14 +101,7 @@ function drawScorecardRadar(rows, rating) {
                 },
             },
             plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        color: text,
-                        boxWidth: 12,
-                        filter: (item) => item.text !== 'range-hi',
-                    },
-                },
+                legend: { position: 'bottom', labels: { color: text, boxWidth: 12 } },
                 tooltip: {
                     filter: (c) => c.datasetIndex === 0,
                     callbacks: {
