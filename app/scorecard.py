@@ -116,7 +116,7 @@ def _calibration(db: Session, time_class: str, exclude_player_id: int,
     for dim in sc.DIMENSIONS:
         xs, ys, ws = [], [], []
         for elo, side in obs:
-            num, den = sc.unit_counts(dim.key, side)
+            num, den = sc.calibration_counts(dim.key, side)
             if den > 0:
                 xs.append(elo)
                 ys.append(num / den)
@@ -169,8 +169,12 @@ def player_scorecard(
     out_rows = sc.summarize(pairs)
     for row in out_rows:
         fit = fits.get(row["key"])
-        for side in ("you", "opp"):
-            value = row[side]
+        for i, side in enumerate(("you", "opp")):
+            # The radar reads the same unit its line was fitted on, which for
+            # some rows is per move rather than the row's per game.
+            num = sum(sc.calibration_counts(row["key"], p[i])[0] for p in pairs)
+            den = sum(sc.calibration_counts(row["key"], p[i])[1] for p in pairs)
+            value = num / den if den else None
             rating = fit.rating_for(value) if fit and value is not None else None
             row[f"{side}_rating"] = round(rating) if rating is not None else None
             row[f"{side}_score"] = (round(sc.rating_score(rating), 1)

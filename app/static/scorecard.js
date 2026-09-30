@@ -52,7 +52,9 @@ function drawScorecardRadar(rows) {
     scorecardChart = new Chart(ctx, {
         type: 'radar',
         data: {
-            labels: rows.map((r) => r.label),
+            // A spoke with no score yet is marked, so its collapse toward the
+            // centre is not read as a score of zero.
+            labels: rows.map((r) => (r.you_score === null ? `${r.label} —` : r.label)),
             datasets: [
                 {
                     label: 'you',
@@ -81,7 +83,10 @@ function drawScorecardRadar(rows) {
                     ticks: { display: false, stepSize: 20 },
                     grid: { color: grid },
                     angleLines: { color: grid },
-                    pointLabels: { color: text, font: { size: 11 } },
+                    pointLabels: {
+                        color: (c) => (rows[c.index].you_score === null ? muted : text),
+                        font: { size: 11 },
+                    },
                 },
             },
             plugins: {

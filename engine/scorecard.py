@@ -143,6 +143,9 @@ class SideFacts(NamedTuple):
     chances: int = 0
     found: int = 0
     blunders: int = 0
+    opening_moves: int = 0
+    middlegame_moves: int = 0
+    endgame_moves: int = 0
 
 
 def _white_cp(cp: Optional[int], mate_in: Optional[int], index: int) -> Optional[float]:
@@ -236,7 +239,8 @@ def game_sides(game: GameInput, k: float,
 
     acc: dict[str, dict] = {
         c: {"opening": 0.0, "middlegame": 0.0, "endgame": 0.0,
-            "reached": False, "fell": False, "chances": 0, "found": 0, "blunders": 0}
+            "reached": False, "fell": False, "chances": 0, "found": 0, "blunders": 0,
+            "opening_moves": 0, "middlegame_moves": 0, "endgame_moves": 0}
         for c in ("white", "black")
     }
 
@@ -260,6 +264,7 @@ def game_sides(game: GameInput, k: float,
         change = _wp(after, color, k) - _wp(before, color, k)
         phase = _phase(i, division)
         side[phase] += change
+        side[phase + "_moves"] += 1
         loss = max(0.0, -change)
         chance = phase != "opening" and _is_chance(
             game, i, boards[i],
@@ -285,6 +290,9 @@ def game_sides(game: GameInput, k: float,
             reached=side["reached"], won=won and side["reached"],
             fell=side["fell"], saved=(won or drew) and side["fell"],
             chances=side["chances"], found=side["found"], blunders=side["blunders"],
+            opening_moves=side["opening_moves"],
+            middlegame_moves=side["middlegame_moves"],
+            endgame_moves=side["endgame_moves"],
         )
     return out
 
@@ -328,6 +336,22 @@ def unit_counts(key: str, s: SideFacts) -> tuple[float, float]:
     if key == "blunders":
         return float(s.blunders), 1.0
     raise KeyError(key)
+
+
+def calibration_counts(key: str, s: SideFacts) -> tuple[float, float]:
+    """The (numerator, denominator) a rating line is fitted on.
+
+    Per move for the phase rows and blunders, where the rows show per game.
+    Across ratings, game length is not neutral: low-rated games end early, so
+    they rarely reach an endgame and have fewer moves to blunder on, and a
+    per-game total makes them look better. Measured on the first calibration
+    sample, endgame points per game *fell* with rating (t = -3.8). Within one
+    game both seats share its length, so the rows can stay per game."""
+    if key in ("opening", "middlegame", "endgame"):
+        return getattr(s, key), float(getattr(s, key + "_moves"))
+    if key == "blunders":
+        return float(s.blunders), float(s.opening_moves + s.middlegame_moves + s.endgame_moves)
+    return unit_counts(key, s)
 
 
 def _ratio(num: np.ndarray, den: np.ndarray) -> np.ndarray:
@@ -383,13 +407,17 @@ def fit_line(xs: Sequence[float], ys: Sequence[float], ws: Sequence[float],
              direction: int) -> Optional[Fit]:
     """Weighted least squares of a metric on rating, or None if untrustworthy.
 
-    Weights are each observation's denominator, so a game with three tactic
-    chances counts three times; that makes a rate's line a line over chances.
+    Weights are each observation's denominator (chances, or moves), so a
+    side-game's rate counts in proportion to how much it rests on.
     """
     x, y, w = (np.asarray(v, dtype=float) for v in (xs, ys, ws))
     keep = w > 0
     x, y, w = x[keep], y[keep], w[keep]
-    n = w.sum()
+    # Weights set each observation's precision, not how many observations
+    # there are: the moves of one game are not independent draws. The count
+    # of observations is the sample size, for the threshold and for the
+    # residual variance alike.
+    n = len(x)
     if n < FIT_MIN_OBS or len(set((x // FIT_BAND_WIDTH).tolist())) < FIT_MIN_BANDS:
         return None
     xm, ym = np.average(x, weights=w), np.average(y, weights=w)

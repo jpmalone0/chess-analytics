@@ -76,6 +76,19 @@ A line is used only when it is trustworthy: at least 30 observations, at least
 rates: up with rating; time lost and blunders: down), and |t| ≥ 2. Otherwise
 that spoke has no score.
 
+**Lines are fitted per move for the phase rows and blunders**, although the
+rows show per game. Across ratings, game length is not neutral: low-rated games
+end early, rarely reach an endgame and have fewer moves to blunder on, so
+per-game totals made them look better (endgame points per game fell with
+rating, t = −3.8, on the first sample). Within one game both seats share its
+length, so the rows can stay per game. The weights (moves or chances) set each
+side-game's precision, but the sample size for the thresholds and the t-test is
+the number of side-games.
+
+First result on 100 games plus the calibration sample: Opening, Middlegame,
+Tactics found and Blunders are scored. Endgame, Time management, Advantage
+capitalization and Resourcefulness do not yet clear the bar.
+
 This is why the engine now also analyzes a small calibration sample: 10 rapid
 games per 200-point band from 600 to 2399, excluding the player. The sample is
 small, so the scale is provisional and will tighten as more games are analyzed.

@@ -6,11 +6,14 @@ import pytest
 from engine.scorecard import (
     Division,
     GameInput,
+    SideFacts,
+    calibration_counts,
     divide_boards,
     fit_line,
     game_sides,
     rating_score,
     summarize,
+    unit_counts,
 )
 
 K = 360.0
@@ -178,3 +181,34 @@ class TestScale:
         xs = [1800 + (i % 2) for i in range(200)]
         ys = [0.001 * x + i % 3 for i, x in enumerate(xs)]
         assert fit_line(xs, ys, [1] * 200, direction=1) is None
+
+
+class TestCalibrationUnits:
+    """Rating lines are fitted per move, not per game: low-rated games end early,
+    so a per-game total rewards a game for being short."""
+
+    def test_moves_are_counted_per_phase(self):
+        sides = game_sides(game(["e4", "e5", "Nf3"], flat(3)), K, division=Division(2, None))
+        assert (sides["white"].opening_moves, sides["white"].middlegame_moves) == (1, 1)
+        assert sides["black"].opening_moves == 1
+
+    def test_phase_rows_calibrate_per_move(self):
+        s = SideFacts(middlegame=-0.3, middlegame_moves=30)
+        assert calibration_counts("middlegame", s) == (-0.3, 30)
+
+    def test_blunders_calibrate_per_move(self):
+        s = SideFacts(blunders=2, opening_moves=10, middlegame_moves=20, endgame_moves=10)
+        assert calibration_counts("blunders", s) == (2, 40)
+
+    def test_rates_calibrate_as_they_are_shown(self):
+        s = SideFacts(found=3, chances=4)
+        assert calibration_counts("tactics", s) == unit_counts("tactics", s)
+
+    def test_weights_do_not_inflate_confidence(self):
+        """A side-game with 40 moves is one observation, not 40."""
+        xs = [600 + 200 * (i % 8) for i in range(60)]
+        ys = [0.001 * x + (0.3 if i % 3 else -0.6) for i, x in enumerate(xs)]
+        light = fit_line(xs, ys, [1] * 60, direction=1)
+        heavy = fit_line(xs, ys, [40] * 60, direction=1)
+        assert light is not None and heavy is not None
+        assert heavy.t == pytest.approx(light.t)
