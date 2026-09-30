@@ -1885,8 +1885,8 @@ body.compare-mode #stat-winrate     { order: 8; }
 }
 
 .sc-range {
-    width: 30%;
-    min-width: 120px;
+    width: 18%;
+    min-width: 100px;
 }
 
 .sc-track {

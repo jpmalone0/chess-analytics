@@ -1,18 +1,23 @@
 """The scorecard's pure core: phases, per-side facts, rows and the rating scale."""
 
 import chess
+import numpy as np
 import pytest
 
 from engine.scorecard import (
     DIMENSIONS,
+    RATING_MAX,
+    RATING_MIN,
     Division,
     GameInput,
     SideFacts,
     calibration_counts,
     compare_to_band,
     divide_boards,
+    elo_range,
     fit_band,
     game_sides,
+    ratio_and_variance,
     unit_counts,
 )
 
@@ -144,17 +149,11 @@ class TestBandLine:
         fit = fit_band(*line())
         assert fit.elo_for(1.5) == pytest.approx(1500, abs=50)
 
-    def test_a_clear_slope_is_trusted(self):
-        assert fit_band(*line()).trusted(direction=1)
-
-    def test_wrong_direction_still_gives_an_elo_but_not_a_trusted_one(self):
+    def test_an_elo_is_read_off_either_slope(self):
+        """Direction is not policed here: the Elo range shows when a slope
+        is too uncertain to read."""
         fit = fit_band(*line())
         assert fit.elo_for(1.5) == pytest.approx(1500, abs=50)
-        assert not fit.trusted(direction=-1)
-
-    def test_a_weak_slope_is_not_trusted(self):
-        fit = fit_band(*line(slope=0.00002, noise=0.5))
-        assert fit is not None and not fit.trusted(direction=1)
 
     def test_a_flat_line_still_gives_the_band_value(self):
         """Comparing to the band needs only the line's level at your rating;
@@ -190,11 +189,6 @@ class TestCompareToBand:
         row = self.rows([self.side(1 + i % 2) for i in range(60)], self.flat_band(0.15))["blunders"]
         assert row["band"] == pytest.approx(0.15, abs=0.001)
         assert row["verdict"] == "noise"
-
-    def test_the_row_says_whether_its_elo_is_trusted(self):
-        row = self.rows([self.side(1)] * 40, fit_band(*line(slope=-0.00001, noise=0.01)))["blunders"]
-        assert row["elo"] is not None
-        assert row["elo_trusted"] is True
 
     def test_a_consistent_gap_is_real(self):
         row = self.rows([self.side(3) for _ in range(60)], self.flat_band(0.1))["blunders"]
@@ -246,3 +240,47 @@ class TestCalibrationUnits:
         heavy = fit_band(xs, ys, [40] * 60)
         assert light is not None and heavy is not None
         assert heavy.t == pytest.approx(light.t)
+
+
+class TestYourValue:
+    def test_ratio_of_sums_with_its_variance(self):
+        counts = np.array([[1.0, 10.0], [3.0, 10.0]])
+        value, var = ratio_and_variance(counts)
+        assert value == pytest.approx(0.2)
+        # Residuals from the pooled ratio, -1 and +1, scaled by n/(n-1).
+        assert var == pytest.approx(2 * 2 / 20 ** 2)
+
+    def test_one_game_has_no_variance_estimate(self):
+        assert ratio_and_variance(np.array([[1.0, 10.0]]))[1] == 0.0
+
+
+class TestEloRange:
+    """Fieller's interval for the rating at which the band line meets your value."""
+
+    def test_a_clear_line_gives_a_range_around_the_elo(self):
+        fit = fit_band(*line(noise=0.2))
+        lo, hi = elo_range(1.5, 0.0004, fit)
+        assert lo < fit.elo_for(1.5) < hi
+        assert hi - lo < 400
+
+    def test_more_uncertainty_in_your_value_widens_it(self):
+        fit = fit_band(*line(noise=0.2))
+        narrow = elo_range(1.5, 0.0001, fit)
+        wide = elo_range(1.5, 0.01, fit)
+        assert wide[1] - wide[0] > narrow[1] - narrow[0]
+
+    def test_a_slope_that_could_be_zero_spans_the_scale(self):
+        fit = fit_band(*line(slope=0.00002, noise=0.5))
+        assert elo_range(0.03, 0.0001, fit) == (RATING_MIN, RATING_MAX)
+
+    def test_same_input_same_range(self):
+        fit = fit_band(*line(noise=0.2))
+        assert elo_range(1.5, 0.0004, fit) == elo_range(1.5, 0.0004, fit)
+
+    def test_the_row_carries_the_range(self):
+        xs = [600 + 200 * (i % 8) for i in range(200)]
+        ys = [0.0001 * x + (0.01 if (i // 8) % 2 else -0.01) for i, x in enumerate(xs)]
+        fit = fit_band(xs, ys, [10] * 200)
+        sides = [SideFacts(blunders=1 + i % 2, opening_moves=10) for i in range(60)]
+        row = {r["key"]: r for r in compare_to_band(sides, {"blunders": fit}, 1500)}["blunders"]
+        assert row["elo_lo"] < row["elo"] < row["elo_hi"]

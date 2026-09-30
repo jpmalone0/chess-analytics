@@ -4,8 +4,8 @@
  * rating; your opponents are left out of it, because against the same games
  * some dimensions are mirror images of each other. The radar shows each
  * dimension as an Elo (the rating whose players typically play that way),
- * with your average rating as a dashed ring. A spoke whose line does not
- * yet clearly rise with rating is drawn hollow and marked "?". */
+ * with your average rating as a dashed ring and a shaded 95% range from
+ * Fieller's method. A range across the whole scale means no usable Elo yet. */
 /* global fetchJSON, colorParams, queryColor, currentOpeningFilter */
 
 let scorecardChart = null;
@@ -26,6 +26,14 @@ function scFmt(row, v, signed, bare) {
         return minus(sign + (100 * v).toFixed(2)) + (bare ? '' : ' /100 moves');
     }
     return minus(sign + v.toFixed(3)) + (bare ? '' : ' lost/game');
+}
+
+/** "any" when the range spans the whole scale: the slope could be zero, so
+ *  no rating is ruled out. */
+function scEloRange(row) {
+    if (row.elo_lo === null) return '—';
+    if (row.elo_lo <= 0 && row.elo_hi >= 3000) return 'any';
+    return `${row.elo_lo}–${row.elo_hi}`;
 }
 
 function scBetter(row) {
@@ -58,17 +66,14 @@ function drawScorecardRadar(rows, rating) {
     scorecardChart = new Chart(ctx, {
         type: 'radar',
         data: {
-            // A spoke whose line does not yet clearly rise with rating is still
-            // drawn, but marked: its Elo can swing to either end of the scale.
-            labels: rows.map((r) => (r.elo_trusted ? r.label : `${r.label} ?`)),
+            labels: rows.map((r) => r.label),
             datasets: [
                 {
                     label: 'you',
                     data: rows.map((r) => r.elo),
                     borderColor: accent,
                     backgroundColor: accent + '33',
-                    pointBackgroundColor: rows.map((r) => (r.elo_trusted ? accent : 'transparent')),
-                    pointBorderColor: accent,
+                    pointBackgroundColor: accent,
                     spanGaps: false,
                 },
                 {
@@ -78,6 +83,23 @@ function drawScorecardRadar(rows, rating) {
                     backgroundColor: 'transparent',
                     borderDash: [4, 4],
                     pointRadius: 0,
+                },
+                // The 95% range as a band between two invisible outlines. A
+                // spoke whose band runs the whole scale has no usable Elo yet.
+                {
+                    label: 'range-hi',
+                    data: rows.map((r) => r.elo_hi),
+                    borderWidth: 0,
+                    pointRadius: 0,
+                    backgroundColor: 'transparent',
+                },
+                {
+                    label: '95% range',
+                    data: rows.map((r) => r.elo_lo),
+                    borderWidth: 0,
+                    pointRadius: 0,
+                    backgroundColor: accent + '1f',
+                    fill: '-1',
                 },
             ],
         },
@@ -90,22 +112,27 @@ function drawScorecardRadar(rows, rating) {
                     grid: { color: grid },
                     angleLines: { color: grid },
                     pointLabels: {
-                        color: (c) => (rows[c.index].elo_trusted ? text : muted),
+                        color: text,
                         font: { size: 11 },
                     },
                 },
             },
             plugins: {
-                legend: { position: 'bottom', labels: { color: text, boxWidth: 12 } },
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        color: text,
+                        boxWidth: 12,
+                        filter: (item) => item.text !== 'range-hi',
+                    },
+                },
                 tooltip: {
                     filter: (c) => c.datasetIndex === 0,
                     callbacks: {
                         label: (c) => {
                             const r = rows[c.dataIndex];
                             if (r.elo === null) return 'no Elo';
-                            return r.elo_trusted
-                                ? `plays like ${r.elo}`
-                                : `plays like ${r.elo} (unreliable: too few games behind this line)`;
+                            return `plays like ${r.elo} (95%: ${scEloRange(r)})`;
                         },
                     },
                 },
@@ -149,12 +176,13 @@ async function loadScorecard(username) {
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
-            <th></th><th>You</th><th>Band at your average (${data.own_avg_elo})</th>
+            <th></th><th>Plays like (95% range)</th><th>You</th><th>Band at your average (${data.own_avg_elo})</th>
             <th class="sc-range-head">worse · even · better</th><th>Difference (95% range)</th><th></th>
         </tr></thead>
         <tbody>${data.rows.map((r) => `
             <tr>
                 <td class="sc-label">${r.label}</td>
+                <td>${r.elo === null ? '—' : r.elo} <span class="sc-muted">${r.elo === null ? '' : `(${scEloRange(r)})`}</span></td>
                 <td>${scFmt(r, r.you)}</td>
                 <td class="sc-muted">${scFmt(r, r.band)}</td>
                 <td class="sc-range ${r.higher_is_better ? '' : 'sc-flip'}">${scRangeBar(r)}</td>

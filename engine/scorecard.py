@@ -33,8 +33,6 @@ RESOURCE_WP = 0.25
 TACTIC_GAP_WP = 0.10
 TACTIC_FOUND_WP = 0.05
 
-BOOTSTRAP_RESAMPLES = 1000
-BOOTSTRAP_SEED = 0
 
 # Fewer analyzed games than this and the section shows a "!".
 SMALL_SAMPLE_GAMES = 300
@@ -42,13 +40,11 @@ SMALL_SAMPLE_GAMES = 300
 # A spoke's Elo is clamped to this range.
 RATING_MIN, RATING_MAX = 0, 3000
 
-# A band line exists only with this much spread behind it. An Elo is trusted
-# only when the slope also runs the expected way with |t| of at least
-# FIT_MIN_T; untrusted Elos are still shown, marked.
+# A band line exists only with this much spread behind it. How far an Elo can
+# be trusted is carried by its range (elo_range), not by a cutoff.
 FIT_MIN_OBS = 30
 FIT_MIN_BANDS = 3
 FIT_BAND_WIDTH = 200
-FIT_MIN_T = 2.0
 
 Z95 = 1.96
 
@@ -377,19 +373,11 @@ class Fit(NamedTuple):
         return math.sqrt(self.s2 * (1 / self.sw + (rating - self.xm) ** 2 / self.sxx))
 
     def elo_for(self, value: float) -> Optional[float]:
-        """The rating at which the line reaches `value`, clamped.
-
-        Computed whether or not the slope is trustworthy (see `trusted`): a
-        weak slope sends this to the ends of the range, and a slope in the
-        wrong direction reverses its meaning. Only a flat line has no answer."""
+        """The rating at which the line reaches `value`, clamped. A flat line
+        has no answer."""
         if self.b == 0:
             return None
         return max(RATING_MIN, min(RATING_MAX, (value - self.a) / self.b))
-
-    def trusted(self, direction: int) -> bool:
-        """The slope runs the way better play should, clearly enough to read
-        the line backwards."""
-        return self.b * direction > 0 and abs(self.t) >= FIT_MIN_T
 
 
 def fit_band(xs: Sequence[float], ys: Sequence[float], ws: Sequence[float]) -> Optional[Fit]:
@@ -419,48 +407,82 @@ def fit_band(xs: Sequence[float], ys: Sequence[float], ws: Sequence[float]) -> O
     return Fit(a, b, n, float(t), float(xm), sxx, s2, float(w.sum()))
 
 
+def ratio_and_variance(counts: np.ndarray) -> tuple[float, float]:
+    """A ratio of sums over games, and its variance treating games as the units.
+
+    The standard ratio-estimator variance: residuals from the pooled ratio,
+    game by game, so a game's moves or chances stay together."""
+    n = len(counts)
+    num, den = counts[:, 0], counts[:, 1]
+    total = den.sum()
+    value = float(num.sum() / total)
+    if n < 2:
+        return value, 0.0
+    resid = num - value * den
+    return value, float(n / (n - 1) * (resid ** 2).sum() / total ** 2)
+
+
+def elo_range(value: float, var_value: float, fit: Fit) -> tuple[float, float]:
+    """Fieller's 95% interval for the rating where the band line meets `value`.
+
+    The Elo is a ratio: the gap from the line's centre over its slope,
+    (value - ybar) / b, plus xbar. Written about the centre, the line's level
+    and slope are uncorrelated, and your value is independent of both, so
+    Fieller's quadratic is exact for this setup. When the slope is not clearly
+    away from zero the interval has no ends (the quadratic's leading
+    coefficient is not positive), and the whole scale is returned.
+    """
+    ybar = fit.a + fit.b * fit.xm
+    u = value - ybar
+    var_u = var_value + fit.s2 / fit.sw
+    var_b = fit.s2 / fit.sxx
+    lead = fit.b ** 2 - Z95 ** 2 * var_b
+    disc = var_u * fit.b ** 2 + var_b * u ** 2 - Z95 ** 2 * var_u * var_b
+    if lead <= 0 or disc < 0:
+        return float(RATING_MIN), float(RATING_MAX)
+    root = Z95 * math.sqrt(disc)
+    lo = fit.xm + (u * fit.b - root) / lead
+    hi = fit.xm + (u * fit.b + root) / lead
+
+    def clamp(v: float) -> float:
+        return float(max(RATING_MIN, min(RATING_MAX, v)))
+
+    return clamp(lo), clamp(hi)
+
+
 def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
                     rating: float) -> list[dict]:
     """One row per dimension: the player's value against the band's at their rating.
 
-    The player's value is a ratio of sums over their games, in the unit the
-    band line was fitted on. Its uncertainty is a game-level bootstrap; the
-    line's is its standard error at the rating; the range combines the two.
+    Everything here is closed-form, so the same games always give the same
+    numbers. The player's value is a ratio of sums over their games, in the
+    unit the band line was fitted on; the difference's range combines its
+    variance with the line's standard error at the rating; the Elo's range is
+    Fieller's interval.
     """
-    n = len(sides)
-    rng = np.random.default_rng(BOOTSTRAP_SEED)
-    idx = rng.integers(0, n, size=(BOOTSTRAP_RESAMPLES, n)) if n else None
     rows = []
     for dim in DIMENSIONS:
-        counts = np.array([calibration_counts(dim.key, s) for s in sides]).reshape(n, 2)
+        counts = np.array([calibration_counts(dim.key, s) for s in sides]).reshape(len(sides), 2)
         den = counts[:, 1].sum()
         fit = fits.get(dim.key)
         row: dict = {"key": dim.key, "label": dim.label, "unit": dim.unit,
                      "higher_is_better": dim.higher_is_better, "n": float(den),
                      "you": None, "band": None, "diff": None, "lo": None, "hi": None,
-                     "verdict": None, "elo": None, "elo_trusted": False,
+                     "verdict": None, "elo": None, "elo_lo": None, "elo_hi": None,
                      "band_games": fit.n if fit else None}
-        if n and den > 0:
-            you = counts[:, 0].sum() / den
-            row["you"] = float(you)
+        if len(sides) and den > 0:
+            you, var_you = ratio_and_variance(counts)
+            row["you"] = you
             if fit is not None:
                 elo = fit.elo_for(you)
                 row["elo"] = round(elo) if elo is not None else None
-                row["elo_trusted"] = fit.trusted(1 if dim.higher_is_better else -1)
-                assert idx is not None
-                boot = _ratio(counts[idx, 0].sum(1), counts[idx, 1].sum(1))
-                boot = boot[~np.isnan(boot)]
+                elo_lo, elo_hi = elo_range(you, var_you, fit)
+                row["elo_lo"], row["elo_hi"] = round(elo_lo), round(elo_hi)
                 band = fit.at(rating)
-                se = math.sqrt((float(np.std(boot)) if boot.size else 0.0) ** 2
-                               + fit.se_at(rating) ** 2)
+                se = math.sqrt(var_you + fit.se_at(rating) ** 2)
                 diff = you - band
                 lo, hi = diff - Z95 * se, diff + Z95 * se
                 row.update(band=float(band), diff=float(diff), lo=float(lo), hi=float(hi),
                            verdict="real" if (lo > 0 or hi < 0) else "noise")
         rows.append(row)
     return rows
-
-
-def _ratio(num: np.ndarray, den: np.ndarray) -> np.ndarray:
-    with np.errstate(invalid="ignore", divide="ignore"):
-        return np.where(den > 0, num / np.where(den > 0, den, 1), np.nan)

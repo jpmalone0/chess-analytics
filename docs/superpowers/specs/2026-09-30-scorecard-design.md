@@ -138,3 +138,22 @@ First result on the same data (100 of your games; the band from 84 games by
 other players): Opening real, better than the band (Elo 2132); Time management
 real, better; everything else noise at this sample. Elos: Opening 2132,
 Middlegame 1494, Blunders 1864.
+
+## Revision: Elo ranges by Fieller's method, everything closed-form
+
+Jonathan wanted every number deterministic, and every Elo shown with how far it
+can be trusted rather than a pass/fail mark.
+
+- **Each Elo carries a 95% range from Fieller's method**: the Elo is the gap
+  from the line's centre over its slope, and Fieller's quadratic gives the
+  interval for that ratio from your value's variance and the line's level and
+  slope. When the slope could be zero, the interval has no ends and the range is
+  the whole scale ("any"). That replaces the |t| ≥ 2 gate and the "?" marks.
+- **The table's ranges are closed-form too**: your value's variance is the
+  ratio-estimator variance over games, combined with the line's standard error
+  at your rating. The seeded bootstrap is gone.
+- Limit: the band line treats both sides of one game as independent.
+
+On the same data: Opening 2132 (1913–2456), Middlegame 1494 (744–2044),
+Blunders 1864 (1551–2262); Endgame, Time, Advantage cap., Resourcefulness and
+Tactics found span the whole scale.
