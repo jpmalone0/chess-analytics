@@ -80,6 +80,18 @@ This is why the engine now also analyzes a small calibration sample: 10 rapid
 games per 200-point band from 600 to 2399, excluding the player. The sample is
 small, so the scale is provisional and will tighten as more games are analyzed.
 
+## Open decision found while building
+
+Against the same-game opponents, **Advantage capitalization and
+Resourcefulness always show the same difference.** You reaching 75% is the
+same event as your opponent falling to 25% (the curve is symmetric), and you
+failing to win is the same as them winning or drawing. So your conversion
+equals 1 − their resourcefulness, and vice versa, and the two differences are
+algebraically identical. The radar scores still differ, because they are
+anchored to other players' games, not to the mirror. Options: keep both and
+note it; merge them into one "swing" row; or compare these two rows against
+the calibration line at the opponents' rating instead of against the mirror.
+
 ## Out of scope
 
 - Exact terminal values and a "game endings" line (the wrinkle's deferred fix).

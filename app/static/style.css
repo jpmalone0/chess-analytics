@@ -1848,6 +1848,10 @@ body.compare-mode #stat-winrate     { order: 8; }
     margin: 0 auto 1rem;
 }
 
+.sc-table-wrap {
+    overflow-x: auto;
+}
+
 .sc-table {
     width: 100%;
     border-collapse: collapse;

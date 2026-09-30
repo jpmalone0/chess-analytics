@@ -8,15 +8,18 @@
 
 let scorecardChart = null;
 
-function scFmt(row, v, signed) {
+/** `bare` drops the unit, for the ends of a range printed after its value. */
+function scFmt(row, v, signed, bare) {
     if (v === null || v === undefined) return '—';
     const sign = signed && v > 0 ? '+' : '';
     const minus = (s) => s.replace('-', '−');
     if (row.unit === 'percent') {
-        return minus(sign + (100 * v).toFixed(1) + (signed ? ' pts' : '%'));
+        return minus(sign + (100 * v).toFixed(1)) + (bare ? '' : signed ? ' pts' : '%');
     }
-    if (row.unit === 'per_game') return minus(sign + v.toFixed(2)) + ' /game';
-    return minus(sign + v.toFixed(3)) + ' pts/game';
+    const digits = row.unit === 'per_game' ? 2 : 3;
+    const unit = row.unit === 'per_game' ? ' /game'
+        : row.key === 'time' ? ' lost/game' : ' pts/game';
+    return minus(sign + v.toFixed(digits)) + (bare ? '' : unit);
 }
 
 function scBetter(row) {
@@ -145,7 +148,7 @@ async function loadScorecard(username) {
                 <td class="sc-muted">${scFmt(r, r.opp)}</td>
                 <td class="sc-range ${r.higher_is_better ? '' : 'sc-flip'}">${scRangeBar(r)}</td>
                 <td>${scFmt(r, r.diff, true)}
-                    <span class="sc-muted">${r.lo === null ? '' : `(${scFmt(r, r.lo, true)} to ${scFmt(r, r.hi, true)})`}</span></td>
+                    <span class="sc-muted">${r.lo === null ? '' : `(${scFmt(r, r.lo, true, true)} to ${scFmt(r, r.hi, true, true)})`}</span></td>
                 <td class="sc-verdict ${r.verdict === 'real' ? (scBetter(r) ? 'sc-good' : 'sc-bad') : 'sc-muted'}">${r.verdict || '—'}</td>
             </tr>`).join('')}
         </tbody>`;
