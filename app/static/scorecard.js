@@ -71,7 +71,7 @@ function drawScorecardRadar(rows, rating) {
                     spanGaps: false,
                 },
                 {
-                    label: `your rating (${rating})`,
+                    label: `your average rating over these games (${rating})`,
                     data: rows.map(() => rating),
                     borderColor: muted,
                     backgroundColor: 'transparent',
@@ -138,14 +138,14 @@ async function loadScorecard(username) {
         return;
     }
     body.classList.remove('hidden');
-    label.textContent = `${data.games} analyzed games at ${data.own_avg_elo}`
+    label.textContent = `${data.games} analyzed games · average rating ${data.own_avg_elo}`
         + ` · band from ${data.band_games} other player-games`;
 
     drawScorecardRadar(data.rows, data.own_avg_elo);
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
-            <th></th><th>You</th><th>Band at ${data.own_avg_elo}</th>
+            <th></th><th>You</th><th>Band at your average (${data.own_avg_elo})</th>
             <th class="sc-range-head">worse · even · better</th><th>Difference (95% range)</th><th></th>
         </tr></thead>
         <tbody>${data.rows.map((r) => `
