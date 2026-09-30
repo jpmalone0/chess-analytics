@@ -9,6 +9,12 @@ single-threaded engine. Multi-threaded Stockfish is non-deterministic, and a
 reused engine carries its transposition table into the next game — either one
 makes a position's evaluation depend on something other than the position. Only
 the parent writes to SQLite, which keeps the workers off a single write lock.
+
+Each position is searched for its top three moves, not just the best. Rank 1
+feeds position_evals exactly as a single-line search did; the other ranks go to
+position_pv, because the gap between the best move and the next is the only way
+to tell a critical position from an easy one. It costs 5.2x the search time
+(engine/cli.py has the measurement).
 """
 
 from __future__ import annotations
@@ -27,12 +33,17 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
 from engine.db import CANONICAL_DATABASE_URL, SessionLocal
-from engine.models import AnalysisRun, GameCoverage, PositionEval
+from engine.models import AnalysisRun, GameCoverage, PositionEval, PositionPV
 from engine.views import init_engine_db
 
 DEFAULT_DEPTH = 14
 DEFAULT_HASH_MB = 64
+DEFAULT_MULTIPV = 3
 DEFAULT_ENGINE_PATH = os.getenv("STOCKFISH_PATH", "stockfish")
+
+# A candidate's stored line, counting the candidate itself: enough to see what
+# the move was for, without keeping an engine's whole speculation.
+PV_PLIES = 6
 
 
 def default_workers() -> int:
@@ -53,6 +64,7 @@ class RunConfig:
     hash_mb: int = DEFAULT_HASH_MB
     threads: int = 1
     engine_path: str = DEFAULT_ENGINE_PATH
+    multipv: int = DEFAULT_MULTIPV
 
 
 @dataclass
@@ -82,6 +94,36 @@ class AnalyzedGame(NamedTuple):
     status: str
     error: Optional[str]
     time_class: Optional[str]
+
+
+class Candidate(NamedTuple):
+    """One of the engine's top moves in a position, from White's point of view."""
+
+    rank: int
+    move_uci: str
+    cp: Optional[int]
+    mate_in: Optional[int]
+    line: Optional[str]     # the moves after move_uci, space-separated UCI
+
+
+class PositionResult(NamedTuple):
+    """One position's evaluation: the best line's score, and every candidate."""
+
+    cp: Optional[int]
+    mate_in: Optional[int]
+    best_move_uci: Optional[str]
+    candidates: tuple
+
+
+class PositionRow(NamedTuple):
+    """A PositionResult placed in its game, as the worker hands it back."""
+
+    game_id: int
+    ply: int
+    cp: Optional[int]
+    mate_in: Optional[int]
+    best_move_uci: Optional[str]
+    candidates: tuple
 
 
 class EngineNotFound(Exception):
@@ -167,8 +209,8 @@ def _game_time_class(game_id: int) -> Optional[str]:
         ).scalar()
 
 
-def _evaluate_position(proc, board: chess.Board, depth: int):
-    """Evaluate one position, always from White's point of view.
+def _evaluate_position(proc, board: chess.Board, depth: int, multipv: int) -> PositionResult:
+    """Evaluate one position's top candidates, always from White's point of view.
 
     Terminal positions are recorded, not searched: asking an engine to evaluate a
     finished game is meaningless and some builds refuse outright. A delivered
@@ -176,18 +218,26 @@ def _evaluate_position(proc, board: chess.Board, depth: int):
     parity, which keeps a signed sentinel out of stored ground truth.
     """
     if board.is_checkmate():
-        return None, 0, None
+        return PositionResult(None, 0, None, ())
     if board.is_game_over():
-        return 0, None, None  # stalemate, repetition, material — a real zero
+        return PositionResult(0, None, None, ())  # stalemate, repetition, material — a real zero
 
-    info = proc.analyse(board, chess.engine.Limit(depth=depth))
-    score = info["score"].white()
-    pv = info.get("pv") or []
-    best = pv[0].uci() if pv else None
-    return score.score(), score.mate(), best
+    infos = proc.analyse(board, chess.engine.Limit(depth=depth), multipv=multipv)
+    candidates = []
+    for rank, info in enumerate(infos, start=1):
+        pv = info.get("pv") or []
+        if not pv:
+            continue
+        score = info["score"].white()
+        line = " ".join(m.uci() for m in pv[1:PV_PLIES]) or None
+        candidates.append(Candidate(rank, pv[0].uci(), score.score(), score.mate(), line))
+
+    top = infos[0]["score"].white()
+    best = candidates[0].move_uci if candidates and candidates[0].rank == 1 else None
+    return PositionResult(top.score(), top.mate(), best, tuple(candidates))
 
 
-def _analyze_one(game_id: int, depth: int) -> AnalyzedGame:
+def _analyze_one(game_id: int, depth: int, multipv: int = DEFAULT_MULTIPV) -> AnalyzedGame:
     """Replay one game and evaluate every position it passes through.
 
     The engine is opened per game and closed by the with-block, while its event
@@ -217,11 +267,12 @@ def _analyze_one(game_id: int, depth: int) -> AnalyzedGame:
         return AnalyzedGame(game_id, [], "failed", "no moves stored", time_class)
 
     with _open_engine() as proc:
-        gid, rows, status, error = _evaluate_game(proc, game_id, sans, depth)
+        gid, rows, status, error = _evaluate_game(proc, game_id, sans, depth, multipv)
         return AnalyzedGame(gid, rows, status, error, time_class)
 
 
-def _evaluate_game(proc, game_id: int, sans: list[str], depth: int):
+def _evaluate_game(proc, game_id: int, sans: list[str], depth: int,
+                   multipv: int = DEFAULT_MULTIPV):
     """Walk one game's moves, evaluating every position including the start.
 
     Returns (game_id, rows, status, error). Raising here would take down the
@@ -231,13 +282,11 @@ def _evaluate_game(proc, game_id: int, sans: list[str], depth: int):
     board = chess.Board()
     rows = []
     try:
-        cp, mate, best = _evaluate_position(proc, board, depth)
-        rows.append((game_id, 0, cp, mate, best))
+        rows.append(PositionRow(game_id, 0, *_evaluate_position(proc, board, depth, multipv)))
 
         for ply, san in enumerate(sans, start=1):
             board.push_san(san)
-            cp, mate, best = _evaluate_position(proc, board, depth)
-            rows.append((game_id, ply, cp, mate, best))
+            rows.append(PositionRow(game_id, ply, *_evaluate_position(proc, board, depth, multipv)))
     except (ValueError, AssertionError) as exc:
         # Illegal or ambiguous SAN — the stored game does not reconstruct.
         return game_id, rows, "partial" if rows else "failed", f"replay failed at ply {len(rows)}: {exc}"
@@ -251,6 +300,29 @@ def _evaluate_game(proc, game_id: int, sans: list[str], depth: int):
 # Batch
 # ═══════════════════════════════════════════════════════════
 
+def _run_settings(config: RunConfig, version: str) -> dict:
+    """Everything that decides whether two runs' evaluations can be compared."""
+    return {
+        "engine_name": "Stockfish",
+        "engine_version": version,
+        "depth": config.depth,
+        "hash_mb": config.hash_mb,
+        "threads": config.threads,
+        "multipv": config.multipv,
+    }
+
+
+def find_run(config: RunConfig, version: str) -> Optional[int]:
+    """The run matching these settings, without creating one.
+
+    Split out so a dry run can ask what a batch would cost without leaving a
+    run row behind.
+    """
+    with SessionLocal() as session:
+        existing = session.query(AnalysisRun).filter_by(**_run_settings(config, version)).first()
+        return int(existing.run_id) if existing else None
+
+
 def get_or_create_run(config: RunConfig) -> int:
     """Find the run matching these settings, or start one.
 
@@ -261,32 +333,37 @@ def get_or_create_run(config: RunConfig) -> int:
     version = engine_version(config.engine_path)
     init_engine_db()
 
-    with SessionLocal() as session:
-        existing = (
-            session.query(AnalysisRun)
-            .filter_by(
-                engine_name="Stockfish",
-                engine_version=version,
-                depth=config.depth,
-                hash_mb=config.hash_mb,
-                threads=config.threads,
-            )
-            .first()
-        )
-        if existing:
-            return int(existing.run_id)
+    existing = find_run(config, version)
+    if existing is not None:
+        return existing
 
-        run = AnalysisRun(
-            engine_name="Stockfish",
-            engine_version=version,
-            depth=config.depth,
-            hash_mb=config.hash_mb,
-            threads=config.threads,
-            created_at=datetime.utcnow(),
-        )
+    with SessionLocal() as session:
+        run = AnalysisRun(**_run_settings(config, version), created_at=datetime.utcnow())
         session.add(run)
         session.commit()
         return int(run.run_id)
+
+
+def store_game(session, run_id: int, game_id: int, rows) -> None:
+    """Write one game's evaluations and candidates, replacing any earlier attempt.
+
+    Re-running a partial game re-evaluates from ply 0, so whatever the
+    interrupted attempt left behind is cleared first rather than left to sit
+    alongside the new rows. The caller commits.
+    """
+    for model in (PositionEval, PositionPV):
+        session.query(model).filter_by(run_id=run_id, game_id=game_id).delete(
+            synchronize_session=False)
+    session.bulk_save_objects([
+        PositionEval(run_id=run_id, game_id=row.game_id, ply=row.ply,
+                     cp=row.cp, mate_in=row.mate_in, best_move_uci=row.best_move_uci)
+        for row in rows
+    ])
+    session.bulk_save_objects([
+        PositionPV(run_id=run_id, game_id=row.game_id, ply=row.ply, rank=c.rank,
+                   move_uci=c.move_uci, cp=c.cp, mate_in=c.mate_in, line=c.line)
+        for row in rows for c in row.candidates
+    ])
 
 
 def analyze_games(
@@ -317,24 +394,15 @@ def analyze_games(
         initializer=_init_worker,
         initargs=(config.engine_path, config.hash_mb, config.threads),
     ) as pool:
-        futures = [pool.submit(_analyze_one, gid, config.depth) for gid in game_ids]
+        futures = [
+            pool.submit(_analyze_one, gid, config.depth, config.multipv) for gid in game_ids
+        ]
 
         for done, future in enumerate(futures, start=1):
             game_id, rows, status, error, time_class = future.result()
 
             if rows:
-                # Re-running a partial game re-evaluates from ply 0, so clear
-                # whatever the interrupted attempt left behind.
-                session.query(PositionEval).filter_by(
-                    run_id=run_id, game_id=game_id
-                ).delete(synchronize_session=False)
-                session.bulk_save_objects([
-                    PositionEval(
-                        run_id=run_id, game_id=gid, ply=ply,
-                        cp=cp, mate_in=mate, best_move_uci=best,
-                    )
-                    for gid, ply, cp, mate, best in rows
-                ])
+                store_game(session, run_id, game_id, rows)
 
             session.merge(GameCoverage(
                 run_id=run_id,

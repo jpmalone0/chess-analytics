@@ -35,6 +35,10 @@ class AnalysisRun(Base):
     depth          = Column(Integer, nullable=False)
     hash_mb        = Column(Integer, nullable=False)
     threads        = Column(Integer, nullable=False)
+    # Stockfish prunes differently when asked for several lines: in a 10-game
+    # sample the best move changed in 26% of positions. A run's line count is
+    # therefore part of what makes its evaluations comparable.
+    multipv        = Column(Integer, nullable=False, default=1)
     created_at     = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -62,6 +66,31 @@ class PositionEval(Base):
     cp            = Column(Integer)
     mate_in       = Column(Integer)
     best_move_uci = Column(String(6))
+
+
+class PositionPV(Base):
+    """The engine's top candidates for a position, best first, from White's view.
+
+    Rank 1 comes from the same search that fills position_evals, so the two
+    always agree and every view built on position_evals is unaffected. Ranks 2
+    and 3 say what position_evals cannot: whether the best move was the only
+    good one. That gap is what tells a critical position from one where
+    anything reasonable holds.
+
+    Terminal positions are never searched and get no rows. A position with
+    fewer legal moves than were asked for gets only the lines that exist.
+    """
+
+    __tablename__ = "position_pv"
+
+    run_id   = Column(Integer, ForeignKey("analysis_runs.run_id"), primary_key=True)
+    game_id  = Column(Integer, primary_key=True)
+    ply      = Column(Integer, primary_key=True)   # same convention as position_evals
+    rank     = Column(Integer, primary_key=True)   # 1 = best
+    move_uci = Column(String(6), nullable=False)
+    cp       = Column(Integer)                     # as position_evals: mate leaves cp NULL
+    mate_in  = Column(Integer)
+    line     = Column(Text)                        # up to five continuation moves, space-separated UCI
 
 
 class GameCoverage(Base):

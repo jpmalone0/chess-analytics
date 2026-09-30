@@ -1,7 +1,7 @@
 # Tactics section
 
 **Date:** 2026-09-19
-**Status:** design; Stage 1 superseded and shipped, Stages 2-3 not implemented
+**Status:** design; Stage 1 superseded and shipped; Stage 3's engine change implemented (no run yet); Stage 2 not implemented
 **Depends on:** [2026-09-16-style-vs-ability-findings.md](2026-09-16-style-vs-ability-findings.md)
 
 ---
@@ -250,10 +250,25 @@ The full line is already computed and discarded. The change is to pass
 alongside the existing three values. The existing `position_evals` write stays
 exactly as it is, fed from rank 1, so nothing downstream breaks.
 
-**Cost is unmeasured and must be measured before the full run.** MultiPV=3
-widens the search and disables some pruning; the slowdown is plausibly
-1.5–2.5× but that is a guess, not a figure. Time a 20-game sample first and
-decide the coverage target from the measured rate.
+**Cost, measured 2026-09-30: 5.2×, not the 1.5–2.5× guessed here.** Timed on
+10 rapid games (795 positions) at depth 14 with production settings, same
+positions both ways: 63.8 ms per position for one line, 333.8 ms for three. The
+game-to-game ratio ran from 3.8× to 8.0×. Re-analysing everything that run 1
+covered (1,940 games) projects to about 4 hours against about 46 minutes.
+
+**The search also changes what counts as best.** Under MultiPV=3 the rank-1
+move differed from the single-line best move in 26% of positions, and the
+evaluation moved by a median of 12 cp (90th percentile 75 cp). Numbers built on
+the best move shift noticeably when switching; numbers built on expected score
+shift less.
+
+**As built (2026-09-30):** three lines became *the* evaluation rather than a
+second run beside run 1. `RunConfig.multipv` defaults to 3, `analysis_runs`
+records it, candidates go to `position_pv`, and rank 1 still feeds
+`position_evals`. The single-line evaluations were cleared, with a full copy of
+the sidecar moved to the Trash first. The expected-score curve went with them
+and must be refit after the first run (`python -m engine.fit_curve`). No
+analysis has been run in the new format yet.
 
 Terminal-position handling is unchanged—checkmate and stalemate still return
 early without searching.

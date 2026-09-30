@@ -11,17 +11,17 @@ import argparse
 import sys
 from datetime import date, datetime
 
-from sqlalchemy import text
-
 from engine.analyze import (
     DEFAULT_DEPTH,
     DEFAULT_ENGINE_PATH,
     DEFAULT_HASH_MB,
+    DEFAULT_MULTIPV,
     EngineNotFound,
     RunConfig,
     analyze_games,
     default_workers,
     engine_version,
+    find_run,
     get_or_create_run,
     stderr_progress,
 )
@@ -42,21 +42,32 @@ MS_PER_POSITION_BY_DEPTH = {10: 7.2, 12: 17.5, 14: 60.6}
 # Calibrating against the measurement rather than the model matters more than it
 # looks: an estimate that is 2x optimistic makes a healthy run look stalled, and
 # that is exactly what masked a real deadlock during development.
-GAMES_PER_MIN_AT_REFERENCE = 48.0
+GAMES_PER_MIN_AT_REFERENCE = 48.0     # one line per position
 REFERENCE_WORKERS = 7
 
+# Search cost of asking for several lines, relative to one. Measured 2026-09-30
+# at depth 14 on 10 rapid games, 795 positions, same position set both ways:
+# 63.8 ms per position for one line, 333.8 ms for three. The game-to-game ratio
+# ran from 3.8x to 8.0x, so a small batch can miss this by a wide margin.
+MULTIPV_SLOWDOWN = {1: 1.0, 3: 5.23}
 
-def estimated_minutes(games: int, workers: int, depth: int) -> float:
+
+def estimated_minutes(games: int, workers: int, depth: int,
+                      multipv: int = DEFAULT_MULTIPV) -> float:
     """Rough wall-clock for a batch. Approximate by construction."""
     ms = MS_PER_POSITION_BY_DEPTH.get(depth)
     if ms is None:
         # An unmeasured depth. Search cost climbs steeply, so anything deeper
         # than 14 will take longer than this says.
         ms = MS_PER_POSITION_BY_DEPTH[DEFAULT_DEPTH]
+    # An unmeasured line count borrows the default's cost, which understates
+    # anything above three for the same reason.
+    slowdown = MULTIPV_SLOWDOWN.get(multipv, MULTIPV_SLOWDOWN[DEFAULT_MULTIPV])
     rate = (
         GAMES_PER_MIN_AT_REFERENCE
         * (workers / REFERENCE_WORKERS)
         * (MS_PER_POSITION_BY_DEPTH[DEFAULT_DEPTH] / ms)
+        / slowdown
     )
     return games / rate
 
@@ -83,6 +94,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, help="cap the number of games")
     p.add_argument("--depth", type=int, default=DEFAULT_DEPTH)
     p.add_argument("--hash-mb", type=int, default=DEFAULT_HASH_MB)
+    p.add_argument("--multipv", type=int, default=DEFAULT_MULTIPV,
+                   help="candidate moves stored per position (default: %(default)s)")
     p.add_argument("--workers", type=int, help="default: cores - 1")
     p.add_argument("--engine-path", default=DEFAULT_ENGINE_PATH)
     p.add_argument(
@@ -109,6 +122,7 @@ def main(argv=None) -> int:
         hash_mb=args.hash_mb,
         threads=1,
         engine_path=args.engine_path,
+        multipv=args.multipv,
     )
 
     # Fail on a missing binary before creating a database.
@@ -144,27 +158,21 @@ def main(argv=None) -> int:
 
         if args.dry_run:
             # A dry run should not create a run row; look one up only if it exists.
-            existing = conn.execute(
-                text(
-                    "SELECT run_id FROM engine.analysis_runs "
-                    "WHERE engine_version = :v AND depth = :d AND hash_mb = :h "
-                    "AND threads = 1"
-                ),
-                {"v": version, "d": config.depth, "h": config.hash_mb},
-            ).first()
+            existing = find_run(config, version)
             todo = (
-                unanalyzed(conn, game_ids, existing[0]) if existing else game_ids
+                unanalyzed(conn, game_ids, existing) if existing is not None else game_ids
             )
         else:
             run_id = get_or_create_run(config)
             todo = unanalyzed(conn, game_ids, run_id)
 
     workers = args.workers or default_workers()
-    est = estimated_minutes(len(todo), workers, config.depth)
+    est = estimated_minutes(len(todo), workers, config.depth, config.multipv)
     print(
         f"{args.player}: {len(game_ids)} games in scope, "
         f"{len(game_ids) - len(todo)} already analyzed, {len(todo)} to do "
-        f"(~{est:.1f} min on {workers} workers, {version} depth {config.depth})"
+        f"(~{est:.1f} min on {workers} workers, {version} depth {config.depth}, "
+        f"top {config.multipv} moves)"
     )
 
     if args.dry_run:
