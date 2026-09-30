@@ -64,6 +64,19 @@ function scRangeBar(row) {
     </div>`;
 }
 
+/** Where a spoke's point sits. Elo spokes sit at their Elo. A 0-100 spoke
+ *  (time management) is pinned so 50, level with your opponents, lands on your
+ *  rating ring: below it falls inside the ring, above it reaches toward the
+ *  edge at 100. On the ring then means on par for every spoke. */
+function scRadius(row, rating) {
+    if (row.has_elo) return row.elo;
+    if (row.you === null) return null;
+    const score = 100 * row.you;
+    return score <= 50
+        ? rating * (score / 50)
+        : rating + (3000 - rating) * ((score - 50) / 50);
+}
+
 function drawScorecardRadar(rows, rating) {
     const ctx = document.getElementById('scorecard-chart');
     if (scorecardChart) scorecardChart.destroy();
@@ -76,11 +89,11 @@ function drawScorecardRadar(rows, rating) {
     scorecardChart = new Chart(ctx, {
         type: 'radar',
         data: {
-            labels: rows.map((r) => r.label),
+            labels: rows.map((r) => (r.has_elo ? r.label : `${r.label} (0–100)`)),
             datasets: [
                 {
                     label: 'you',
-                    data: rows.map((r) => r.elo),
+                    data: rows.map((r) => scRadius(r, rating)),
                     borderColor: accent,
                     backgroundColor: accent + '33',
                     pointBackgroundColor: accent,
@@ -117,6 +130,10 @@ function drawScorecardRadar(rows, rating) {
                     callbacks: {
                         label: (c) => {
                             const r = rows[c.dataIndex];
+                            if (!r.has_elo) {
+                                return r.you === null ? 'no data'
+                                    : `${Math.round(100 * r.you)} / 100 (50 = level with your opponents)`;
+                            }
                             if (r.elo === null) return 'no Elo';
                             return `plays like ${r.elo} (95%: ${scEloRange(r)})`;
                         },
@@ -159,8 +176,7 @@ async function loadScorecard(username) {
     label.textContent = `${data.games} analyzed games · average rating ${data.own_avg_elo}`
         + ` · band from ${data.band_games} other player-games`;
 
-    // Rows without a meaningful Elo (time management) stay in the table only.
-    drawScorecardRadar(data.rows.filter((r) => r.has_elo), data.own_avg_elo);
+    drawScorecardRadar(data.rows, data.own_avg_elo);
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
