@@ -255,3 +255,18 @@ def test_a_derived_band_comes_from_the_median_within_the_class(client, db):
     band = client.get("/api/players/me/analytics/move-quality/baseline"
                       "?time_class=rapid").json()["band"]
     assert (band["elo_lo"], band["source"]) == (1900, "derived")
+
+
+def test_a_press_analyzes_30_games_by_default(client, db, runner):
+    """The button's label and what a press queues come from one default."""
+    me, a = make_player(db, "me"), make_player(db, "a")
+    make_game(db, me, a, 1850, 1850)
+    db.commit()
+
+    base = client.get("/api/players/me/analytics/move-quality/baseline"
+                      "?time_class=rapid&elo_band=1800").json()
+    assert base["default_games"] == 30
+
+    r = client.post("/api/players/me/analytics/move-quality/population"
+                    "?time_class=rapid&elo_band=1800").json()
+    assert r["job"]["target_games"] == 30
