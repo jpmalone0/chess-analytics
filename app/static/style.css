@@ -880,6 +880,42 @@ body {
     overflow-y: auto;
 }
 
+/* The opening card beside the Scorecard: its height is the Scorecard's
+   (contain: size keeps the list from stretching the row), and the list fills
+   what is left under the header and scrolls. */
+#opening-stats-overview:not(.hidden) {
+    display: flex;
+    flex-direction: column;
+}
+
+#opening-stats-overview > .games-table-wrap,
+#opening-stats-overview > .games-table-wrap > div:not(.hidden) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.openings-fill {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+@media (min-width: 901px) {
+    #layer-2 #opening-stats-overview {
+        contain: size;
+    }
+}
+
+/* Stacked under the Scorecard there is no height to borrow. */
+@media (max-width: 900px) {
+    .openings-fill {
+        max-height: max(320px, 60vh);
+    }
+}
+
+.openings-fill .opening-stats-table th,
 .openings-scroll .opening-stats-table th {
     position: sticky;
     top: 0;

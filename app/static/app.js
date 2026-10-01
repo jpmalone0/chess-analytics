@@ -29,6 +29,10 @@ let currentOpeningFilterColor = '';  // '' | 'white' | 'black'
 const ANALYTICS_SECTIONS = ['outcomes', 'time', 'form'];
 const collapsedSections = new Set();  // sections the user has collapsed
 const OPENINGS_PREVIEW_COUNT = 6;     // opening rows shown before "show all"
+// The opening card is pinned to the Scorecard's height beside it, and its list
+// fills that space and scrolls, so every opening shows and nothing needs
+// expanding. False restores the preview with its "Show all" toggle.
+const OPENINGS_FILL_CARD = true;
 let openingsExpanded = false;
 let lastTopOpenings = null;           // cached so the toggle can re-render
 let winrateMode = 'color';
@@ -1193,16 +1197,18 @@ function renderOpeningTables() {
         // Sort before slicing, so the preview shows the top rows by whatever
         // the user sorted on rather than the top rows by games, re-ordered.
         const sorted = sortOpenings(openings);
-        const shown = openingsExpanded ? sorted : sorted.slice(0, OPENINGS_PREVIEW_COUNT);
+        const expanded = openingsExpanded || OPENINGS_FILL_CARD;
+        const shown = expanded ? sorted : sorted.slice(0, OPENINGS_PREVIEW_COUNT);
 
         // A player can have hundreds of opening families, so the expanded list
         // scrolls in its own box rather than pushing the dashboard down. The
         // toggle sits outside that box: inside it, collapsing would mean
         // scrolling past every row to reach the button.
-        let html = `<div class="openings-box${openingsExpanded ? ' openings-scroll' : ''}">`
+        const boxClass = OPENINGS_FILL_CARD ? ' openings-fill' : expanded ? ' openings-scroll' : '';
+        let html = `<div class="openings-box${boxClass}">`
                  + buildOpeningTable(shown, showColorPip, summaryRows)
                  + `</div>`;
-        if (openings.length > OPENINGS_PREVIEW_COUNT) {
+        if (!OPENINGS_FILL_CARD && openings.length > OPENINGS_PREVIEW_COUNT) {
             const label = openingsExpanded ? 'Show fewer' : `Show all ${openings.length}`;
             const hint = openingsExpanded
                 ? `Collapse back to the top ${OPENINGS_PREVIEW_COUNT}`
