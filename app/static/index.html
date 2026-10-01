@@ -12,7 +12,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/static/style.css?v=56">
+    <link rel="stylesheet" href="/static/style.css?v=58">
 </head>
 
 <body>
@@ -139,7 +139,7 @@
             </div>
         </section>
 
-        <!-- ═══ Layer 1: Rating History + Opening Overview ═══ -->
+        <!-- ═══ Layer 1: Rating History + Move Quality ═══ -->
         <div id="layer-1" class="hidden">
             <div id="layer-1-left">
                 <section id="elo-section" class="section">
@@ -179,20 +179,20 @@
                 </section>
             </div>
             <div id="layer-1-right">
-                <div id="opening-stats-overview" class="section hidden">
-                    <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
-                        <h2>Opening Overview</h2>
+                <section id="move-quality-section" class="section hidden">
+                    <div class="section-header">
+                        <h2>Move Quality<span class="sc-info sc-info-title" tabindex="0"
+                            aria-label="Each move is graded by the share of expected score it lost: an inaccuracy 5% or more, a mistake 10% or more, a blunder 20% or more. A Miss gives back what your opponent's error just handed you, and no more; it takes the place of the other three, so the four never overlap. Opponents: the same games from the other seat.">i<span class="sc-tip">Each move is graded by the share of expected score it lost: an inaccuracy 5% or more, a mistake 10% or more, a blunder 20% or more. A Miss gives back what your opponent's error just handed you, and no more; it takes the place of the other three, so the four never overlap. Opponents: the same games from the other seat.</span></span></h2>
+                        <span class="date-range-label" id="mq-coverage-label"></span>
                     </div>
-                    <div class="games-table-wrap">
-                        <div id="opening-stats-table-global" class="hidden"></div>
-                        <div id="opening-stats-table-white" class="hidden"></div>
-                        <div id="opening-stats-table-black" class="hidden"></div>
-                    </div>
-                </div>
+                    <div class="mq-population" id="mq-population"></div>
+                    <div class="mq-jobs" id="mq-jobs"></div>
+                    <div class="stats-grid" id="mq-totals"></div>
+                </section>
             </div>
         </div>
 
-        <!-- ═══ Layer 2: Scorecard + Move Quality, side by side ═══ -->
+        <!-- ═══ Layer 2: Scorecard + Opening Overview ═══ -->
         <div id="layer-2">
             <section id="scorecard-section" class="section hidden">
                 <div class="section-header">
@@ -206,16 +206,16 @@
                 </div>
             </section>
 
-            <section id="move-quality-section" class="section hidden">
-                <div class="section-header">
-                    <h2>Move Quality<span class="sc-info sc-info-title" tabindex="0"
-                        aria-label="Each move is graded by the share of expected score it lost: an inaccuracy 5% or more, a mistake 10% or more, a blunder 20% or more. A Miss gives back what your opponent's error just handed you, and no more; it takes the place of the other three, so the four never overlap. Opponents: the same games from the other seat.">i<span class="sc-tip">Each move is graded by the share of expected score it lost: an inaccuracy 5% or more, a mistake 10% or more, a blunder 20% or more. A Miss gives back what your opponent's error just handed you, and no more; it takes the place of the other three, so the four never overlap. Opponents: the same games from the other seat.</span></span></h2>
-                    <span class="date-range-label" id="mq-coverage-label"></span>
+            <div id="opening-stats-overview" class="section hidden">
+                <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+                    <h2>Opening Overview</h2>
                 </div>
-                <div class="mq-population" id="mq-population"></div>
-                <div class="mq-jobs" id="mq-jobs"></div>
-                <div class="stats-grid" id="mq-totals"></div>
-            </section>
+                <div class="games-table-wrap">
+                    <div id="opening-stats-table-global" class="hidden"></div>
+                    <div id="opening-stats-table-white" class="hidden"></div>
+                    <div id="opening-stats-table-black" class="hidden"></div>
+                </div>
+            </div>
         </div>
 
         <!-- ═══ Main Perspectives ═══ -->

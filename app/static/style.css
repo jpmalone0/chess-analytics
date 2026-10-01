@@ -1221,14 +1221,13 @@ body {
     box-sizing: border-box;
 }
 
-/* Scorecard and Move Quality, side by side like layer 1. Top-aligned: the
-   two differ a lot in height, and stretching Move Quality to match would
-   leave an empty card. */
+/* Scorecard and Opening Overview, side by side like layer 1. Both are tall,
+   so the cards stretch to a common height. */
 #layer-2 {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 2rem;
-    align-items: start;
+    align-items: stretch;
 }
 
 @media (max-width: 900px) {
@@ -1241,7 +1240,9 @@ body.compare-mode #layer-1 {
     display: block;
 }
 
-body.compare-mode #layer-1-right {
+/* The opening table is not compare-aware, so compare mode hides it wherever
+   it sits. */
+body.compare-mode #opening-stats-overview {
     display: none;
 }
 
@@ -1812,6 +1813,11 @@ body.compare-mode #stat-winrate     { order: 8; }
 }
 
 /* ── Move quality: population ────────────────────────────── */
+
+/* Four cards in a half-width section: a fixed 2x2, never three and one. */
+#move-quality-section .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 
 .mq-population {
     display: flex;
