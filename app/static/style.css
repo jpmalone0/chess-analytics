@@ -1943,6 +1943,21 @@ body.compare-mode #stat-winrate     { order: 8; }
     vertical-align: middle;
 }
 
+/* A section title's icon: sized to the heading, tooltip opening rightward
+   since titles sit at the section's left edge. */
+.sc-info-title {
+    font-size: 0.55em;
+    font-weight: 400;
+    vertical-align: middle;
+}
+
+.sc-info-title .sc-tip {
+    left: 0;
+    transform: none;
+    width: 280px;
+    font-size: 0.85rem;
+}
+
 /* The header sits toward the table's right edge, inside a scroll box that
    would clip a centred tooltip, so this one opens leftward. */
 .sc-info-head .sc-tip {
