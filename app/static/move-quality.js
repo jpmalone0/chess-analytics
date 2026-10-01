@@ -1,4 +1,4 @@
-/* Move quality: per-game inaccuracies, mistakes, blunders and misses.
+/* Move quality: inaccuracies, mistakes, blunders and misses, as totals.
  *
  * Engine coverage is a fraction of the corpus, so the empty state is the
  * normal state and says so rather than rendering an empty table. */
@@ -49,7 +49,6 @@ async function loadMoveQuality(username) {
     if (!t.games_analyzed) {
         label.textContent = 'No engine-analyzed games in this selection';
         document.getElementById('mq-totals').innerHTML = '';
-        document.getElementById('mq-table').innerHTML = '';
         return;
     }
     const o = data.opponents;
@@ -68,50 +67,7 @@ async function loadMoveQuality(username) {
             <div class="stat-sub mq-mirror">opponents ${mqPct(o[k], o.moves_scored)} of moves</div>
             ${bandRate ? `<div class="stat-sub mq-mirror">band ${mqPct(bandRate[k], bandRate.moves_scored)} of moves</div>` : ''}
         </div>`).join('');
-
-    document.getElementById('mq-table').innerHTML = `
-        <thead><tr>
-            <th>Date</th><th>Opening</th><th>Moves</th>
-            <th>Inacc</th><th>Mist</th><th>Blun</th><th>Miss</th><th></th>
-        </tr></thead>
-        <tbody>${data.games.map((g) => `
-            <tr class="mq-row" data-game="${g.game_id}" data-url="${g.chess_com_url || ''}">
-                <td>${g.date_played || '—'}</td>
-                <td class="mq-opening">${g.opening_name || '—'}</td>
-                <td>${g.moves_scored}</td>
-                <td>${g.inaccuracies}</td>
-                <td>${g.mistakes}</td>
-                <td class="mq-blunder">${g.blunders}</td>
-                <td>${g.misses}</td>
-                <td><button class="btn-sm" onclick="toggleMqDrill(${g.game_id})">Moves</button></td>
-            </tr>
-            <tr class="mq-drill hidden" id="mq-drill-${g.game_id}">
-                <td colspan="8"></td>
-            </tr>`).join('')}
-        </tbody>`;
 }
-
-async function toggleMqDrill(gameId) {
-    const row = document.getElementById(`mq-drill-${gameId}`);
-    if (!row.classList.contains('hidden')) { row.classList.add('hidden'); return; }
-    row.classList.remove('hidden');
-
-    const cell = row.firstElementChild;
-    cell.textContent = 'Loading…';
-    const data = await (await fetch(`/api/games/${gameId}/move-quality`)).json();
-    if (!data.moves.length) { cell.textContent = 'No flagged moves.'; return; }
-
-    const url = document.querySelector(`.mq-row[data-game="${gameId}"]`)?.dataset.url || '';
-    cell.innerHTML = `<table class="mq-moves"><tbody>${data.moves.map((m) => `
-        <tr>
-            <td>${m.move_number}${m.color === 'white' ? '.' : '...'} ${m.move_san}</td>
-            <td class="mq-tier-${m.tier || 'none'}">${m.tier || ''}${m.is_miss ? ' · miss' : ''}</td>
-            <td>${(100 * m.wp_before).toFixed(0)}% → ${(100 * m.wp_after).toFixed(0)}%</td>
-            <td>${m.time_spent_seconds != null ? m.time_spent_seconds.toFixed(1) + 's' : '—'}</td>
-        </tr>`).join('')}</tbody></table>
-        ${url ? `<a class="mq-link" href="${url}" target="_blank" rel="noopener">Open on chess.com</a>` : ''}`;
-}
-
 
 // ═══════════════════════════════════════════════════════════
 // Population: the Compare-to band's pooled rate, and the button
