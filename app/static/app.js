@@ -264,8 +264,8 @@ async function onBaselineBandChange() {
 
 async function toggleBaseline() {
     baselineEnabled = !baselineEnabled;
-    // Inverted on purpose: lit means "press to bring the average back".
-    document.getElementById('baseline-toggle').classList.toggle('active', !baselineEnabled);
+    // Lit while the overlay is showing.
+    document.getElementById('baseline-toggle').classList.toggle('active', baselineEnabled);
     await refreshBaselineOverlays();
 }
 

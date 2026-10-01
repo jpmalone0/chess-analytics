@@ -1647,9 +1647,7 @@ body.compare-mode #stat-winrate     { order: 8; }
     cursor: pointer;
 }
 
-/* Highlighted when the overlay is OFF, because the button advertises what
-   pressing it will do rather than the state you are already in: blank while
-   the average is showing, lit when pressing it would bring the average back. */
+/* Lit while the overlay is showing, gray while it is off. */
 .baseline-toggle.active {
     color: var(--text-primary);
     border-color: rgba(148, 163, 184, 0.85);
@@ -1818,6 +1816,12 @@ body.compare-mode #stat-winrate     { order: 8; }
 .mq-job {
     font-family: var(--font-mono, monospace);
     color: var(--accent-light);
+}
+
+/* Job progress beside Compare To, sized down to sit with the filter bar's
+   small buttons. */
+#band-analyze .mq-job {
+    font-size: 0.72rem;
 }
 
 .mq-jobs {
