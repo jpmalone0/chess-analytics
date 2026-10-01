@@ -35,14 +35,27 @@ function scFmt(row, v, signed, bare) {
 }
 
 /** The Elo with its range, or for a 0-100 row its score. */
+/** The Elo (range beneath), or for a 0-100 row its score. */
 function scPlaysLike(r) {
     if (!r.has_elo) {
         return r.score === null ? '—'
-            : `${Math.round(r.score)} <span class="sc-muted">/ 100</span>`;
+            : `${Math.round(r.score)}<span class="sc-muted"> / 100</span>`;
     }
     if (r.elo === null) return '—';
-    return `${r.elo} <span class="sc-muted">(${scEloRange(r)})</span>`;
+    return `${r.elo}<div class="sc-sub">${scEloRange(r)}</div>`;
 }
+
+/** Your value, the band's beneath. Units live under the row's name, so
+ *  per-move values are bare; percentages keep their sign. */
+function scYouVsBand(r) {
+    if (r.you === null) return '—';
+    const bare = r.unit !== 'percent';
+    const band = r.band === null ? ''
+        : `<div class="sc-sub">band ${scFmt(r, r.band, false, bare)}</div>`;
+    return `${scFmt(r, r.you, false, bare)}${band}`;
+}
+
+const SC_UNIT_NAMES = { points_per_move: 'pts/100 moves', per_move: 'per 100 moves' };
 
 /** "any" when the range spans the whole scale: the slope could be zero, so
  *  no rating is ruled out. */
@@ -256,16 +269,16 @@ async function loadScorecard(username) {
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
-            <th></th><th>Plays like (95% range) or score</th><th>Band at ${data.compare_source === 'selected'
-                ? data.compare_rating : `your average (${data.compare_rating})`}</th>
+            <th></th><th>Plays like</th><th>You</th>
             <th class="sc-range-head">worse · even · better<span class="sc-info sc-info-head" tabindex="0"
                 aria-label="${SC_RANGE_TIP}">i<span class="sc-tip">${SC_RANGE_TIP}</span></span></th>
         </tr></thead>
         <tbody>${data.rows.map((r) => `
             <tr>
-                <td class="sc-label" title="${r.description}">${r.label}${scBreakdown(r)}</td>
+                <td class="sc-label" title="${r.description}">${r.label}${
+    SC_UNIT_NAMES[r.unit] ? `<div class="sc-sub">${SC_UNIT_NAMES[r.unit]}</div>` : ''}${scBreakdown(r)}</td>
                 <td>${scPlaysLike(r)}</td>
-                <td class="sc-muted">${scFmt(r, r.band)}</td>
+                <td>${scYouVsBand(r)}</td>
                 <td class="sc-range ${r.higher_is_better ? '' : 'sc-flip'}">${scRangeBar(r)}</td>
             </tr>`).join('')}
         </tbody>`;

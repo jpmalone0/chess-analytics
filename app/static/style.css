@@ -1867,9 +1867,9 @@ body.compare-mode #stat-winrate     { order: 8; }
     vertical-align: bottom;
 }
 
-/* The table needs about 850px. Below this width the right column cannot give
+/* The table needs about 520px. Below this width the right column cannot give
    it that, so the wheel and table stack rather than scroll columns away. */
-@media (max-width: 1300px) {
+@media (max-width: 1000px) {
     #sc-body:not(.hidden) {
         grid-template-columns: 1fr;
     }
@@ -2034,8 +2034,8 @@ body.compare-mode #stat-winrate     { order: 8; }
 }
 
 .sc-range {
-    width: 18%;
-    min-width: 100px;
+    width: 34%;
+    min-width: 140px;
 }
 
 .sc-bar {
