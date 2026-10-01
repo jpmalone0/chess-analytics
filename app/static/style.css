@@ -1846,10 +1846,33 @@ body.compare-mode #stat-winrate     { order: 8; }
     border: 1px solid var(--border-light);
 }
 
+/* Two columns: the wheel on the left, the table on the right. */
+#sc-body:not(.hidden) {
+    display: grid;
+    grid-template-columns: minmax(280px, 400px) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: center;
+}
+
 .sc-radar {
     position: relative;
+    width: 100%;
     max-width: 420px;
-    margin: 0 auto 1rem;
+    margin: 0 auto;
+}
+
+/* Header labels may wrap in the narrower column; cells stay on one line. */
+.sc-table th {
+    white-space: normal;
+    vertical-align: bottom;
+}
+
+/* The table needs about 850px. Below this width the right column cannot give
+   it that, so the wheel and table stack rather than scroll columns away. */
+@media (max-width: 1300px) {
+    #sc-body:not(.hidden) {
+        grid-template-columns: 1fr;
+    }
 }
 
 .sc-labels {
