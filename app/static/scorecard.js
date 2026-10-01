@@ -30,6 +30,16 @@ function scFmt(row, v, signed, bare) {
     return minus(sign + v.toFixed(3)) + (bare ? '' : ' pts/game');
 }
 
+/** The Elo with its range, or for a 0-100 row its score. */
+function scPlaysLike(r) {
+    if (!r.has_elo) {
+        return r.score === null ? '—'
+            : `${Math.round(r.score)} <span class="sc-muted">/ 100</span>`;
+    }
+    if (r.elo === null) return '—';
+    return `${r.elo} <span class="sc-muted">(${scEloRange(r)})</span>`;
+}
+
 /** "any" when the range spans the whole scale: the slope could be zero, so
  *  no rating is ruled out. */
 function scEloRange(row) {
@@ -44,6 +54,10 @@ function scBreakdown(row) {
     if (!b) return '';
     const pct = (v) => `${Math.round(100 * v)}%`;
     return `<div class="sc-sub">${pct(b.ahead)} ahead · ${pct(b.even)} even · ${pct(b.behind)} behind</div>`;
+}
+
+function scFifty(row) {
+    return row.key === 'time' ? 'level with your opponents' : 'the band at your rating';
 }
 
 function scBetter(row) {
@@ -64,14 +78,14 @@ function scRangeBar(row) {
     </div>`;
 }
 
-/** Where a spoke's point sits. Elo spokes sit at their Elo. A 0-100 spoke
- *  (time management) is pinned so 50, level with your opponents, lands on your
- *  rating ring: below it falls inside the ring, above it reaches toward the
- *  edge at 100. On the ring then means on par for every spoke. */
+/** Where a spoke's point sits. Elo spokes sit at their Elo. A 0-100 spoke is
+ *  pinned so 50 (level with your opponents for time management, the band at
+ *  your rating otherwise) lands on your rating ring: below it falls inside the
+ *  ring, above it reaches toward the edge at 100. */
 function scRadius(row, rating) {
     if (row.has_elo) return row.elo;
-    if (row.you === null) return null;
-    const score = 100 * row.you;
+    if (row.score === null) return null;
+    const score = row.score;
     return score <= 50
         ? rating * (score / 50)
         : rating + (3000 - rating) * ((score - 50) / 50);
@@ -131,8 +145,8 @@ function drawScorecardRadar(rows, rating) {
                         label: (c) => {
                             const r = rows[c.dataIndex];
                             if (!r.has_elo) {
-                                return r.you === null ? 'no data'
-                                    : `${Math.round(100 * r.you)} / 100 (50 = level with your opponents)`;
+                                return r.score === null ? 'no data'
+                                    : `${Math.round(r.score)} / 100 (50 = ${scFifty(r)})`;
                             }
                             if (r.elo === null) return 'no Elo';
                             return `plays like ${r.elo} (95%: ${scEloRange(r)})`;
@@ -180,13 +194,13 @@ async function loadScorecard(username) {
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
-            <th></th><th>Plays like (95% range)</th><th>You</th><th>Band at your average (${data.own_avg_elo})</th>
+            <th></th><th>Plays like (95% range) or score</th><th>You</th><th>Band at your average (${data.own_avg_elo})</th>
             <th class="sc-range-head">worse · even · better</th><th>Difference (95% range)</th><th></th>
         </tr></thead>
         <tbody>${data.rows.map((r) => `
             <tr>
                 <td class="sc-label">${r.label}${scBreakdown(r)}</td>
-                <td>${r.elo === null ? '—' : r.elo} <span class="sc-muted">${r.elo === null ? '' : `(${scEloRange(r)})`}</span></td>
+                <td>${scPlaysLike(r)}</td>
                 <td>${scFmt(r, r.you)}</td>
                 <td class="sc-muted">${scFmt(r, r.band)}</td>
                 <td class="sc-range ${r.higher_is_better ? '' : 'sc-flip'}">${scRangeBar(r)}</td>

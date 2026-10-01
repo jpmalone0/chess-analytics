@@ -315,3 +315,42 @@ class TestEloRange:
         sides = [SideFacts(blunders=1 + i % 2, opening_moves=10) for i in range(60)]
         row = {r["key"]: r for r in compare_to_band(sides, {"blunders": fit}, 1500)}["blunders"]
         assert row["elo_lo"] < row["elo"] < row["elo_hi"]
+
+
+class TestBandScore:
+    """Advantage capitalization and resourcefulness: 0 never, 50 the band at
+    your rating, 100 always."""
+
+    @staticmethod
+    def band_at(value):
+        xs = [600 + 200 * (i % 8) for i in range(200)]
+        return fit_band(xs, [value + (0.01 if (i // 8) % 2 else -0.01) for i in range(200)], [5] * 200)
+
+    @staticmethod
+    def row(won, reached, fit):
+        sides = [SideFacts(reached=True, won=i < won) for i in range(reached)]
+        return {r["key"]: r for r in compare_to_band(sides, {"advantage": fit}, 1500)}["advantage"]
+
+    def test_matching_the_band_scores_50(self):
+        assert self.row(7, 10, self.band_at(0.7))["score"] == pytest.approx(50, abs=1)
+
+    def test_converting_everything_scores_100(self):
+        assert self.row(10, 10, self.band_at(0.7))["score"] == pytest.approx(100)
+
+    def test_converting_nothing_scores_0(self):
+        assert self.row(0, 10, self.band_at(0.7))["score"] == pytest.approx(0)
+
+    def test_halfway_to_perfect_scores_75(self):
+        assert self.row(17, 20, self.band_at(0.7))["score"] == pytest.approx(75, abs=1)
+
+    def test_no_band_means_no_score(self):
+        assert self.row(7, 10, None)["score"] is None
+
+    def test_these_rows_have_no_elo(self):
+        row = self.row(7, 10, self.band_at(0.7))
+        assert row["has_elo"] is False and row["elo"] is None
+
+    def test_time_management_scores_its_own_share(self):
+        sides = [SideFacts(clock_ahead=6, clock_even=2, clock_behind=2)] * 3
+        row = {r["key"]: r for r in compare_to_band(sides, {}, 1500)}["time"]
+        assert row["score"] == pytest.approx(70)

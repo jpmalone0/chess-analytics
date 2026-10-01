@@ -323,17 +323,25 @@ class Dimension(NamedTuple):
     higher_is_better: bool
     # False where a rating equivalent means nothing: clock share averages about
     # 50% at every rating in rating-matched games, and a beginner can have a
-    # perfect clock.
+    # perfect clock. Advantage capitalization and resourcefulness are mirror
+    # images in rating-matched games (your conversion is your opponent's failure
+    # to save), so at most one could rise with rating; neither gets an Elo.
     has_elo: bool = True
+    # How a row without an Elo becomes a 0-100 score: "share" is the value as a
+    # percentage; "vs_band" puts the band at your rating at 50, with 0 and 100
+    # at the rate's own limits.
+    score: Optional[str] = None
 
 
 DIMENSIONS = (
     Dimension("opening", "Opening", "points_per_move", True),
     Dimension("middlegame", "Middlegame", "points_per_move", True),
     Dimension("endgame", "Endgame", "points_per_move", True),
-    Dimension("time", "Time management", "percent", True, has_elo=False),
-    Dimension("advantage", "Advantage capitalization", "percent", True),
-    Dimension("resourcefulness", "Resourcefulness", "percent", True),
+    Dimension("time", "Time management", "percent", True, has_elo=False, score="share"),
+    Dimension("advantage", "Advantage capitalization", "percent", True,
+              has_elo=False, score="vs_band"),
+    Dimension("resourcefulness", "Resourcefulness", "percent", True,
+              has_elo=False, score="vs_band"),
     Dimension("tactics", "Tactics found", "percent", True),
     Dimension("blunders", "Blunders", "per_move", False),
 )
@@ -475,6 +483,14 @@ def elo_range(value: float, var_value: float, fit: Fit) -> tuple[float, float]:
     return clamp(lo), clamp(hi)
 
 
+def band_score(value: float, band: float) -> float:
+    """0 at a rate of 0, 50 at the band's rate, 100 at a rate of 1, straight
+    lines between."""
+    band = min(max(band, 1e-9), 1 - 1e-9)
+    score = 50 * value / band if value <= band else 50 + 50 * (value - band) / (1 - band)
+    return max(0.0, min(100.0, score))
+
+
 def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
                     rating: float) -> list[dict]:
     """One row per dimension: the player's value against the band's at their rating.
@@ -494,16 +510,19 @@ def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
                      "higher_is_better": dim.higher_is_better, "n": float(den),
                      "you": None, "band": None, "diff": None, "lo": None, "hi": None,
                      "verdict": None, "elo": None, "elo_lo": None, "elo_hi": None,
-                     "has_elo": dim.has_elo, "band_games": fit.n if fit else None}
+                     "has_elo": dim.has_elo, "score": None,
+                     "band_games": fit.n if fit else None}
         if dim.key == "time":
             moves = [sum(getattr(s, f"clock_{c}") for s in sides)
                      for c in ("ahead", "even", "behind")]
             total = sum(moves)
-            row["breakdown"] = ({c: n / total for c, n in zip(("ahead", "even", "behind"), moves)}
+            row["breakdown"] = ({c: n / total for c, n in zip(("ahead", "even", "behind"), moves, strict=True)}
                                 if total else None)
         if len(sides) and den > 0:
             you, var_you = ratio_and_variance(counts)
             row["you"] = you
+            if dim.score == "share":
+                row["score"] = 100 * you
             if fit is not None and dim.has_elo:
                 elo = fit.elo_for(you)
                 row["elo"] = round(elo) if elo is not None else None
@@ -516,5 +535,7 @@ def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
                 lo, hi = diff - Z95 * se, diff + Z95 * se
                 row.update(band=float(band), diff=float(diff), lo=float(lo), hi=float(hi),
                            verdict="real" if (lo > 0 or hi < 0) else "noise")
+                if dim.score == "vs_band":
+                    row["score"] = band_score(you, band)
         rows.append(row)
     return rows

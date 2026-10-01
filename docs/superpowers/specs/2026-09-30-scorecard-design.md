@@ -181,3 +181,13 @@ and in rating-matched games the band sits near 50% at every rating.
   baseline would tell a 1900 to halve their time exactly where they need it.
 - Shared lesson: engine stakes measure what is objectively at stake, not what is
   hard for the player.
+
+## Revision: advantage capitalization and resourcefulness as band scores
+
+In rating-matched games the two are mirror images (your conversion is your
+opponent's failure to save), so the band's lines satisfy conversion(R) ≈
+1 − resourcefulness(R): at most one can rise with rating, and an Elo for the
+other would be upside down. Neither gets an Elo. Each is a 0–100 score: 0 for a
+rate of 0, 50 for the band's rate at your rating, 100 for a rate of 1, with
+straight lines between. On the radar, 50 sits on the rating ring, as for time
+management. First values: advantage capitalization 55, resourcefulness 49.
