@@ -360,3 +360,9 @@ def test_the_0_to_100_dimensions_come_last():
     """The wheel and the table group the Elo spokes, then the 0-100 ones."""
     assert [d.key for d in DIMENSIONS][-3:] == ["advantage", "resourcefulness", "time"]
     assert all(d.has_elo for d in DIMENSIONS[:-3])
+
+
+def test_every_dimension_says_what_it_measures():
+    rows = compare_to_band([SideFacts()], {}, 1500)
+    assert all(r["description"] for r in rows)
+    assert len(rows) == len(DIMENSIONS)

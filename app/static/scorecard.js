@@ -56,6 +56,17 @@ function scBreakdown(row) {
     return `<div class="sc-sub">${pct(b.ahead)} ahead · ${pct(b.even)} even · ${pct(b.behind)} behind</div>`;
 }
 
+/** Break a sentence into lines for a canvas tooltip, which does not wrap. */
+function scWrap(text, width) {
+    const lines = [''];
+    for (const word of (text || '').split(' ')) {
+        const last = lines[lines.length - 1];
+        if (last && (last + ' ' + word).length > width) lines.push(word);
+        else lines[lines.length - 1] = last ? `${last} ${word}` : word;
+    }
+    return lines;
+}
+
 function scFifty(row) {
     return row.key === 'time' ? 'level with your opponents' : 'the band at your rating';
 }
@@ -144,6 +155,7 @@ function drawScorecardRadar(rows, rating) {
                 tooltip: {
                     filter: (c) => c.datasetIndex === 0,
                     callbacks: {
+                        afterLabel: (c) => scWrap(rows[c.dataIndex].description, 48),
                         label: (c) => {
                             const r = rows[c.dataIndex];
                             if (!r.has_elo) {
@@ -201,7 +213,7 @@ async function loadScorecard(username) {
         </tr></thead>
         <tbody>${data.rows.map((r) => `
             <tr>
-                <td class="sc-label">${r.label}${scBreakdown(r)}</td>
+                <td class="sc-label" title="${r.description}">${r.label}${scBreakdown(r)}</td>
                 <td>${scPlaysLike(r)}</td>
                 <td>${scFmt(r, r.you)}</td>
                 <td class="sc-muted">${scFmt(r, r.band)}</td>

@@ -331,20 +331,40 @@ class Dimension(NamedTuple):
     # percentage; "vs_band" puts the band at your rating at 50, with 0 and 100
     # at the rate's own limits.
     score: Optional[str] = None
+    # What it measures, in a sentence, for the page's tooltips.
+    description: str = ""
 
 
 DIMENSIONS = (
-    Dimension("opening", "Opening", "points_per_move", True),
-    Dimension("middlegame", "Middlegame", "points_per_move", True),
-    Dimension("endgame", "Endgame", "points_per_move", True),
-    Dimension("tactics", "Tactics found", "percent", True),
-    Dimension("blunders", "Blunders", "per_move", False),
+    Dimension("opening", "Opening", "points_per_move", True, description=(
+        "Expected score gained or lost against the engine per 100 moves, "
+        "before the middlegame begins.")),
+    Dimension("middlegame", "Middlegame", "points_per_move", True, description=(
+        "Expected score gained or lost against the engine per 100 moves, "
+        "from the middlegame until the endgame.")),
+    Dimension("endgame", "Endgame", "points_per_move", True, description=(
+        "Expected score gained or lost against the engine per 100 moves, "
+        "from six or fewer queens, rooks and minor pieces to the end.")),
+    Dimension("tactics", "Tactics found", "percent", True, description=(
+        "Share of tactical chances you took: a capture or check, not a plain "
+        "recapture, that beat every other move by 10% or more.")),
+    Dimension("blunders", "Blunders", "per_move", False, description=(
+        "Moves that lost 20% or more of your expected score, per 100 moves, "
+        "outside tactical chances.")),
     # The 0-100 dimensions, grouped last so the wheel keeps them together.
     Dimension("advantage", "Advantage capitalization", "percent", True,
-              has_elo=False, score="vs_band"),
+              has_elo=False, score="vs_band", description=(
+                  "Share of games you won after reaching a 75% expected score "
+                  "after the opening, scored 0-100.")),
     Dimension("resourcefulness", "Resourcefulness", "percent", True,
-              has_elo=False, score="vs_band"),
-    Dimension("time", "Time management", "percent", True, has_elo=False, score="share"),
+              has_elo=False, score="vs_band", description=(
+                  "Share of games you won or drew after falling to a 25% "
+                  "expected score after the opening, scored 0-100.")),
+    Dimension("time", "Time management", "percent", True, has_elo=False, score="share",
+              description=(
+                  "Share of your moves made ahead of your opponent on the clock, "
+                  "counting even (within 10% of the larger clock) as half, "
+                  "scored 0-100.")),
 )
 
 
@@ -512,6 +532,7 @@ def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
                      "you": None, "band": None, "diff": None, "lo": None, "hi": None,
                      "verdict": None, "elo": None, "elo_lo": None, "elo_hi": None,
                      "has_elo": dim.has_elo, "score": None,
+                     "description": dim.description,
                      "band_games": fit.n if fit else None}
         if dim.key == "time":
             moves = [sum(getattr(s, f"clock_{c}") for s in sides)
