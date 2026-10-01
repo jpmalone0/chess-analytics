@@ -1221,6 +1221,22 @@ body {
     box-sizing: border-box;
 }
 
+/* Scorecard and Move Quality, side by side like layer 1. Top-aligned: the
+   two differ a lot in height, and stretching Move Quality to match would
+   leave an empty card. */
+#layer-2 {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2rem;
+    align-items: start;
+}
+
+@media (max-width: 900px) {
+    #layer-2 {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 body.compare-mode #layer-1 {
     display: block;
 }
@@ -1846,19 +1862,11 @@ body.compare-mode #stat-winrate     { order: 8; }
     border: 1px solid var(--border-light);
 }
 
-/* Two columns: the wheel on the left, the table on the right. */
-#sc-body:not(.hidden) {
-    display: grid;
-    grid-template-columns: minmax(280px, 400px) minmax(0, 1fr);
-    gap: 1.5rem;
-    align-items: center;
-}
-
 .sc-radar {
     position: relative;
     width: 100%;
     max-width: 420px;
-    margin: 0 auto;
+    margin: 0 auto 1rem;
 }
 
 /* Header labels may wrap in the narrower column; cells stay on one line. */
@@ -1867,13 +1875,6 @@ body.compare-mode #stat-winrate     { order: 8; }
     vertical-align: bottom;
 }
 
-/* The table needs about 520px. Below this width the right column cannot give
-   it that, so the wheel and table stack rather than scroll columns away. */
-@media (max-width: 1000px) {
-    #sc-body:not(.hidden) {
-        grid-template-columns: 1fr;
-    }
-}
 
 .sc-labels {
     position: absolute;
@@ -2004,7 +2005,7 @@ body.compare-mode #stat-winrate     { order: 8; }
 
 .sc-table th,
 .sc-table td {
-    padding: 0.4rem 0.5rem;
+    padding: 0.4rem 0.35rem;
     border-bottom: 1px solid var(--border);
     text-align: left;
     white-space: nowrap;
@@ -2034,8 +2035,15 @@ body.compare-mode #stat-winrate     { order: 8; }
 }
 
 .sc-range {
-    width: 34%;
-    min-width: 140px;
+    width: 30%;
+    min-width: 90px;
+}
+
+/* Names may wrap ("Advantage capitalization"), so the half-width section can
+   hold the table. */
+.sc-table td.sc-label {
+    white-space: normal;
+    min-width: 6.5rem;
 }
 
 .sc-bar {

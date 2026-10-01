@@ -12,7 +12,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/static/style.css?v=55">
+    <link rel="stylesheet" href="/static/style.css?v=56">
 </head>
 
 <body>
@@ -192,29 +192,31 @@
             </div>
         </div>
 
-        <!-- ═══ Scorecard + Move Quality ═══ -->
-        <section id="scorecard-section" class="section hidden">
-            <div class="section-header">
-                <h2>Scorecard <span class="sc-warning hidden" id="sc-sample-warning">!</span></h2>
-                <span class="date-range-label" id="sc-coverage-label"></span>
-            </div>
-            <div class="mq-population" id="sc-analyze"></div>
-            <div id="sc-body">
-                <div class="sc-radar"><canvas id="scorecard-chart"></canvas></div>
-                <div class="sc-table-wrap"><table class="sc-table" id="sc-table"></table></div>
-            </div>
-        </section>
+        <!-- ═══ Layer 2: Scorecard + Move Quality, side by side ═══ -->
+        <div id="layer-2">
+            <section id="scorecard-section" class="section hidden">
+                <div class="section-header">
+                    <h2>Scorecard <span class="sc-warning hidden" id="sc-sample-warning">!</span></h2>
+                    <span class="date-range-label" id="sc-coverage-label"></span>
+                </div>
+                <div class="mq-population" id="sc-analyze"></div>
+                <div id="sc-body">
+                    <div class="sc-radar"><canvas id="scorecard-chart"></canvas></div>
+                    <div class="sc-table-wrap"><table class="sc-table" id="sc-table"></table></div>
+                </div>
+            </section>
 
-        <section id="move-quality-section" class="section hidden">
-            <div class="section-header">
-                <h2>Move Quality<span class="sc-info sc-info-title" tabindex="0"
-                    aria-label="Each move is graded by the share of expected score it lost: an inaccuracy 5% or more, a mistake 10% or more, a blunder 20% or more. A Miss gives back what your opponent's error just handed you, and no more; it takes the place of the other three, so the four never overlap. Opponents: the same games from the other seat.">i<span class="sc-tip">Each move is graded by the share of expected score it lost: an inaccuracy 5% or more, a mistake 10% or more, a blunder 20% or more. A Miss gives back what your opponent's error just handed you, and no more; it takes the place of the other three, so the four never overlap. Opponents: the same games from the other seat.</span></span></h2>
-                <span class="date-range-label" id="mq-coverage-label"></span>
-            </div>
-            <div class="mq-population" id="mq-population"></div>
-            <div class="mq-jobs" id="mq-jobs"></div>
-            <div class="stats-grid" id="mq-totals"></div>
-        </section>
+            <section id="move-quality-section" class="section hidden">
+                <div class="section-header">
+                    <h2>Move Quality<span class="sc-info sc-info-title" tabindex="0"
+                        aria-label="Each move is graded by the share of expected score it lost: an inaccuracy 5% or more, a mistake 10% or more, a blunder 20% or more. A Miss gives back what your opponent's error just handed you, and no more; it takes the place of the other three, so the four never overlap. Opponents: the same games from the other seat.">i<span class="sc-tip">Each move is graded by the share of expected score it lost: an inaccuracy 5% or more, a mistake 10% or more, a blunder 20% or more. A Miss gives back what your opponent's error just handed you, and no more; it takes the place of the other three, so the four never overlap. Opponents: the same games from the other seat.</span></span></h2>
+                    <span class="date-range-label" id="mq-coverage-label"></span>
+                </div>
+                <div class="mq-population" id="mq-population"></div>
+                <div class="mq-jobs" id="mq-jobs"></div>
+                <div class="stats-grid" id="mq-totals"></div>
+            </section>
+        </div>
 
         <!-- ═══ Main Perspectives ═══ -->
         <!-- section-bare: keeps the .section show/hide hook without the card
@@ -538,7 +540,7 @@
     <script src="/static/app.js?v=86"></script>
     <script src="/static/style-panel.js?v=9"></script>
     <script src="/static/move-quality.js?v=7"></script>
-    <script src="/static/scorecard.js?v=23"></script>
+    <script src="/static/scorecard.js?v=24"></script>
 </body>
 
 </html>

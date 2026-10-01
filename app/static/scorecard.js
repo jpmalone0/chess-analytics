@@ -45,14 +45,11 @@ function scPlaysLike(r) {
     return `${r.elo}<div class="sc-sub">${scEloRange(r)}</div>`;
 }
 
-/** Your value, the band's beneath. Units live under the row's name, so
- *  per-move values are bare; percentages keep their sign. */
-function scYouVsBand(r) {
-    if (r.you === null) return '—';
-    const bare = r.unit !== 'percent';
-    const band = r.band === null ? ''
-        : `<div class="sc-sub">band ${scFmt(r, r.band, false, bare)}</div>`;
-    return `${scFmt(r, r.you, false, bare)}${band}`;
+
+/** A raw value. Units live under the row's name, so per-move values are
+ *  bare; percentages keep their sign. */
+function scValue(r, v) {
+    return v === null ? '—' : scFmt(r, v, false, r.unit !== 'percent');
 }
 
 const SC_UNIT_NAMES = { points_per_move: 'pts/100 moves', per_move: 'per 100 moves' };
@@ -269,7 +266,7 @@ async function loadScorecard(username) {
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
-            <th></th><th>Plays like</th><th>You</th>
+            <th></th><th>Plays like</th><th>You</th><th>Band</th>
             <th class="sc-range-head">worse · even · better<span class="sc-info sc-info-head" tabindex="0"
                 aria-label="${SC_RANGE_TIP}">i<span class="sc-tip">${SC_RANGE_TIP}</span></span></th>
         </tr></thead>
@@ -278,7 +275,8 @@ async function loadScorecard(username) {
                 <td class="sc-label" title="${r.description}">${r.label}${
     SC_UNIT_NAMES[r.unit] ? `<div class="sc-sub">${SC_UNIT_NAMES[r.unit]}</div>` : ''}${scBreakdown(r)}</td>
                 <td>${scPlaysLike(r)}</td>
-                <td>${scYouVsBand(r)}</td>
+                <td>${scValue(r, r.you)}</td>
+                <td class="sc-muted">${scValue(r, r.band)}</td>
                 <td class="sc-range ${r.higher_is_better ? '' : 'sc-flip'}">${scRangeBar(r)}</td>
             </tr>`).join('')}
         </tbody>`;
