@@ -124,8 +124,9 @@ def mq_rows(eng, game_id=1):
 class TestMiss:
     """A Miss is failing to take what the opponent just handed you.
 
-    Chess.com makes it a fourth exclusive label. Here it is a flag, so a move can
-    be both a blunder by magnitude and a miss by context and both survive.
+    It is exclusive with the three tiers. A reply that gives back no more than
+    the opponent handed over is a Miss and has no tier; one that loses more than
+    that did fresh damage of its own, and is graded by its tier instead.
     """
 
     def test_giving_back_what_the_opponent_handed_over_is_a_miss(self, mq):
@@ -145,32 +146,42 @@ class TestMiss:
         assert r["tier"] == "blunder"
         assert r["is_miss"] == 0
 
-    def test_a_miss_keeps_its_own_tier(self, mq):
+    def test_a_miss_has_no_tier(self, mq):
         seed_mq(mq, [(0, 0), (1, -180), (2, -60)])
-        assert mq_rows(mq)[2]["tier"] == "inaccuracy"
+        assert mq_rows(mq)[2]["tier"] is None
 
     def test_the_first_ply_has_no_predecessor_and_is_never_a_miss(self, mq):
         seed_mq(mq, [(0, 0), (1, -310)])
         assert mq_rows(mq)[1]["is_miss"] == 0
 
-    def test_a_miss_can_also_be_a_blunder_by_magnitude(self, mq):
-        """The reason Miss is a flag, not a tier: both facts must survive together."""
+    def test_losing_more_than_the_gift_is_graded_by_its_tier(self, mq):
+        """White hands over 0.1225; Black's reply loses far more than that, so
+        it is fresh damage, not just a returned gift."""
         seed_mq(mq, [(0, 0), (1, -180), (2, 300)])
         r = mq_rows(mq)[2]
         assert r["tier"] == "blunder"
+        assert r["is_miss"] == 0
+
+    def test_giving_back_the_whole_gift_is_still_a_miss(self, mq):
+        """White hands over 0.1225 and Black gives back all of it: the same size
+        either way, so rounding must not tip it into a mistake."""
+        seed_mq(mq, [(0, 0), (1, -180), (2, 0)])
+        r = mq_rows(mq)[2]
         assert r["is_miss"] == 1
+        assert r["tier"] is None
 
     def test_a_predecessor_just_under_the_mistake_floor_is_not_a_miss(self, mq):
         # White drops 145: wp(0) - wp(-145) = 0.09935, just under MISTAKE_WP
-        # (0.10). Black's reply, -145 -> 100, loses 0.16836 -- well clear of
-        # INACCURACY_WP -- so only the predecessor side is in question here.
-        seed_mq(mq, [(0, 0), (1, -145), (2, 100)])
+        # (0.10). Black's reply, -145 -> -60, loses about 0.058 -- over
+        # INACCURACY_WP and under the gift -- so only the predecessor is in
+        # question here.
+        seed_mq(mq, [(0, 0), (1, -145), (2, -60)])
         assert mq_rows(mq)[2]["is_miss"] == 0
 
     def test_a_predecessor_just_over_the_mistake_floor_is_a_miss(self, mq):
         # White drops 146: wp(0) - wp(-146) = 0.10002, just over MISTAKE_WP.
-        # Same reply shape as above (-146 -> 100), loss 0.16902.
-        seed_mq(mq, [(0, 0), (1, -146), (2, 100)])
+        # Same reply shape as above (-146 -> -60).
+        seed_mq(mq, [(0, 0), (1, -146), (2, -60)])
         assert mq_rows(mq)[2]["is_miss"] == 1
 
     def test_a_reply_just_under_the_inaccuracy_floor_is_not_a_miss(self, mq):
@@ -218,15 +229,15 @@ class TestPerGameCounts:
             )).scalar()
         assert total == plies
 
-    def test_misses_are_counted_alongside_their_tier_not_instead_of_it(self, mq):
-        """The four numbers deliberately do not sum to a total."""
+    def test_a_miss_is_counted_instead_of_its_tier(self, mq):
+        """The four categories are disjoint, so they sum to the flagged moves."""
         seed_mq(mq, [(0, 0), (1, -180), (2, -60)])
         with mq.connect() as conn:
             black = conn.execute(text(
                 "SELECT * FROM game_move_quality WHERE game_id = 1 AND color = 'black'"
             )).mappings().one()
         assert black["misses"] == 1
-        assert black["inaccuracies"] == 1
+        assert black["inaccuracies"] == 0
 
 
 class TestInitEngineDb:

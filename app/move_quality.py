@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app import baselines, crud
 from engine.db import attach_engine_db
 from engine.population import POPULATION_PER_PLAYER_CAP, band_sides_sql
-from engine.views import MISS_HANDED_WP, MISS_RETURNED_WP
+from engine.views import MISS_SQL
 
 # A game analyzed under several runs would otherwise appear once per run.
 # Newest run wins: it is the deepest search anybody has pointed at that game.
@@ -40,12 +40,9 @@ _LATEST_RUN_FOR_GAME = """
 # proportional to the analyzed corpus rather than to the game. Measured against
 # the real sidecar at 102,790 plies: 142ms through the view, 0.2ms with the
 # filter pushed inside. A view cannot know the caller's filter, so the only
-# place the pushdown can happen is here. The thresholds are imported rather
+# place the pushdown can happen is here. The condition is imported rather
 # than retyped so that retuning a Miss still costs exactly one edit.
-_MISS = (
-    f"COALESCE(prev.wp_loss >= {MISS_HANDED_WP}"
-    f" AND s.wp_loss >= {MISS_RETURNED_WP}, 0)"
-)
+_MISS = MISS_SQL
 
 
 def _empty() -> dict[str, Any]:
@@ -145,12 +142,19 @@ def game_drill_list(db: Session, game_id: int) -> dict[str, Any]:
             WHERE  game_id = :game_id
               AND  run_id  = {_LATEST_RUN_FOR_GAME}
         ),
-        q AS (
+        flagged AS (
             SELECT s.game_id, s.ply, s.color, s.tier,
                    s.wp_before, s.wp_after, s.wp_loss,
                    {_MISS} AS is_miss
             FROM      scored AS s
             LEFT JOIN scored AS prev ON prev.ply = s.ply - 1
+        ),
+        -- As in the view: a Miss has no tier.
+        q AS (
+            SELECT game_id, ply, color,
+                   CASE WHEN is_miss = 1 THEN NULL ELSE tier END AS tier,
+                   wp_before, wp_after, wp_loss, is_miss
+            FROM flagged
         )
         SELECT q.ply, q.color, q.tier, q.is_miss,
                q.wp_before, q.wp_after, q.wp_loss,

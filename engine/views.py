@@ -286,40 +286,49 @@ FROM lost
 
 # A Miss is the opponent's unpunished error, seen from the other side of the
 # board: they handed over at least a mistake, and the reply gave at least an
-# inaccuracy of it back.
+# inaccuracy of it back -- but no more than they handed over.
 #
-# Chess.com's Miss is mutually exclusive with mistake and blunder. Ours is not,
-# on purpose. Exclusivity needs an arbitrary precedence rule and destroys
-# information -- a 0.40 blunder that was also a miss would be counted once,
-# making blunders silently undercount. A flag keeps both facts and lets the
-# caller cut either way.
+# Miss is exclusive with the tiers, so the four categories sum to the flagged
+# moves. Precedence is decided by the gift. A reply that gives back no more than
+# the opponent handed over only returned the gift: it is a Miss and has no tier.
+# A reply that loses more than that did fresh damage of its own, and is graded
+# by its tier rather than hidden as a Miss. On ballasack6's rapid games this
+# moves 137 of 240 overlapping moves to Miss and leaves 103 in their tiers, 72
+# of them blunders. MISS_ROUNDING keeps a reply that gives back exactly the
+# gift a Miss: the two losses are the same size computed from opposite sides.
 MISS_HANDED_WP = MISTAKE_WP
 MISS_RETURNED_WP = INACCURACY_WP
+MISS_ROUNDING = 1e-9
+
+# The Miss condition over a move `s` and its predecessor `prev`, shared with
+# app.move_quality, which restates the view over a pre-filtered set.
+MISS_SQL = (
+    f"COALESCE(prev.wp_loss >= {MISS_HANDED_WP}"
+    f" AND s.wp_loss >= {MISS_RETURNED_WP}"
+    f" AND s.wp_loss <= prev.wp_loss + {MISS_ROUNDING}, 0)"
+)
 
 MOVE_QUALITY_VIEW = f"""
 CREATE VIEW IF NOT EXISTS move_quality AS
+WITH flagged AS (
+    SELECT
+        s.run_id, s.game_id, s.ply, s.color,
+        s.cp_before, s.cp_after, s.wp_before, s.wp_after, s.wp_loss, s.tier,
+        -- COALESCE, not a bare comparison: ply 1 has no predecessor, and a NULL
+        -- here would propagate into every count downstream as NULL rather than 0.
+        {MISS_SQL} AS is_miss
+    FROM      move_severity AS s
+    LEFT JOIN move_severity AS prev
+           ON prev.run_id  = s.run_id
+          AND prev.game_id = s.game_id
+          AND prev.ply     = s.ply - 1
+)
 SELECT
-    s.run_id,
-    s.game_id,
-    s.ply,
-    s.color,
-    s.cp_before,
-    s.cp_after,
-    s.wp_before,
-    s.wp_after,
-    s.wp_loss,
-    s.tier,
-    -- COALESCE, not a bare comparison: ply 1 has no predecessor, and a NULL
-    -- here would propagate into every count downstream as NULL rather than 0.
-    COALESCE(
-        prev.wp_loss >= {MISS_HANDED_WP} AND s.wp_loss >= {MISS_RETURNED_WP},
-        0
-    ) AS is_miss
-FROM      move_severity AS s
-LEFT JOIN move_severity AS prev
-       ON prev.run_id  = s.run_id
-      AND prev.game_id = s.game_id
-      AND prev.ply     = s.ply - 1
+    run_id, game_id, ply, color,
+    cp_before, cp_after, wp_before, wp_after, wp_loss,
+    CASE WHEN is_miss = 1 THEN NULL ELSE tier END AS tier,
+    is_miss
+FROM flagged
 """
 
 
@@ -336,8 +345,7 @@ SELECT
     SUM(CASE WHEN tier = 'inaccuracy' THEN 1 ELSE 0 END) AS inaccuracies,
     SUM(CASE WHEN tier = 'mistake'    THEN 1 ELSE 0 END) AS mistakes,
     SUM(CASE WHEN tier = 'blunder'    THEN 1 ELSE 0 END) AS blunders,
-    -- Overlaps the three above rather than partitioning them. Any caller
-    -- presenting these as a total is presenting a wrong number.
+    -- Exclusive with the three above: the four sum to the flagged moves.
     SUM(is_miss)                                      AS misses,
     SUM(wp_loss)                                      AS wp_lost
 FROM  move_quality
