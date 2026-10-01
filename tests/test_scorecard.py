@@ -358,5 +358,5 @@ class TestBandScore:
 
 def test_the_0_to_100_dimensions_come_last():
     """The wheel and the table group the Elo spokes, then the 0-100 ones."""
-    assert [d.key for d in DIMENSIONS][-3:] == ["time", "advantage", "resourcefulness"]
+    assert [d.key for d in DIMENSIONS][-3:] == ["advantage", "resourcefulness", "time"]
     assert all(d.has_elo for d in DIMENSIONS[:-3])
