@@ -1867,9 +1867,9 @@ body.compare-mode #stat-winrate     { order: 8; }
     vertical-align: bottom;
 }
 
-/* The table needs about 600px. Below this width the right column cannot give
+/* The table needs about 850px. Below this width the right column cannot give
    it that, so the wheel and table stack rather than scroll columns away. */
-@media (max-width: 1100px) {
+@media (max-width: 1300px) {
     #sc-body:not(.hidden) {
         grid-template-columns: 1fr;
     }
@@ -2034,14 +2034,8 @@ body.compare-mode #stat-winrate     { order: 8; }
 }
 
 .sc-range {
-    width: 50%;
-    min-width: 220px;
-}
-
-/* Inset so the axis's end labels (-600, +600, 0, 100) fit inside the cell. */
-.sc-bar,
-.sc-axis {
-    margin: 0 16px;
+    width: 18%;
+    min-width: 100px;
 }
 
 .sc-bar {
@@ -2073,7 +2067,10 @@ body.compare-mode #stat-winrate     { order: 8; }
     display: block;
 }
 
-
+/* Lower-is-better rows are mirrored so "better" is always to the right. */
+.sc-flip .sc-track {
+    transform: scaleX(-1);
+}
 
 .sc-zero {
     position: absolute;
@@ -2098,53 +2095,6 @@ body.compare-mode #stat-winrate     { order: 8; }
     margin-left: -4px;
     border-radius: 50%;
     background: currentColor;
-}
-
-/* A range that runs past the axis ends in a small arrow. */
-.sc-whisker.sc-over-lo::before,
-.sc-whisker.sc-over-hi::after {
-    content: '';
-    position: absolute;
-    top: -3px;
-    border: 4px solid transparent;
-}
-
-.sc-whisker.sc-over-lo::before {
-    left: -6px;
-    border-right-color: currentColor;
-    border-left-width: 0;
-}
-
-.sc-whisker.sc-over-hi::after {
-    right: -6px;
-    border-left-color: currentColor;
-    border-right-width: 0;
-}
-
-/* The axis rows closing each group: tick values under the bar column. */
-.sc-axis-row td {
-    border-bottom: none;
-    padding-top: 0.15rem;
-    padding-bottom: 0.6rem;
-}
-
-.sc-axis-name {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    text-align: right !important;
-}
-
-.sc-axis {
-    position: relative;
-    height: 1em;
-    font-size: 0.68rem;
-    color: var(--text-muted);
-}
-
-.sc-tick {
-    position: absolute;
-    transform: translateX(-50%);
-    font-variant-numeric: tabular-nums;
 }
 
 .sc-real { color: var(--text-primary); }

@@ -532,7 +532,6 @@ def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
                      "you": None, "band": None, "diff": None, "lo": None, "hi": None,
                      "verdict": None, "elo": None, "elo_lo": None, "elo_hi": None,
                      "has_elo": dim.has_elo, "score": None,
-                     "score_lo": None, "score_hi": None,
                      "description": dim.description,
                      "band_games": fit.n if fit else None}
         if dim.key == "time":
@@ -545,12 +544,7 @@ def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
             you, var_you = ratio_and_variance(counts)
             row["you"] = you
             if dim.score == "share":
-                # Scored against 50 (level with your opponents), so its range
-                # is your own value's alone.
-                half = Z95 * math.sqrt(var_you)
                 row["score"] = 100 * you
-                row["score_lo"] = max(0.0, 100 * (you - half))
-                row["score_hi"] = min(100.0, 100 * (you + half))
             if fit is not None and dim.has_elo:
                 elo = fit.elo_for(you)
                 row["elo"] = round(elo) if elo is not None else None
@@ -564,9 +558,6 @@ def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
                 row.update(band=float(band), diff=float(diff), lo=float(lo), hi=float(hi),
                            verdict="real" if (lo > 0 or hi < 0) else "noise")
                 if dim.score == "vs_band":
-                    # The gap's range, carried through the same 0-50-100 map.
                     row["score"] = band_score(you, band)
-                    row["score_lo"] = band_score(band + lo, band)
-                    row["score_hi"] = band_score(band + hi, band)
         rows.append(row)
     return rows
