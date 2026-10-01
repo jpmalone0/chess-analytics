@@ -10,6 +10,10 @@
    currentUsername, requestCache, mqFetchFresh, loadMoveQuality, setInterval, clearInterval */
 
 let scorecardChart = null;
+
+const SC_RANGE_TIP = 'The dot is your difference from the band at your rating; the line is its '
+    + '95% range. White means the range stays clear of even, so the difference is real; '
+    + 'gray means it could be noise.';
 let scPollTimer = null;
 
 /** `bare` drops the unit, for the ends of a range printed after its value.
@@ -60,17 +64,14 @@ function scFifty(row) {
     return row.key === 'time' ? 'level with your opponents' : 'the band at your rating';
 }
 
-function scBetter(row) {
-    return (row.diff > 0) === row.higher_is_better;
-}
-
 /** A dot for the difference and a whisker for its range, on an axis centred
  *  on "even with your opponents". Each row has its own scale: the units differ. */
 function scRangeBar(row) {
     if (row.diff === null) return '<div class="sc-track"></div>';
     const reach = Math.max(Math.abs(row.lo), Math.abs(row.hi), 1e-9) * 1.15;
     const pos = (v) => 50 + (50 * v) / reach;
-    const tone = row.verdict === 'real' ? (scBetter(row) ? 'sc-good' : 'sc-bad') : 'sc-noise';
+    // White when the range excludes "even" (a real difference), gray when not.
+    const tone = row.verdict === 'real' ? 'sc-real' : 'sc-noise';
     return `<div class="sc-track">
         <div class="sc-zero"></div>
         <div class="sc-whisker ${tone}" style="left:${pos(row.lo)}%;width:${pos(row.hi) - pos(row.lo)}%"></div>
@@ -242,7 +243,9 @@ async function loadScorecard(username) {
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
             <th></th><th>Plays like (95% range) or score</th><th>You</th><th>Band at your average (${data.own_avg_elo})</th>
-            <th class="sc-range-head">worse · even · better</th><th>Difference (95% range)</th><th></th>
+            <th class="sc-range-head">worse · even · better<span class="sc-info sc-info-head" tabindex="0"
+                aria-label="${SC_RANGE_TIP}">i<span class="sc-tip">${SC_RANGE_TIP}</span></span></th>
+            <th>Difference (95% range)</th>
         </tr></thead>
         <tbody>${data.rows.map((r) => `
             <tr>
@@ -253,7 +256,6 @@ async function loadScorecard(username) {
                 <td class="sc-range ${r.higher_is_better ? '' : 'sc-flip'}">${scRangeBar(r)}</td>
                 <td>${scFmt(r, r.diff, true)}
                     <span class="sc-muted">${r.lo === null ? '' : `(${scFmt(r, r.lo, true, true)} to ${scFmt(r, r.hi, true, true)})`}</span></td>
-                <td class="sc-verdict ${r.verdict === 'real' ? (scBetter(r) ? 'sc-good' : 'sc-bad') : 'sc-muted'}">${r.verdict || '—'}</td>
             </tr>`).join('')}
         </tbody>`;
 }
