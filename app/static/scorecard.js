@@ -72,10 +72,17 @@ function scRangeBar(row) {
     const pos = (v) => 50 + (50 * v) / reach;
     // White when the range excludes "even" (a real difference), gray when not.
     const tone = row.verdict === 'real' ? 'sc-real' : 'sc-noise';
-    return `<div class="sc-track">
-        <div class="sc-zero"></div>
-        <div class="sc-whisker ${tone}" style="left:${pos(row.lo)}%;width:${pos(row.hi) - pos(row.lo)}%"></div>
-        <div class="sc-dot ${tone}" style="left:${pos(row.diff)}%"></div>
+    // The difference itself shows on hover. The tooltip sits outside the
+    // track, which is mirrored for lower-is-better rows and would mirror it.
+    const diff = `${scFmt(row, row.diff, true)} `
+        + `(${scFmt(row, row.lo, true, true)} to ${scFmt(row, row.hi, true, true)})`;
+    return `<div class="sc-bar" tabindex="0" aria-label="${diff}">
+        <div class="sc-track">
+            <div class="sc-zero"></div>
+            <div class="sc-whisker ${tone}" style="left:${pos(row.lo)}%;width:${pos(row.hi) - pos(row.lo)}%"></div>
+            <div class="sc-dot ${tone}" style="left:${pos(row.diff)}%"></div>
+        </div>
+        <span class="sc-tip sc-bar-tip">${diff}</span>
     </div>`;
 }
 
@@ -250,7 +257,6 @@ async function loadScorecard(username) {
                 ? data.compare_rating : `your average (${data.compare_rating})`}</th>
             <th class="sc-range-head">worse · even · better<span class="sc-info sc-info-head" tabindex="0"
                 aria-label="${SC_RANGE_TIP}">i<span class="sc-tip">${SC_RANGE_TIP}</span></span></th>
-            <th>Difference (95% range)</th>
         </tr></thead>
         <tbody>${data.rows.map((r) => `
             <tr>
@@ -259,8 +265,6 @@ async function loadScorecard(username) {
                 <td>${scFmt(r, r.you)}</td>
                 <td class="sc-muted">${scFmt(r, r.band)}</td>
                 <td class="sc-range ${r.higher_is_better ? '' : 'sc-flip'}">${scRangeBar(r)}</td>
-                <td>${scFmt(r, r.diff, true)}
-                    <span class="sc-muted">${r.lo === null ? '' : `(${scFmt(r, r.lo, true, true)} to ${scFmt(r, r.hi, true, true)})`}</span></td>
             </tr>`).join('')}
         </tbody>`;
 }

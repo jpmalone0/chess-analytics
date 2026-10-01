@@ -2017,9 +2017,34 @@ body.compare-mode #stat-winrate     { order: 8; }
     min-width: 100px;
 }
 
+.sc-bar {
+    position: relative;
+    cursor: help;
+}
+
+.sc-bar:focus {
+    outline: none;
+}
+
 .sc-track {
     position: relative;
     height: 14px;
+}
+
+/* To the bar's left, vertically centred: above or below would be clipped by
+   the table's scroll box on the first and last rows. */
+.sc-bar .sc-bar-tip {
+    top: 50%;
+    left: auto;
+    right: calc(100% + 8px);
+    transform: translateY(-50%);
+    width: auto;
+    white-space: nowrap;
+}
+
+.sc-bar:hover .sc-bar-tip,
+.sc-bar:focus .sc-bar-tip {
+    display: block;
 }
 
 /* Lower-is-better rows are mirrored so "better" is always to the right. */
