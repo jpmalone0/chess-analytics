@@ -372,6 +372,16 @@ def _add_missing_engine_columns():
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl_type}"))
 
 
+def upgrade_engine_schema():
+    """Create missing tables and add missing columns, leaving views alone.
+
+    Safe to run while other connections are reading: unlike init_engine_db it
+    drops nothing, so a query in flight never finds a view missing.
+    """
+    Base.metadata.create_all(bind=engine)
+    _add_missing_engine_columns()
+
+
 def init_engine_db():
     """Create the engine schema and the derivation views (idempotent).
 
@@ -384,8 +394,7 @@ def init_engine_db():
     Dropped in dependency order, deepest first: game_move_quality reads
     move_quality, which reads move_severity, which reads move_evals.
     """
-    Base.metadata.create_all(bind=engine)
-    _add_missing_engine_columns()
+    upgrade_engine_schema()
     with engine.begin() as conn:
         assert_sqlite_has_math(conn)
         for view in (

@@ -464,12 +464,14 @@ def get_population_runner() -> JobRunner:
         from app.database import engine as canonical
         from engine import db as engine_db
         from engine.analyze import RunConfig, analyze_games, get_or_create_run
-        from engine.views import init_engine_db
+        from engine.views import upgrade_engine_schema
 
-        # The full schema upgrade, not just this one table: the runner reads
-        # population_jobs before any analysis would otherwise run it, and a
-        # sidecar older than a column added to that table fails every query.
-        init_engine_db()
+        # Tables and columns only: the runner reads population_jobs before any
+        # analysis would otherwise upgrade it, and a sidecar older than a column
+        # added there fails every query. Not init_engine_db, which drops and
+        # rebuilds the views: this runs inside a request, and a page load's
+        # other requests reading those views would find them missing.
+        upgrade_engine_schema()
 
         @contextmanager
         def connect():

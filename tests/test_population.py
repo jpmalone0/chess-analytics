@@ -383,3 +383,27 @@ def test_the_app_runner_upgrades_an_older_sidecar(tmp_path, monkeypatch):
 
     runner = main.get_population_runner()
     assert runner.active_player_job(1, "rapid") is None
+
+
+def test_building_the_app_runner_leaves_the_views_alone(tmp_path, monkeypatch):
+    """The runner is built lazily on a request, while other requests may be
+    reading the views; rebuilding them there made those reads fail with
+    "no such table". Only tables and columns are brought up to date."""
+    from sqlalchemy import create_engine, text
+
+    import app.main as main
+    from engine import views
+
+    eng = create_engine(f"sqlite:///{tmp_path / 'live.db'}")
+    with eng.begin() as conn:
+        conn.execute(text("CREATE VIEW game_move_quality AS SELECT 1 AS sentinel"))
+    monkeypatch.setattr(views, "engine", eng)
+    monkeypatch.setattr(engine_db, "engine", eng)
+    monkeypatch.setattr(engine_db, "SessionLocal", sessionmaker(bind=eng))
+    monkeypatch.setattr(main, "_population_runner", None)
+
+    main.get_population_runner()
+    with eng.connect() as conn:
+        sql = conn.execute(text(
+            "SELECT sql FROM sqlite_master WHERE name = 'game_move_quality'")).scalar()
+    assert "sentinel" in sql
