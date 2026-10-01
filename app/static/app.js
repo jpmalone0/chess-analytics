@@ -25,7 +25,8 @@ let currentOpeningColor = 'global';  // 'global' | 'white' | 'black'
 // therefore has to remember which side's row was clicked, or every query
 // silently widens to both colours. '' when nothing is filtered.
 let currentOpeningFilterColor = '';  // '' | 'white' | 'black'
-const ANALYTICS_SECTIONS = ['outcomes', 'time', 'style', 'form'];
+// 'style' (Pro Comparison) removed from the page 2026-10-01; its code is kept.
+const ANALYTICS_SECTIONS = ['outcomes', 'time', 'form'];
 const collapsedSections = new Set();  // sections the user has collapsed
 const OPENINGS_PREVIEW_COUNT = 6;     // opening rows shown before "show all"
 let openingsExpanded = false;
@@ -2002,72 +2003,77 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         if (charts[moveKey]) charts[moveKey].destroy();
 
         // ── Distribution histogram ──
-        const distDatasets = [{
-            label: 'Moves',
-            data: data.buckets.map(b => b.count),
-            backgroundColor: 'rgba(111, 188, 216, 0.7)',
-            borderRadius: 4,
-        }];
-        if (baseline) {
-            distDatasets.push(baselineLineStyle({
-                type: 'line',
-                label: baselineLabel(baseline.meta),
-                data: baseline.data.buckets.map(b => b.pct),
-                yAxisID: 'yPct',
-            }));
-        }
-        charts[distKey] = new Chart(document.getElementById("move-time-dist-chart" + suffix).getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: data.buckets.map(b => b.label),
-                datasets: distDatasets,
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false, animation: false,
-                plugins: {
-                    legend: { display: !!baseline, position: 'top', labels: { boxWidth: 20, font: { size: 11 } } },
-                    tooltip: {
-                        callbacks: {
-                            label: (item) => {
-                                if (item.datasetIndex === 0) {
-                                    const b = data.buckets[item.dataIndex];
-                                    return `${b.count.toLocaleString()} moves (${b.pct}%)`;
+        // Removed from the page 2026-10-01 but kept: drawn only if its canvas
+        // is present, so restoring the markup brings it back.
+        const distCanvas = document.getElementById("move-time-dist-chart" + suffix);
+        if (distCanvas) {
+            const distDatasets = [{
+                label: 'Moves',
+                data: data.buckets.map(b => b.count),
+                backgroundColor: 'rgba(111, 188, 216, 0.7)',
+                borderRadius: 4,
+            }];
+            if (baseline) {
+                distDatasets.push(baselineLineStyle({
+                    type: 'line',
+                    label: baselineLabel(baseline.meta),
+                    data: baseline.data.buckets.map(b => b.pct),
+                    yAxisID: 'yPct',
+                }));
+            }
+            charts[distKey] = new Chart(distCanvas.getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: data.buckets.map(b => b.label),
+                    datasets: distDatasets,
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, animation: false,
+                    plugins: {
+                        legend: { display: !!baseline, position: 'top', labels: { boxWidth: 20, font: { size: 11 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: (item) => {
+                                    if (item.datasetIndex === 0) {
+                                        const b = data.buckets[item.dataIndex];
+                                        return `${b.count.toLocaleString()} moves (${b.pct}%)`;
+                                    }
+                                    return `${item.dataset.label}: ${item.formattedValue}% of moves`;
                                 }
-                                return `${item.dataset.label}: ${item.formattedValue}% of moves`;
                             }
                         }
-                    }
-                },
-                scales: {
-                    x: { grid: { display: false } },
-                    y: { grid: { color: 'rgba(42, 53, 72, 0.5)' }, title: { display: true, text: 'Moves', color: '#5a6a85' } },
-                    yPct: {
-                        display: !!baseline,
-                        position: 'right',
-                        grid: { display: false },
-                        title: { display: true, text: '% of moves', color: '#5a6a85' },
-                        ticks: { callback: v => v + '%' },
                     },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: { grid: { color: 'rgba(42, 53, 72, 0.5)' }, title: { display: true, text: 'Moves', color: '#5a6a85' } },
+                        yPct: {
+                            display: !!baseline,
+                            position: 'right',
+                            grid: { display: false },
+                            title: { display: true, text: '% of moves', color: '#5a6a85' },
+                            ticks: { callback: v => v + '%' },
+                        },
+                    }
                 }
-            }
-        });
+            });
 
-        document.getElementById("move-time-stats" + suffix).innerHTML = `
-            <div style="display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0;">
-                <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Mean</div>
-                    <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${data.mean}s</div>
+            document.getElementById("move-time-stats" + suffix).innerHTML = `
+                <div style="display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0;">
+                    <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Mean</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${data.mean}s</div>
+                    </div>
+                    <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Median</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${data.median}s</div>
+                    </div>
+                    <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Std Dev</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">±${data.std_dev}s</div>
+                    </div>
                 </div>
-                <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Median</div>
-                    <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${data.median}s</div>
-                </div>
-                <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Std Dev</div>
-                    <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">±${data.std_dev}s</div>
-                </div>
-            </div>
-        `;
+            `;
+        }
 
 
         // ── Avg think time by move number ──

@@ -300,7 +300,10 @@
                                 </div>
                             </div>
 
-                            <!-- Move Time Distribution -->
+                            <!-- Removed 2026-10-01: Time per Move Distribution. The JS that
+                                 draws it (loadMoveTime) is kept and skips it while this markup
+                                 is absent; restore by uncommenting.
+                            
                             <div class="analytic-row">
                                 <h4 class="chart-title">Time per Move Distribution</h4>
                                 <div class="compare-wrap">
@@ -318,8 +321,9 @@
                                     </div>
                                 </div>
                             </div>
-                            <!-- Spans the width: 100 move numbers need the room -->
-                            <div class="analytic-row span-full">
+                            -->
+                            <!-- Half width, beside Clock Advantage. -->
+                            <div class="analytic-row">
                                 <h4 class="chart-title">Average Time Usage by Move Number</h4>
                                 <div class="compare-wrap">
                                     <div class="compare-col">
@@ -344,7 +348,10 @@
                     </div>
                 </div>
 
-                <!-- ═══ Pro Comparison ═══ -->
+                <!-- Removed 2026-10-01: Pro Comparison. style-panel.js and the
+                     loadAnalyticsSection branch are kept; restore by uncommenting this
+                     and adding 'style' back to ANALYTICS_SECTIONS in app.js.
+                
                 <div class="analytics-section" data-section="style">
                     <button class="analytics-section-header" onclick="toggleAnalyticsSection('style')">
                         <span class="analytics-section-chevron">▼</span>
@@ -371,6 +378,7 @@
                         </div>
                     </div>
                 </div>
+                -->
 
                 <!-- ═══ Form ═══ -->
                 <div class="analytics-section" data-section="form">
@@ -527,7 +535,7 @@
         <p>jpmalone0</p>
     </footer>
 
-    <script src="/static/app.js?v=85"></script>
+    <script src="/static/app.js?v=86"></script>
     <script src="/static/style-panel.js?v=9"></script>
     <script src="/static/move-quality.js?v=7"></script>
     <script src="/static/scorecard.js?v=19"></script>
