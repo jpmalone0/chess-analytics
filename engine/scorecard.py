@@ -337,13 +337,14 @@ DIMENSIONS = (
     Dimension("opening", "Opening", "points_per_move", True),
     Dimension("middlegame", "Middlegame", "points_per_move", True),
     Dimension("endgame", "Endgame", "points_per_move", True),
+    Dimension("tactics", "Tactics found", "percent", True),
+    Dimension("blunders", "Blunders", "per_move", False),
+    # The 0-100 dimensions, grouped last so the wheel keeps them together.
     Dimension("time", "Time management", "percent", True, has_elo=False, score="share"),
     Dimension("advantage", "Advantage capitalization", "percent", True,
               has_elo=False, score="vs_band"),
     Dimension("resourcefulness", "Resourcefulness", "percent", True,
               has_elo=False, score="vs_band"),
-    Dimension("tactics", "Tactics found", "percent", True),
-    Dimension("blunders", "Blunders", "per_move", False),
 )
 
 

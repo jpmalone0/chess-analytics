@@ -354,3 +354,9 @@ class TestBandScore:
         sides = [SideFacts(clock_ahead=6, clock_even=2, clock_behind=2)] * 3
         row = {r["key"]: r for r in compare_to_band(sides, {}, 1500)}["time"]
         assert row["score"] == pytest.approx(70)
+
+
+def test_the_0_to_100_dimensions_come_last():
+    """The wheel and the table group the Elo spokes, then the 0-100 ones."""
+    assert [d.key for d in DIMENSIONS][-3:] == ["time", "advantage", "resourcefulness"]
+    assert all(d.has_elo for d in DIMENSIONS[:-3])

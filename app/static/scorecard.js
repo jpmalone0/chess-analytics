@@ -103,7 +103,9 @@ function drawScorecardRadar(rows, rating) {
     scorecardChart = new Chart(ctx, {
         type: 'radar',
         data: {
-            labels: rows.map((r) => (r.has_elo ? r.label : `${r.label} (0–100)`)),
+            // Two lines for the 0-100 spokes, so a long name on a side spoke
+            // is not clipped by the canvas edge.
+            labels: rows.map((r) => (r.has_elo ? r.label : [r.label, '(0–100)'])),
             datasets: [
                 {
                     label: 'you',
