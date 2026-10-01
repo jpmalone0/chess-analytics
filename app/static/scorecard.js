@@ -56,17 +56,6 @@ function scBreakdown(row) {
     return `<div class="sc-sub">${pct(b.ahead)} ahead · ${pct(b.even)} even · ${pct(b.behind)} behind</div>`;
 }
 
-/** Break a sentence into lines for a canvas tooltip, which does not wrap. */
-function scWrap(text, width) {
-    const lines = [''];
-    for (const word of (text || '').split(' ')) {
-        const last = lines[lines.length - 1];
-        if (last && (last + ' ' + word).length > width) lines.push(word);
-        else lines[lines.length - 1] = last ? `${last} ${word}` : word;
-    }
-    return lines;
-}
-
 function scFifty(row) {
     return row.key === 'time' ? 'level with your opponents' : 'the band at your rating';
 }
@@ -102,6 +91,46 @@ function scRadius(row, rating) {
         : rating + (3000 - rating) * ((score - 50) / 50);
 }
 
+function scEscape(text) {
+    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+/** Spoke names as HTML over the canvas, each with an info icon whose tooltip
+ *  says what the spoke measures. Positioned after every draw, so they follow
+ *  the chart through resizes. */
+const scLabelLayer = {
+    id: 'scLabels',
+    afterDraw(chart, _args, opts) {
+        const wrap = chart.canvas.parentElement;
+        let layer = wrap.querySelector('.sc-labels');
+        if (!layer) {
+            layer = document.createElement('div');
+            layer.className = 'sc-labels';
+            wrap.appendChild(layer);
+        }
+        const rows = opts.rows || [];
+        const key = rows.map((r) => r.key).join(',');
+        if (layer.dataset.key !== key) {
+            layer.dataset.key = key;
+            layer.innerHTML = rows.map((r) => `
+                <div class="sc-spoke">
+                    <span>${scEscape(r.label)}</span><span class="sc-info" tabindex="0"
+                        aria-label="${scEscape(r.description)}">i<span class="sc-tip">${scEscape(r.description)}</span></span>
+                    ${r.has_elo ? '' : '<div class="sc-spoke-sub">(0–100)</div>'}
+                </div>`).join('');
+        }
+        const scale = chart.scales.r;
+        [...layer.children].forEach((el, i) => {
+            const p = scale.getPointLabelPosition(i);
+            const x = (p.left + p.right) / 2;
+            el.style.left = `${chart.canvas.offsetLeft + x}px`;
+            el.style.top = `${chart.canvas.offsetTop + (p.top + p.bottom) / 2}px`;
+            // Open each tooltip toward the middle so it stays on the page.
+            el.dataset.side = x < scale.xCenter - 10 ? 'left' : x > scale.xCenter + 10 ? 'right' : 'middle';
+        });
+    },
+};
+
 function drawScorecardRadar(rows, rating) {
     const ctx = document.getElementById('scorecard-chart');
     if (scorecardChart) scorecardChart.destroy();
@@ -113,6 +142,7 @@ function drawScorecardRadar(rows, rating) {
 
     scorecardChart = new Chart(ctx, {
         type: 'radar',
+        plugins: [scLabelLayer],
         data: {
             // Two lines for the 0-100 spokes, so a long name on a side spoke
             // is not clipped by the canvas edge.
@@ -144,18 +174,21 @@ function drawScorecardRadar(rows, rating) {
                     ticks: { stepSize: 500, color: muted, backdropColor: 'transparent', font: { size: 9 } },
                     grid: { color: grid },
                     angleLines: { color: grid },
+                    // Transparent, not hidden: the canvas still lays out the
+                    // names, and scLabelLayer draws them as HTML in the same
+                    // places so each can carry an info icon.
                     pointLabels: {
-                        color: text,
+                        color: 'transparent',
                         font: { size: 11 },
                     },
                 },
             },
             plugins: {
                 legend: { position: 'bottom', labels: { color: text, boxWidth: 12 } },
+                scLabels: { rows },
                 tooltip: {
                     filter: (c) => c.datasetIndex === 0,
                     callbacks: {
-                        afterLabel: (c) => scWrap(rows[c.dataIndex].description, 48),
                         label: (c) => {
                             const r = rows[c.dataIndex];
                             if (!r.has_elo) {
