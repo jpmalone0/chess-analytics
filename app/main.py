@@ -429,6 +429,7 @@ def scorecard(
     tz: Optional[str] = None,
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
+    elo_band: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     player = crud.get_player(db, username)
@@ -436,7 +437,7 @@ def scorecard(
         raise HTTPException(404, f"Player '{username}' not found")
     return sc.player_scorecard(
         db, player.player_id, time_class, start_date, end_date,
-        player_color, opening_names, tz=tz,
+        player_color, opening_names, tz=tz, elo_band=elo_band,
     )
 
 
@@ -670,6 +671,7 @@ def baseline_bands(
     # The band the charts will actually use when no band is picked. Returned so
     # the dropdown's default entry can name a concrete range rather than a
     # placeholder — it may be widened or class-level, which the label reflects.
+    analyzed_tc = time_class or baselines.dominant_time_class(db, player.player_id)
     resolved = baselines.resolve_band(
         db, player.player_id, time_class=time_class,
         start_date=start_date, end_date=end_date,
@@ -684,6 +686,9 @@ def baseline_bands(
             db, player.player_id, time_class=time_class, time_control=tc,
             player_color=player_color, opening_names=opening_names,
         ),
+        # Engine coverage per band, so the list shows where more analysis helps.
+        "analyzed": mq.analyzed_band_counts(db, analyzed_tc, player.player_id)
+        if analyzed_tc else [],
     }
 
 

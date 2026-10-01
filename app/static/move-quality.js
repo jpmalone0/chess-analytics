@@ -79,7 +79,10 @@ let mqBaseUrl = null;   // the baseline the section last loaded, re-polled for p
 
 function renderMqPopulation(base) {
     const el = document.getElementById('mq-population');
-    if (!base || !base.band) { el.innerHTML = ''; return; }
+    // The button lives beside Compare To, so it reads as acting on the band
+    // picked there rather than on this section.
+    const slot = document.getElementById('band-analyze');
+    if (!base || !base.band) { el.innerHTML = ''; slot.innerHTML = ''; return; }
     const b = base.band, t = base.totals, job = base.job;
 
     const have = t.n_games
@@ -96,12 +99,12 @@ function renderMqPopulation(base) {
             ? '<span class="mq-job">Queued</span>'
             : `<span class="mq-job">Analyzing ${job.games_done}/${total}</span>`;
     } else {
-        action = `<button class="btn-sm" onclick="startMqPopulation(this, ${base.default_games})">
+        action = `<button class="baseline-toggle" onclick="startMqPopulation(this, ${base.default_games})"
+            title="Analyze ${base.default_games} more games from ${mqBandName(b)}">
             Analyze ${base.default_games} more (~${Math.round(base.estimated_minutes)} min)</button>`;
     }
-    el.innerHTML = `
-        <span>Band ${mqBandName(b)}: ${have}${notes.length ? ' · ' + notes.join(' · ') : ''}</span>
-        ${action}`;
+    el.innerHTML = `<span>Band ${mqBandName(b)}: ${have}${notes.length ? ' · ' + notes.join(' · ') : ''}</span>`;
+    slot.innerHTML = action;
     if (job) mqPoll();
 }
 

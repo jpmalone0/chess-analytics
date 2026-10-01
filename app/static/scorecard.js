@@ -6,7 +6,7 @@
  * dimension as an Elo (the rating whose players typically play that way),
  * with your average rating as a dashed ring. Each Elo's 95% range (Fieller's
  * method) is in the tooltip and the table; "any" means no usable Elo yet. */
-/* global fetchJSON, colorParams, queryColor, currentOpeningFilter, currentTimeClass,
+/* global fetchJSON, baselineParams, queryColor, currentOpeningFilter, currentTimeClass,
    currentUsername, requestCache, mqFetchFresh, loadMoveQuality, setInterval, clearInterval */
 
 let scorecardChart = null;
@@ -132,7 +132,7 @@ const scLabelLayer = {
     },
 };
 
-function drawScorecardRadar(rows, rating) {
+function drawScorecardRadar(rows, rating, ringLabel) {
     const ctx = document.getElementById('scorecard-chart');
     if (scorecardChart) scorecardChart.destroy();
     const css = window.getComputedStyle(document.documentElement);
@@ -158,7 +158,7 @@ function drawScorecardRadar(rows, rating) {
                     spanGaps: false,
                 },
                 {
-                    label: `your average rating over these games (${rating})`,
+                    label: ringLabel,
                     data: rows.map(() => rating),
                     borderColor: muted,
                     backgroundColor: 'transparent',
@@ -212,7 +212,7 @@ async function loadScorecard(username) {
     try {
         data = await fetchJSON(
             `/api/players/${username}/analytics/scorecard`
-            + colorParams(queryColor(), currentOpeningFilter));
+            + baselineParams(queryColor(), currentOpeningFilter));
     } catch {
         section.classList.add('hidden');
         return;
@@ -236,13 +236,18 @@ async function loadScorecard(username) {
     }
     body.classList.remove('hidden');
     label.textContent = `${data.games} analyzed games · average rating ${data.own_avg_elo}`
+        + (data.compare_source === 'selected' ? ` · compared at ${data.compare_rating}` : '')
         + ` · band from ${data.band_games} other player-games`;
 
-    drawScorecardRadar(data.rows, data.own_avg_elo);
+    drawScorecardRadar(data.rows, data.compare_rating,
+        data.compare_source === 'selected'
+            ? `the band you picked (${data.compare_rating})`
+            : `your average rating over these games (${data.compare_rating})`);
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
-            <th></th><th>Plays like (95% range) or score</th><th>You</th><th>Band at your average (${data.own_avg_elo})</th>
+            <th></th><th>Plays like (95% range) or score</th><th>You</th><th>Band at ${data.compare_source === 'selected'
+                ? data.compare_rating : `your average (${data.compare_rating})`}</th>
             <th class="sc-range-head">worse · even · better<span class="sc-info sc-info-head" tabindex="0"
                 aria-label="${SC_RANGE_TIP}">i<span class="sc-tip">${SC_RANGE_TIP}</span></span></th>
             <th>Difference (95% range)</th>

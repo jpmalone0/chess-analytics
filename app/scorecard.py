@@ -144,7 +144,10 @@ def player_scorecard(
     player_color: Optional[str] = None,
     opening_names: Optional[str] = None,
     tz: Optional[str] = None,
+    elo_band: Optional[str] = None,
 ) -> dict[str, Any]:
+    """`elo_band` is the Compare-to selection: a band's lower edge reads the
+    band lines at that band's middle instead of at the player's average."""
     attach_engine_db(db.connection())
     where, params = crud._build_game_filters(
         player_id=player_id, time_class=time_class,
@@ -180,7 +183,10 @@ def player_scorecard(
         return round(sum(xs) / len(xs)) if xs else None
 
     rating = avg(r.own_elo for r in used)
-    out_rows = sc.compare_to_band(sides, fits, rating) if rating else sc.compare_to_band(sides, {}, 0)
+    selected = elo_band is not None and elo_band.isdigit()
+    compare_rating = int(elo_band) + 50 if selected and elo_band else rating
+    out_rows = (sc.compare_to_band(sides, fits, compare_rating) if compare_rating
+                else sc.compare_to_band(sides, {}, 0))
 
     return {
         "games": len(sides),
@@ -189,6 +195,8 @@ def player_scorecard(
         "time_class": tc,
         "curve_fitted": bool(tc and tc in curves),
         "own_avg_elo": rating,
+        "compare_rating": compare_rating,
+        "compare_source": "selected" if selected else "average",
         "opp_avg_elo": avg(r.opp_elo for r in used),
         # Side-games behind the band lines: other players' games only.
         "band_games": max((f.n for f in fits.values() if f), default=0),

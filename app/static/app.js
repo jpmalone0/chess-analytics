@@ -150,13 +150,23 @@ function renderBaselineNotice() {
 
 /** Text for the default (auto) entry: the band the charts actually resolved to,
  *  named concretely. It may be widened or class-level, so say which. */
+/** Engine-analyzed games per band lower edge, from the ladder response. */
+function analyzedByBand(r) {
+    return Object.fromEntries((r.analyzed || []).map((x) => [x.elo_lo, x.n_games]));
+}
+
+function analyzedNote(analyzed, lo) {
+    return ` · ${(analyzed[lo] || 0).toLocaleString()} analyzed`;
+}
+
 function defaultBandOptionText(r) {
     if (!r.resolved) return 'No baseline available';
     const [lo, hi] = r.resolved.elo_band;
     const notes = [];
     if (r.resolved.widened) notes.push('widened');
     if (r.resolved.tc_fallback) notes.push(`all ${r.resolved.time_class || 'time controls'}`);
-    return `${lo}–${hi}  (${r.resolved.n_players.toLocaleString()} players)`
+    const analyzed = hi - lo === 99 ? analyzedNote(analyzedByBand(r), lo) : '';
+    return `${lo}–${hi}  (${r.resolved.n_players.toLocaleString()} players${analyzed})`
         + (notes.length ? `  ·  ${notes.join(', ')}` : '');
 }
 
@@ -171,6 +181,7 @@ async function loadBaselineBands(username) {
         const r = await fetchJSON(`/api/players/${username}/analytics/baseline-bands`
             + colorParams(queryColor(), currentOpeningFilter));
         const previous = selectedBaselineBand;
+        const analyzed = analyzedByBand(r);
 
         // The default entry stands in for the player's own band, so listing that
         // band again below would duplicate it. Only skip it when the resolver
@@ -192,7 +203,8 @@ async function loadBaselineBands(username) {
             const opt = document.createElement('option');
             opt.value = b.elo_lo;
             if (b.eligible) {
-                opt.textContent = `${b.elo_lo}–${b.elo_hi}  (${b.n_players.toLocaleString()} players)`;
+                opt.textContent = `${b.elo_lo}–${b.elo_hi}  (${b.n_players.toLocaleString()} players`
+                    + `${analyzedNote(analyzed, b.elo_lo)})`;
             } else {
                 // A gap inside the ladder. Shown, but unselectable — the range
                 // exists, we just don't have enough of it to draw a line from.
@@ -210,7 +222,9 @@ async function loadBaselineBands(username) {
         if (r.all_players && r.all_players.n_players) {
             const all = document.createElement('option');
             all.value = 'all';
-            all.textContent = `All players  (${r.all_players.n_players.toLocaleString()} players)`;
+            const total = Object.values(analyzed).reduce((a, n) => a + n, 0);
+            all.textContent = `All players  (${r.all_players.n_players.toLocaleString()} players`
+                + ` · ${total.toLocaleString()} analyzed)`;
             sel.appendChild(all);
         }
         // Selection is sticky across filter changes, even if the band just

@@ -407,3 +407,21 @@ def test_building_the_app_runner_leaves_the_views_alone(tmp_path, monkeypatch):
         sql = conn.execute(text(
             "SELECT sql FROM sqlite_master WHERE name = 'game_move_quality'")).scalar()
     assert "sentinel" in sql
+
+
+def test_the_band_ladder_says_how_many_games_are_analyzed(client, db, sidecar):
+    """So the dropdown shows which bands would benefit from more analysis."""
+    me, a, b, c = (make_player(db, n) for n in ("me", "a", "b", "c"))
+    make_game(db, me, a, 1850, 1850)
+    g1 = make_game(db, a, b, 1850, 1850)
+    g2 = make_game(db, b, c, 1860, 1840)
+    make_game(db, a, c, 1250, 1250)           # in a band, but not analyzed
+    mine = make_game(db, me, b, 1850, 1850)   # analyzed, but the player's own
+    db.commit()
+    for g in (g1, g2, mine):
+        seed_evals(sidecar, WHITE_BLUNDERS, game_id=g.game_id)
+
+    r = client.get("/api/players/me/analytics/baseline-bands?time_class=rapid").json()
+    analyzed = {x["elo_lo"]: x["n_games"] for x in r["analyzed"]}
+    assert analyzed.get(1800) == 2
+    assert 1200 not in analyzed

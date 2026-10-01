@@ -114,3 +114,33 @@ def test_clocks_reach_the_scorecard(db, sidecar):
 
     inputs = scorecard_module._load_inputs(db, [(g.game_id, 1)])
     assert inputs[g.game_id].clocks == [595.0, 595.0, 590.0]
+
+
+def test_the_scorecard_compares_at_your_average_by_default(client, db, sidecar):
+    me, them = make_player(db, "me"), make_player(db, "them")
+    g = legal_game(db, them, me, ["e4", "e5"], result="1-0")
+    seed_evals(sidecar, [(0, 0), (1, 0), (2, 100)], game_id=g.game_id)
+
+    body = client.get("/api/players/me/analytics/scorecard").json()
+    assert body["compare_rating"] == 1900
+    assert body["compare_source"] == "average"
+
+
+def test_a_compare_to_band_moves_the_comparison_to_its_middle(client, db, sidecar):
+    me, them = make_player(db, "me"), make_player(db, "them")
+    g = legal_game(db, them, me, ["e4", "e5"], result="1-0")
+    seed_evals(sidecar, [(0, 0), (1, 0), (2, 100)], game_id=g.game_id)
+
+    body = client.get("/api/players/me/analytics/scorecard?elo_band=2200").json()
+    assert body["compare_rating"] == 2250
+    assert body["compare_source"] == "selected"
+    assert body["own_avg_elo"] == 1900
+
+
+def test_all_players_compares_at_your_average(client, db, sidecar):
+    me, them = make_player(db, "me"), make_player(db, "them")
+    g = legal_game(db, them, me, ["e4", "e5"], result="1-0")
+    seed_evals(sidecar, [(0, 0), (1, 0), (2, 100)], game_id=g.game_id)
+
+    body = client.get("/api/players/me/analytics/scorecard?elo_band=all").json()
+    assert body["compare_rating"] == 1900
