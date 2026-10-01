@@ -74,7 +74,10 @@ function scRangeBar(row) {
     const tone = row.verdict === 'real' ? 'sc-real' : 'sc-noise';
     // The difference itself shows on hover. The tooltip sits outside the
     // track, which is mirrored for lower-is-better rows and would mirror it.
-    const diff = `${scFmt(row, row.diff, true)} `
+    // Percentages keep their % sign; other units are named once, after the gap.
+    const bare = row.unit !== 'percent';
+    const diff = `You ${scFmt(row, row.you, false, bare)} vs band ${scFmt(row, row.band, false, bare)}: `
+        + `${scFmt(row, row.diff, true)} `
         + `(${scFmt(row, row.lo, true, true)} to ${scFmt(row, row.hi, true, true)})`;
     return `<div class="sc-bar" tabindex="0" aria-label="${diff}">
         <div class="sc-track">
@@ -253,7 +256,7 @@ async function loadScorecard(username) {
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
-            <th></th><th>Plays like (95% range) or score</th><th>You</th><th>Band at ${data.compare_source === 'selected'
+            <th></th><th>Plays like (95% range) or score</th><th>Band at ${data.compare_source === 'selected'
                 ? data.compare_rating : `your average (${data.compare_rating})`}</th>
             <th class="sc-range-head">worse · even · better<span class="sc-info sc-info-head" tabindex="0"
                 aria-label="${SC_RANGE_TIP}">i<span class="sc-tip">${SC_RANGE_TIP}</span></span></th>
@@ -262,7 +265,6 @@ async function loadScorecard(username) {
             <tr>
                 <td class="sc-label" title="${r.description}">${r.label}${scBreakdown(r)}</td>
                 <td>${scPlaysLike(r)}</td>
-                <td>${scFmt(r, r.you)}</td>
                 <td class="sc-muted">${scFmt(r, r.band)}</td>
                 <td class="sc-range ${r.higher_is_better ? '' : 'sc-flip'}">${scRangeBar(r)}</td>
             </tr>`).join('')}
