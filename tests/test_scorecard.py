@@ -366,3 +366,25 @@ def test_every_dimension_says_what_it_measures():
     rows = compare_to_band([SideFacts()], {}, 1500)
     assert all(r["description"] for r in rows)
     assert len(rows) == len(DIMENSIONS)
+
+
+class TestScoreRange:
+    """The 0-100 rows carry a 95% range for their score, as Elo rows do."""
+
+    def test_a_band_score_range_brackets_the_score(self):
+        xs = [600 + 200 * (i % 8) for i in range(200)]
+        fit = fit_band(xs, [0.7 + (0.01 if (i // 8) % 2 else -0.01) for i in range(200)], [5] * 200)
+        sides = [SideFacts(reached=True, won=i % 10 < 7) for i in range(60)]
+        row = {r["key"]: r for r in compare_to_band(sides, {"advantage": fit}, 1500)}["advantage"]
+        assert row["score_lo"] < row["score"] < row["score_hi"]
+        assert row["score_lo"] < 50 < row["score_hi"]
+
+    def test_time_management_range_is_around_its_own_share(self):
+        sides = [SideFacts(clock_ahead=6 + i % 3, clock_even=2, clock_behind=2) for i in range(30)]
+        row = {r["key"]: r for r in compare_to_band(sides, {}, 1500)}["time"]
+        assert row["score_lo"] < row["score"] < row["score_hi"]
+        assert 0 <= row["score_lo"] and row["score_hi"] <= 100
+
+    def test_elo_rows_have_no_score_range(self):
+        row = {r["key"]: r for r in compare_to_band([SideFacts()], {}, 1500)}["opening"]
+        assert row["score_lo"] is None and row["score_hi"] is None

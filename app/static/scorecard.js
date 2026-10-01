@@ -11,9 +11,15 @@
 
 let scorecardChart = null;
 
-const SC_RANGE_TIP = 'The dot is your difference from the band at your rating; the line is its '
-    + '95% range. White means the range stays clear of even, so the difference is real; '
-    + 'gray means it could be noise.';
+const SC_RANGE_TIP = 'The dot is the row\'s Elo or score, the line its 95% range. The middle '
+    + 'is the band at your rating for Elo rows, and 50 for scores. White means the range '
+    + 'stays clear of the middle, so the difference is real; gray means it could be noise.';
+
+// The two fixed axes. Every Elo row shares one scale and every 0-100 row the
+// other, so bar lengths compare across rows.
+const SC_ELO_REACH = 600;
+const SC_ELO_TICKS = [-600, -300, 0, 300, 600];
+const SC_SCORE_TICKS = [0, 25, 50, 75, 100];
 let scPollTimer = null;
 
 /** `bare` drops the unit, for the ends of a range printed after its value.
@@ -66,27 +72,60 @@ function scFifty(row) {
 
 /** A dot for the difference and a whisker for its range, on an axis centred
  *  on "even with your opponents". Each row has its own scale: the units differ. */
-function scRangeBar(row) {
-    if (row.diff === null) return '<div class="sc-track"></div>';
-    const reach = Math.max(Math.abs(row.lo), Math.abs(row.hi), 1e-9) * 1.15;
-    const pos = (v) => 50 + (50 * v) / reach;
-    // White when the range excludes "even" (a real difference), gray when not.
-    const tone = row.verdict === 'real' ? 'sc-real' : 'sc-noise';
-    // The difference itself shows on hover. The tooltip sits outside the
-    // track, which is mirrored for lower-is-better rows and would mirror it.
-    // Percentages keep their % sign; other units are named once, after the gap.
+/** The row's dot and range on its group's axis, as offsets from the middle:
+ *  Elo minus the comparison rating, or score minus 50. Null when the row has
+ *  no value to place. */
+function scBarSpan(row, rating) {
+    if (row.has_elo) {
+        if (row.elo === null || row.elo_lo === null) return null;
+        return { dot: row.elo - rating, lo: row.elo_lo - rating, hi: row.elo_hi - rating,
+            reach: SC_ELO_REACH };
+    }
+    if (row.score === null || row.score_lo === null) return null;
+    return { dot: row.score - 50, lo: row.score_lo - 50, hi: row.score_hi - 50, reach: 50 };
+}
+
+function scRangeBar(row, rating) {
+    const span = scBarSpan(row, rating);
+    if (!span) return '<div class="sc-track"></div>';
+    const pos = (v) => Math.max(0, Math.min(100, 50 + (50 * v) / span.reach));
+    // White when the range stays clear of the middle (a real difference).
+    const tone = span.lo > 0 || span.hi < 0 ? 'sc-real' : 'sc-noise';
+    // A range running past the axis gets an arrow at that end: "beyond here".
+    const over = `${span.lo < -span.reach ? ' sc-over-lo' : ''}${span.hi > span.reach ? ' sc-over-hi' : ''}`;
     const bare = row.unit !== 'percent';
-    const diff = `You ${scFmt(row, row.you, false, bare)} vs band ${scFmt(row, row.band, false, bare)}: `
-        + `${scFmt(row, row.diff, true)} `
-        + `(${scFmt(row, row.lo, true, true)} to ${scFmt(row, row.hi, true, true)})`;
-    return `<div class="sc-bar" tabindex="0" aria-label="${diff}">
+    const tip = row.you === null || row.band === null ? ''
+        : `You ${scFmt(row, row.you, false, bare)} vs band ${scFmt(row, row.band, false, bare)}: `
+            + `${scFmt(row, row.diff, true)} `
+            + `(${scFmt(row, row.lo, true, true)} to ${scFmt(row, row.hi, true, true)})`;
+    return `<div class="sc-bar" tabindex="0" aria-label="${tip}">
         <div class="sc-track">
             <div class="sc-zero"></div>
-            <div class="sc-whisker ${tone}" style="left:${pos(row.lo)}%;width:${pos(row.hi) - pos(row.lo)}%"></div>
-            <div class="sc-dot ${tone}" style="left:${pos(row.diff)}%"></div>
+            <div class="sc-whisker ${tone}${over}" style="left:${pos(span.lo)}%;width:${pos(span.hi) - pos(span.lo)}%"></div>
+            <div class="sc-dot ${tone}" style="left:${pos(span.dot)}%"></div>
         </div>
-        <span class="sc-tip sc-bar-tip">${diff}</span>
+        ${tip ? `<span class="sc-tip sc-bar-tip">${tip}</span>` : ''}
     </div>`;
+}
+
+function scRows(rows, rating) {
+    return rows.map((r) => `
+            <tr>
+                <td class="sc-label" title="${r.description}">${r.label}${scBreakdown(r)}</td>
+                <td>${scPlaysLike(r)}</td>
+                <td class="sc-range">${scRangeBar(r, rating)}</td>
+            </tr>`).join('');
+}
+
+/** A labelled axis row closing a group: tick values under the bar column. */
+function scAxisRow(name, ticks, reach, centre) {
+    const labels = ticks.map((t) => {
+        const left = 50 + (50 * (t - centre)) / reach;
+        const text = centre === 0 && t > 0 ? `+${t}` : String(t).replace('-', '−');
+        return `<span class="sc-tick" style="left:${left}%">${text}</span>`;
+    }).join('');
+    return `<tr class="sc-axis-row"><td></td><td class="sc-axis-name">${name}</td>
+        <td><div class="sc-axis">${labels}</div></td></tr>`;
 }
 
 /** Where a spoke's point sits. Elo spokes sit at their Elo. A 0-100 spoke is
@@ -256,18 +295,14 @@ async function loadScorecard(username) {
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
-            <th></th><th>Plays like (95% range) or score</th><th>Band at ${data.compare_source === 'selected'
-                ? data.compare_rating : `your average (${data.compare_rating})`}</th>
+            <th></th><th>Plays like (95% range) or score</th>
             <th class="sc-range-head">worse · even · better<span class="sc-info sc-info-head" tabindex="0"
                 aria-label="${SC_RANGE_TIP}">i<span class="sc-tip">${SC_RANGE_TIP}</span></span></th>
         </tr></thead>
-        <tbody>${data.rows.map((r) => `
-            <tr>
-                <td class="sc-label" title="${r.description}">${r.label}${scBreakdown(r)}</td>
-                <td>${scPlaysLike(r)}</td>
-                <td class="sc-muted">${scFmt(r, r.band)}</td>
-                <td class="sc-range ${r.higher_is_better ? '' : 'sc-flip'}">${scRangeBar(r)}</td>
-            </tr>`).join('')}
+        <tbody>${scRows(data.rows.filter((r) => r.has_elo), data.compare_rating)}
+            ${scAxisRow(`Elo vs ${data.compare_rating}`, SC_ELO_TICKS, SC_ELO_REACH, 0)}
+            ${scRows(data.rows.filter((r) => !r.has_elo), data.compare_rating)}
+            ${scAxisRow('Score', SC_SCORE_TICKS, 50, 50)}
         </tbody>`;
 }
 
