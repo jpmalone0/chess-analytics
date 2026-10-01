@@ -1844,7 +1844,6 @@ body.compare-mode #stat-winrate     { order: 8; }
     vertical-align: middle;
     color: var(--text-muted);
     border: 1px solid var(--border-light);
-    cursor: help;
 }
 
 .sc-radar {
@@ -1886,7 +1885,6 @@ body.compare-mode #stat-winrate     { order: 8; }
     line-height: 1.05em;
     font-style: italic;
     text-align: center;
-    cursor: help;
     pointer-events: auto;
 }
 
@@ -2019,7 +2017,6 @@ body.compare-mode #stat-winrate     { order: 8; }
 
 .sc-bar {
     position: relative;
-    cursor: help;
 }
 
 .sc-bar:focus {
