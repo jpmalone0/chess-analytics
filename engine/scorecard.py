@@ -360,7 +360,7 @@ DIMENSIONS = (
               has_elo=False, score="vs_band", description=(
                   "Share of games you won or drew after falling to a 25% "
                   "expected score after the opening, scored 0-100.")),
-    Dimension("time", "Time management", "percent", True, has_elo=False, score="share",
+    Dimension("time", "Speed", "percent", True, has_elo=False, score="share",
               description=(
                   "Share of your moves made ahead of your opponent on the clock, "
                   "counting even (within 10% of the larger clock) as half, "

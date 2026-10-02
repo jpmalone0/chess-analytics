@@ -11,7 +11,7 @@
 
 let scorecardChart = null;
 
-const SC_RANGE_TIP = 'The dot is your difference from the band at your rating; the line is its '
+const SC_RANGE_TIP = 'The dot is your difference from similar players; the line is its '
     + '95% range. White means the range stays clear of even, so the difference is real; '
     + 'gray means it could be noise.';
 let scPollTimer = null;
@@ -62,7 +62,7 @@ function scEloRange(row) {
     return `${row.elo_lo}–${row.elo_hi}`;
 }
 
-/** Time management's ahead / even / behind split, under its label. */
+/** Speed's ahead / even / behind split, under its label. */
 function scBreakdown(row) {
     const b = row.breakdown;
     if (!b) return '';
@@ -71,7 +71,7 @@ function scBreakdown(row) {
 }
 
 function scFifty(row) {
-    return row.key === 'time' ? 'level with your opponents' : 'the band at your rating';
+    return row.key === 'time' ? 'level with your opponents' : 'similar players';
 }
 
 /** A dot for the difference and a whisker for its range, on an axis centred
@@ -86,7 +86,7 @@ function scRangeBar(row) {
     // track, which is mirrored for lower-is-better rows and would mirror it.
     // Percentages keep their % sign; other units are named once, after the gap.
     const bare = row.unit !== 'percent';
-    const diff = `You ${scFmt(row, row.you, false, bare)} vs band ${scFmt(row, row.band, false, bare)}: `
+    const diff = `You ${scFmt(row, row.you, false, bare)} vs similar players ${scFmt(row, row.band, false, bare)}: `
         + `${scFmt(row, row.diff, true)} `
         + `(${scFmt(row, row.lo, true, true)} to ${scFmt(row, row.hi, true, true)})`;
     return `<div class="sc-bar" tabindex="0" aria-label="${diff}">
@@ -100,7 +100,7 @@ function scRangeBar(row) {
 }
 
 /** Where a spoke's point sits. Elo spokes sit at their Elo. A 0-100 spoke is
- *  pinned so 50 (level with your opponents for time management, the band at
+ *  pinned so 50 (level with your opponents for speed, similar players at
  *  your rating otherwise) lands on your rating ring: below it falls inside the
  *  ring, above it reaches toward the edge at 100. */
 function scRadius(row, rating) {
@@ -257,16 +257,16 @@ async function loadScorecard(username) {
     body.classList.remove('hidden');
     label.textContent = `${data.games} analyzed games · average rating ${data.own_avg_elo}`
         + (data.compare_source === 'selected' ? ` · compared at ${data.compare_rating}` : '')
-        + ` · band from ${data.band_games} other player-games`;
+        + ` · similar players from ${data.band_games} player-games`;
 
     drawScorecardRadar(data.rows, data.compare_rating,
         data.compare_source === 'selected'
-            ? `the band you picked (${data.compare_rating})`
+            ? `similar players at ${data.compare_rating}`
             : `your average rating over these games (${data.compare_rating})`);
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
-            <th></th><th>Plays like</th><th>You</th><th>Band</th>
+            <th></th><th>Plays like</th><th>You</th><th>Similar players</th>
             <th class="sc-range-head">worse · even · better<span class="sc-info sc-info-head" tabindex="0"
                 aria-label="${SC_RANGE_TIP}">i<span class="sc-tip">${SC_RANGE_TIP}</span></span></th>
         </tr></thead>

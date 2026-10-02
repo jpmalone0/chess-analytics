@@ -101,7 +101,7 @@ def test_an_unreplayable_game_is_skipped_not_fatal(client, db, sidecar):
 
 
 def test_clocks_reach_the_scorecard(db, sidecar):
-    """Time management reads each move's clock."""
+    """Speed reads each move's clock."""
     me, them = make_player(db, "me"), make_player(db, "them")
     g = make_game(db, me, them, 1900, 1900, white_move_times=[5.0, 5.0],
                   black_move_times=[5.0], white_clocks=[595.0, 590.0],
