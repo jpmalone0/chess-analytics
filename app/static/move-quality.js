@@ -86,8 +86,8 @@ function renderMqPopulation(base) {
     const b = base.band, t = base.totals, job = base.job;
 
     const have = t.n_games
-        ? `${t.n_games.toLocaleString()} analyzed games from ${t.n_players.toLocaleString()} players`
-        : 'no analyzed games yet';
+        ? `${t.n_games.toLocaleString()} analyzed games from ${t.n_players.toLocaleString()} similar players`
+        : 'no analyzed games from similar players yet';
     const notes = [];
     if (!base.curve_fitted) notes.push(`no ${b.time_class} curve is fitted yet, so these games will not be graded until one is`);
 
@@ -99,10 +99,10 @@ function renderMqPopulation(base) {
             : `<span class="mq-job">Analyzing ${job.games_done}/${total}</span>`;
     } else {
         action = `<button class="baseline-toggle" onclick="startMqPopulation(this, ${base.default_games})"
-            title="Analyze ${base.default_games} more games from ${mqBandName(b)}">
+            title="Analyze ${base.default_games} more games from similar players">
             Analyze ${base.default_games} more (~${Math.round(base.estimated_minutes)} min)</button>`;
     }
-    el.innerHTML = `<span>Similar players (${mqBandName(b)}): ${have}${notes.length ? ' · ' + notes.join(' · ') : ''}</span>`;
+    el.innerHTML = `<span>${have}${notes.length ? ' · ' + notes.join(' · ') : ''}</span>`;
     slot.innerHTML = action;
     if (job) mqPoll();
 }

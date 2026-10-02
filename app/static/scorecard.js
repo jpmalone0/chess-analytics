@@ -256,12 +256,11 @@ async function loadScorecard(username) {
     }
     body.classList.remove('hidden');
     label.textContent = `${data.games} analyzed games · average rating ${data.own_avg_elo}`
-        + (data.compare_source === 'selected' ? ` · compared at ${data.compare_rating}` : '')
         + ` · similar players from ${data.band_games} player-games`;
 
     drawScorecardRadar(data.rows, data.compare_rating,
         data.compare_source === 'selected'
-            ? `similar players at ${data.compare_rating}`
+            ? 'similar players'
             : `your average rating over these games (${data.compare_rating})`);
 
     document.getElementById('sc-table').innerHTML = `

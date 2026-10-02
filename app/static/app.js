@@ -121,14 +121,12 @@ function baselineLineStyle(extra = {}) {
     };
 }
 
+/** The overlay's legend. The range and time control are left to the Compare
+ *  To menu, which already shows them. */
 function baselineLabel(meta) {
-    if (!meta) return 'Average';
-    const [lo, hi] = meta.elo_band;
-    const tc = meta.tc_fallback ? (meta.time_class || 'all') : meta.time_control;
-    const who = meta.source === 'all' ? 'All players'
-        : meta.source === 'selected' ? `Compared to ${lo}–${hi}`
-        : `Average ${lo}–${hi}`;
-    return `${who} · ${tc} · ${meta.n_players.toLocaleString()} players`;
+    if (!meta) return 'Similar players';
+    const who = meta.source === 'all' ? 'All players' : 'Similar players';
+    return `${who} (${meta.n_players.toLocaleString()})`;
 }
 
 /** Explicit empty state: a selected band with no data must say so, rather
@@ -142,11 +140,9 @@ function renderBaselineNotice() {
     const results = Object.values(baselineResults);
     const noneResolved = results.length > 0 && results.every(m => m === null);
     if (baselineEnabled && selectedBaselineBand && noneResolved) {
-        const lo = Number(selectedBaselineBand);
-        const which = selectedBaselineBand === 'all'
-            ? 'all players'
-            : `${lo}–${lo + 99}`;
-        el.textContent = `No baseline for ${which} under the current filters.`;
+        el.textContent = selectedBaselineBand === 'all'
+            ? 'No players under the current filters.'
+            : 'No similar players under the current filters.';
         el.style.display = '';
     } else {
         el.style.display = 'none';
