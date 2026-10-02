@@ -56,7 +56,9 @@ async function loadMoveQuality(username) {
         `${t.games_analyzed} analyzed games, ${t.moves_scored.toLocaleString()} scored moves`
         + (o.avg_elo ? ` · opponents averaged ${o.avg_elo}` : '');
 
-    const bandRate = base && base.viable ? base.totals : null;
+    // Shown whenever the band has any analyzed moves; its size is on the
+    // band line above the cards, so a thin band reads as one.
+    const bandRate = base && base.totals && base.totals.moves_scored ? base.totals : null;
     // Compared per 100 moves, not per game: the two seats of a game can play
     // a different number of moves, and per game would fold that in.
     document.getElementById('mq-totals').innerHTML = MQ_TIERS.map((k) => `
@@ -89,7 +91,6 @@ function renderMqPopulation(base) {
         ? `${t.n_games.toLocaleString()} analyzed games from ${t.n_players.toLocaleString()} players`
         : 'no analyzed games yet';
     const notes = [];
-    if (!base.viable) notes.push('a rate needs 30 players and 150 games');
     if (!base.curve_fitted) notes.push(`no ${b.time_class} curve is fitted yet, so these games will not be graded until one is`);
 
     let action;
