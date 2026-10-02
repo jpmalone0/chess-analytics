@@ -124,8 +124,8 @@ function baselineLineStyle(extra = {}) {
 /** The overlay's legend. The range and time control are left to the Compare
  *  To menu, which already shows them. */
 function baselineLabel(meta) {
-    if (!meta) return 'Similar players';
-    const who = meta.source === 'all' ? 'All players' : 'Similar players';
+    if (!meta) return 'Players';
+    const who = meta.source === 'all' ? 'All players' : 'Players';
     return `${who} (${meta.n_players.toLocaleString()})`;
 }
 
@@ -140,9 +140,7 @@ function renderBaselineNotice() {
     const results = Object.values(baselineResults);
     const noneResolved = results.length > 0 && results.every(m => m === null);
     if (baselineEnabled && selectedBaselineBand && noneResolved) {
-        el.textContent = selectedBaselineBand === 'all'
-            ? 'No players under the current filters.'
-            : 'No similar players under the current filters.';
+        el.textContent = 'No players under the current filters.';
         el.style.display = '';
     } else {
         el.style.display = 'none';

@@ -54,7 +54,7 @@ async function loadMoveQuality(username) {
     label.textContent =
         `${t.games_analyzed} analyzed games, ${t.moves_scored.toLocaleString()} scored moves`;
 
-    // Similar players: the Compare-to band's analyzed games. Shown whenever it
+    // Players: the Compare-to band's analyzed games. Shown whenever it
     // has any analyzed moves; its size is on the line above the cards, so a
     // thin band reads as one.
     const bandRate = base && base.totals && base.totals.moves_scored ? base.totals : null;
@@ -65,7 +65,7 @@ async function loadMoveQuality(username) {
             <div class="stat-label">${k[0].toUpperCase() + k.slice(1)}</div>
             <div class="stat-value">${(t[k] / t.games_analyzed).toFixed(2)}</div>
             <div class="stat-sub">per game · ${mqPct(t[k], t.moves_scored)} of moves</div>
-            ${bandRate ? `<div class="stat-sub mq-mirror">similar players ${mqPct(bandRate[k], bandRate.moves_scored)} of moves</div>` : ''}
+            ${bandRate ? `<div class="stat-sub mq-mirror">players ${mqPct(bandRate[k], bandRate.moves_scored)} of moves</div>` : ''}
         </div>`).join('');
 }
 
@@ -86,8 +86,8 @@ function renderMqPopulation(base) {
     const b = base.band, t = base.totals, job = base.job;
 
     const have = t.n_games
-        ? `${t.n_games.toLocaleString()} analyzed games from ${t.n_players.toLocaleString()} similar players`
-        : 'no analyzed games from similar players yet';
+        ? `${t.n_games.toLocaleString()} analyzed games from ${t.n_players.toLocaleString()} players`
+        : 'no analyzed games yet';
     const notes = [];
     if (!base.curve_fitted) notes.push(`no ${b.time_class} curve is fitted yet, so these games will not be graded until one is`);
 
@@ -99,7 +99,7 @@ function renderMqPopulation(base) {
             : `<span class="mq-job">Analyzing ${job.games_done}/${total}</span>`;
     } else {
         action = `<button class="baseline-toggle" onclick="startMqPopulation(this, ${base.default_games})"
-            title="Analyze ${base.default_games} more games from similar players">
+            title="Analyze ${base.default_games} more games from players in this range">
             Analyze ${base.default_games} more (~${Math.round(base.estimated_minutes)} min)</button>`;
     }
     el.innerHTML = `<span>${have}${notes.length ? ' · ' + notes.join(' · ') : ''}</span>`;
