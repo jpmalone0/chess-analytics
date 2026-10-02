@@ -9,12 +9,13 @@ from datetime import date
 from typing import Any, Optional
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app import baselines, crud
 from engine.db import attach_engine_db
-from engine.population import POPULATION_PER_PLAYER_CAP, band_sides_sql
-from engine.views import MISS_HANDED_WP, MISS_RETURNED_WP
+from engine.population import POPULATION_PER_PLAYER_CAP, SHUFFLE, band_sides_sql
+from engine.views import MISS_SQL
 
 # A game analyzed under several runs would otherwise appear once per run.
 # Newest run wins: it is the deepest search anybody has pointed at that game.
@@ -40,12 +41,9 @@ _LATEST_RUN_FOR_GAME = """
 # proportional to the analyzed corpus rather than to the game. Measured against
 # the real sidecar at 102,790 plies: 142ms through the view, 0.2ms with the
 # filter pushed inside. A view cannot know the caller's filter, so the only
-# place the pushdown can happen is here. The thresholds are imported rather
+# place the pushdown can happen is here. The condition is imported rather
 # than retyped so that retuning a Miss still costs exactly one edit.
-_MISS = (
-    f"COALESCE(prev.wp_loss >= {MISS_HANDED_WP}"
-    f" AND s.wp_loss >= {MISS_RETURNED_WP}, 0)"
-)
+_MISS = MISS_SQL
 
 
 def _empty() -> dict[str, Any]:
@@ -145,12 +143,19 @@ def game_drill_list(db: Session, game_id: int) -> dict[str, Any]:
             WHERE  game_id = :game_id
               AND  run_id  = {_LATEST_RUN_FOR_GAME}
         ),
-        q AS (
+        flagged AS (
             SELECT s.game_id, s.ply, s.color, s.tier,
                    s.wp_before, s.wp_after, s.wp_loss,
                    {_MISS} AS is_miss
             FROM      scored AS s
             LEFT JOIN scored AS prev ON prev.ply = s.ply - 1
+        ),
+        -- As in the view: a Miss has no tier.
+        q AS (
+            SELECT game_id, ply, color,
+                   CASE WHEN is_miss = 1 THEN NULL ELSE tier END AS tier,
+                   wp_before, wp_after, wp_loss, is_miss
+            FROM flagged
         )
         SELECT q.ply, q.color, q.tier, q.is_miss,
                q.wp_before, q.wp_after, q.wp_loss,
@@ -209,6 +214,53 @@ def resolve_mq_band(
         return None
     lo = (median // 100) * 100
     return {"time_class": tc, "elo_lo": lo, "elo_hi": lo + 99, "source": "derived"}
+
+
+def analyzed_band_counts(
+    db: Session, time_class: str, exclude_player_id: int,
+) -> list[dict[str, int]]:
+    """Engine-analyzed games per 100-point band, for the Compare-to list.
+
+    Counted the way band_move_quality counts a band: by the in-band side's own
+    Elo, leaving out every game the player is in, at most
+    POPULATION_PER_PLAYER_CAP games per player. So the number beside a band in
+    the list is the number the band's rate rests on.
+    """
+    try:
+        attach_engine_db(db.connection())
+        rows = db.execute(text(f"""
+            WITH sides AS (
+                SELECT g.game_id, g.white_player_id AS pid, g.white_elo AS elo, {SHUFFLE} AS h
+                FROM games g
+                WHERE g.time_class = :tc AND g.variant IS NULL
+                  AND g.white_player_id <> :pid0 AND g.black_player_id <> :pid0
+                UNION ALL
+                SELECT g.game_id, g.black_player_id, g.black_elo, {SHUFFLE}
+                FROM games g
+                WHERE g.time_class = :tc AND g.variant IS NULL
+                  AND g.white_player_id <> :pid0 AND g.black_player_id <> :pid0
+            ),
+            analyzed AS (
+                SELECT game_id, pid, h, (elo / 100) * 100 AS lo
+                FROM sides s
+                WHERE elo IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM engine.game_coverage c
+                    WHERE c.game_id = s.game_id AND c.status = 'complete')
+            ),
+            ranked AS (
+                SELECT lo, game_id,
+                       ROW_NUMBER() OVER (PARTITION BY lo, pid ORDER BY h, game_id) AS rn
+                FROM analyzed
+            )
+            SELECT lo, COUNT(DISTINCT game_id) AS n
+            FROM ranked WHERE rn <= :cap
+            GROUP BY lo ORDER BY lo
+        """), {"tc": time_class, "pid0": exclude_player_id,
+               "cap": POPULATION_PER_PLAYER_CAP}).all()
+    except OperationalError:
+        # No sidecar yet, or one without coverage: nothing is analyzed.
+        return []
+    return [{"elo_lo": r.lo, "n_games": r.n} for r in rows]
 
 
 def band_move_quality(

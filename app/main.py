@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session  # noqa: F401 — used via Depends(get_db)
 
 from app import baselines, crud, schemas
 from app import move_quality as mq
+from app import scorecard as sc
 from app.database import get_db, init_db
 from engine.analyze import DEFAULT_DEPTH, default_workers
 from engine.cli import estimated_minutes
@@ -419,6 +420,27 @@ def move_quality_by_game(
     )
 
 
+@app.get("/api/players/{username}/analytics/scorecard")
+def scorecard(
+    username: str,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    tz: Optional[str] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    elo_band: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    player = crud.get_player(db, username)
+    if not player:
+        raise HTTPException(404, f"Player '{username}' not found")
+    return sc.player_scorecard(
+        db, player.player_id, time_class, start_date, end_date,
+        player_color, opening_names, tz=tz, elo_band=elo_band,
+    )
+
+
 @app.get("/api/games/{game_id}/move-quality")
 def game_move_quality(game_id: int, db: Session = Depends(get_db)):
     return mq.game_drill_list(db, game_id)
@@ -443,9 +465,14 @@ def get_population_runner() -> JobRunner:
         from app.database import engine as canonical
         from engine import db as engine_db
         from engine.analyze import RunConfig, analyze_games, get_or_create_run
-        from engine.models import PopulationJob
+        from engine.views import upgrade_engine_schema
 
-        PopulationJob.__table__.create(bind=engine_db.engine, checkfirst=True)
+        # Tables and columns only: the runner reads population_jobs before any
+        # analysis would otherwise upgrade it, and a sidecar older than a column
+        # added there fails every query. Not init_engine_db, which drops and
+        # rebuilds the views: this runs inside a request, and a page load's
+        # other requests reading those views would find them missing.
+        upgrade_engine_schema()
 
         @contextmanager
         def connect():
@@ -536,6 +563,56 @@ def analyze_population(
     return {"job": job, "created": created}
 
 
+def _scorecard_job_target(db: Session, username: str, time_class: Optional[str]):
+    """The player, and the time class a press analyzes: the filter bar's, or on
+    "All" the class they play most, which is the one the scorecard shows."""
+    player = crud.get_player(db, username)
+    if not player:
+        raise HTTPException(404, f"Player '{username}' not found")
+    tc = time_class or baselines.dominant_time_class(db, player.player_id)
+    if tc is None:
+        raise HTTPException(422, "No games to analyze")
+    return player, tc
+
+
+@app.get("/api/players/{username}/analytics/scorecard/job")
+def scorecard_job(
+    username: str,
+    time_class: Optional[str] = None,
+    db: Session = Depends(get_db),
+    runner: JobRunner = Depends(get_population_runner),
+):
+    """The Scorecard button's state: a job in flight for these games, or the
+    size and rough cost of the next press."""
+    player, tc = _scorecard_job_target(db, username, time_class)
+    return {
+        "time_class": tc,
+        "job": runner.active_player_job(player.player_id, tc),
+        "default_games": DEFAULT_TARGET_GAMES,
+        "estimated_minutes": round(
+            estimated_minutes(DEFAULT_TARGET_GAMES, default_workers(), DEFAULT_DEPTH), 1),
+    }
+
+
+@app.post("/api/players/{username}/analytics/scorecard/analyze")
+def analyze_own_games(
+    username: str,
+    time_class: Optional[str] = None,
+    games: int = Query(DEFAULT_TARGET_GAMES, ge=1, le=MAX_TARGET_GAMES),
+    db: Session = Depends(get_db),
+    runner: JobRunner = Depends(get_population_runner),
+):
+    """Queue the player's newest unanalyzed games, or return the job in flight.
+
+    Ignores the date filter on purpose: each press reaches further back in time,
+    and a game outside the current window still counts once the window widens.
+    """
+    player, tc = _scorecard_job_target(db, username, time_class)
+    job, created = runner.enqueue_player(
+        player_id=player.player_id, time_class=tc, target_games=games)
+    return {"job": job, "created": created}
+
+
 @app.get("/api/population/jobs")
 def population_jobs(runner: JobRunner = Depends(get_population_runner)):
     return {"jobs": runner.jobs()}
@@ -594,6 +671,7 @@ def baseline_bands(
     # The band the charts will actually use when no band is picked. Returned so
     # the dropdown's default entry can name a concrete range rather than a
     # placeholder — it may be widened or class-level, which the label reflects.
+    analyzed_tc = time_class or baselines.dominant_time_class(db, player.player_id)
     resolved = baselines.resolve_band(
         db, player.player_id, time_class=time_class,
         start_date=start_date, end_date=end_date,
@@ -608,6 +686,9 @@ def baseline_bands(
             db, player.player_id, time_class=time_class, time_control=tc,
             player_color=player_color, opening_names=opening_names,
         ),
+        # Engine coverage per band, so the list shows where more analysis helps.
+        "analyzed": mq.analyzed_band_counts(db, analyzed_tc, player.player_id)
+        if analyzed_tc else [],
     }
 
 

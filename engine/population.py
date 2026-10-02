@@ -30,7 +30,7 @@ from engine.models import PopulationJob
 # per engine-minute.
 POPULATION_PER_PLAYER_CAP = 5
 
-DEFAULT_TARGET_GAMES = 100
+DEFAULT_TARGET_GAMES = 30
 MAX_TARGET_GAMES = 3000
 
 ACTIVE = ("queued", "running")
@@ -109,12 +109,39 @@ def sample_band(
     return [r[0] for r in rows]
 
 
+def sample_player(
+    conn,
+    *,
+    player_id: int,
+    time_class: str,
+    run_id: int,
+    limit: int,
+) -> list[int]:
+    """Up to `limit` of one player's games not yet complete under `run_id`,
+    newest first, so each press reaches further back in time."""
+    rows = conn.execute(text("""
+        SELECT g.game_id
+        FROM   games g
+        WHERE  (g.white_player_id = :pid OR g.black_player_id = :pid)
+          AND  g.time_class = :time_class AND g.variant IS NULL
+          AND  EXISTS (SELECT 1 FROM moves m WHERE m.game_id = g.game_id AND m.ply = 2)
+          AND  NOT EXISTS (
+                   SELECT 1 FROM engine.game_coverage c
+                   WHERE c.game_id = g.game_id AND c.run_id = :run_id
+                     AND c.status = 'complete')
+        ORDER  BY g.end_time DESC, g.date_played DESC, g.game_id DESC
+        LIMIT  :limit
+    """), {"pid": player_id, "time_class": time_class, "run_id": run_id, "limit": limit})
+    return [r[0] for r in rows]
+
+
 def job_dict(job: PopulationJob) -> dict[str, Any]:
     return {
         "job_id": job.job_id,
         "time_class": job.time_class,
         "elo_lo": job.elo_lo,
         "elo_hi": job.elo_hi,
+        "player_id": job.player_id,
         "target_games": job.target_games,
         "games_total": job.games_total,
         "games_done": job.games_done,
@@ -191,7 +218,8 @@ class JobRunner:
         with self._lock, self._sessions() as s:
             existing = (
                 s.query(PopulationJob)
-                .filter_by(time_class=time_class, elo_lo=elo_lo, elo_hi=elo_hi)
+                .filter_by(time_class=time_class, elo_lo=elo_lo, elo_hi=elo_hi,
+                           player_id=None)
                 .filter(PopulationJob.status.in_(ACTIVE))
                 .first()
             )
@@ -203,10 +231,43 @@ class JobRunner:
                 target_games=target_games, games_done=0, status="queued",
                 created_at=datetime.utcnow(),
             )
-            s.add(job)
-            s.commit()
-            out = job_dict(job)
+            out = self._add(s, job)
+        return self._queued(out, start)
 
+    def enqueue_player(
+        self,
+        *,
+        player_id: int,
+        time_class: str,
+        target_games: int,
+        start: bool = True,
+    ) -> tuple[dict[str, Any], bool]:
+        """Queue a job over one player's own newest unanalyzed games, or
+        return the one already in flight for that player and time class."""
+        with self._lock, self._sessions() as s:
+            existing = (
+                s.query(PopulationJob)
+                .filter_by(time_class=time_class, player_id=player_id)
+                .filter(PopulationJob.status.in_(ACTIVE))
+                .first()
+            )
+            if existing:
+                return job_dict(existing), False
+            job = PopulationJob(
+                time_class=time_class, elo_lo=0, elo_hi=0, player_id=player_id,
+                target_games=target_games, games_done=0, status="queued",
+                created_at=datetime.utcnow(),
+            )
+            out = self._add(s, job)
+        return self._queued(out, start)
+
+    @staticmethod
+    def _add(s, job: PopulationJob) -> dict[str, Any]:
+        s.add(job)
+        s.commit()
+        return job_dict(job)
+
+    def _queued(self, out: dict[str, Any], start: bool) -> tuple[dict[str, Any], bool]:
         self._queue.put(out["job_id"])
         if start:
             self._ensure_thread()
@@ -228,10 +289,17 @@ class JobRunner:
             return [job_dict(j) for j in active + done]
 
     def active_job(self, time_class: str, elo_lo: int, elo_hi: int) -> Optional[dict]:
+        return self._active(time_class=time_class, elo_lo=elo_lo, elo_hi=elo_hi,
+                            player_id=None)
+
+    def active_player_job(self, player_id: int, time_class: str) -> Optional[dict]:
+        return self._active(time_class=time_class, player_id=player_id)
+
+    def _active(self, **match) -> Optional[dict]:
         with self._sessions() as s:
             job = (
                 s.query(PopulationJob)
-                .filter_by(time_class=time_class, elo_lo=elo_lo, elo_hi=elo_hi)
+                .filter_by(**match)
                 .filter(PopulationJob.status.in_(ACTIVE))
                 .first()
             )
@@ -264,6 +332,7 @@ class JobRunner:
             job = s.get(PopulationJob, job_id)
             if job is None or job.status != "queued":
                 return
+            player_id = job.player_id
             params = dict(
                 time_class=job.time_class, elo_lo=job.elo_lo, elo_hi=job.elo_hi,
                 exclude_player_id=job.exclude_player_id, limit=job.target_games,
@@ -273,7 +342,12 @@ class JobRunner:
         try:
             run_id = self._run_id()
             with self._connect() as conn:
-                ids = sample_band(conn, run_id=run_id, **params)
+                if player_id is not None:
+                    ids = sample_player(conn, player_id=player_id,
+                                        time_class=params["time_class"],
+                                        run_id=run_id, limit=params["limit"])
+                else:
+                    ids = sample_band(conn, run_id=run_id, **params)
             self._update(job_id, games_total=len(ids))
 
             def progress(done, total, summary):

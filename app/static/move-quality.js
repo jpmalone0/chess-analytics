@@ -1,4 +1,4 @@
-/* Move quality: per-game inaccuracies, mistakes, blunders and misses.
+/* Move quality: inaccuracies, mistakes, blunders and misses, as totals.
  *
  * Engine coverage is a fraction of the corpus, so the empty state is the
  * normal state and says so rather than rendering an empty table. */
@@ -49,15 +49,15 @@ async function loadMoveQuality(username) {
     if (!t.games_analyzed) {
         label.textContent = 'No engine-analyzed games in this selection';
         document.getElementById('mq-totals').innerHTML = '';
-        document.getElementById('mq-table').innerHTML = '';
         return;
     }
-    const o = data.opponents;
     label.textContent =
-        `${t.games_analyzed} analyzed games, ${t.moves_scored.toLocaleString()} scored moves`
-        + (o.avg_elo ? ` · opponents averaged ${o.avg_elo}` : '');
+        `${t.games_analyzed} analyzed games, ${t.moves_scored.toLocaleString()} scored moves`;
 
-    const bandRate = base && base.viable ? base.totals : null;
+    // Players: the Compare-to band's analyzed games. Shown whenever it
+    // has any analyzed moves; its size is on the line above the cards, so a
+    // thin band reads as one.
+    const bandRate = base && base.totals && base.totals.moves_scored ? base.totals : null;
     // Compared per 100 moves, not per game: the two seats of a game can play
     // a different number of moves, and per game would fold that in.
     document.getElementById('mq-totals').innerHTML = MQ_TIERS.map((k) => `
@@ -65,53 +65,9 @@ async function loadMoveQuality(username) {
             <div class="stat-label">${k[0].toUpperCase() + k.slice(1)}</div>
             <div class="stat-value">${(t[k] / t.games_analyzed).toFixed(2)}</div>
             <div class="stat-sub">per game · ${mqPct(t[k], t.moves_scored)} of moves</div>
-            <div class="stat-sub mq-mirror">opponents ${mqPct(o[k], o.moves_scored)} of moves</div>
-            ${bandRate ? `<div class="stat-sub mq-mirror">band ${mqPct(bandRate[k], bandRate.moves_scored)} of moves</div>` : ''}
+            ${bandRate ? `<div class="stat-sub mq-mirror">players ${mqPct(bandRate[k], bandRate.moves_scored)} of moves</div>` : ''}
         </div>`).join('');
-
-    document.getElementById('mq-table').innerHTML = `
-        <thead><tr>
-            <th>Date</th><th>Opening</th><th>Moves</th>
-            <th>Inacc</th><th>Mist</th><th>Blun</th><th>Miss</th><th></th>
-        </tr></thead>
-        <tbody>${data.games.map((g) => `
-            <tr class="mq-row" data-game="${g.game_id}" data-url="${g.chess_com_url || ''}">
-                <td>${g.date_played || '—'}</td>
-                <td class="mq-opening">${g.opening_name || '—'}</td>
-                <td>${g.moves_scored}</td>
-                <td>${g.inaccuracies}</td>
-                <td>${g.mistakes}</td>
-                <td class="mq-blunder">${g.blunders}</td>
-                <td>${g.misses}</td>
-                <td><button class="btn-sm" onclick="toggleMqDrill(${g.game_id})">Moves</button></td>
-            </tr>
-            <tr class="mq-drill hidden" id="mq-drill-${g.game_id}">
-                <td colspan="8"></td>
-            </tr>`).join('')}
-        </tbody>`;
 }
-
-async function toggleMqDrill(gameId) {
-    const row = document.getElementById(`mq-drill-${gameId}`);
-    if (!row.classList.contains('hidden')) { row.classList.add('hidden'); return; }
-    row.classList.remove('hidden');
-
-    const cell = row.firstElementChild;
-    cell.textContent = 'Loading…';
-    const data = await (await fetch(`/api/games/${gameId}/move-quality`)).json();
-    if (!data.moves.length) { cell.textContent = 'No flagged moves.'; return; }
-
-    const url = document.querySelector(`.mq-row[data-game="${gameId}"]`)?.dataset.url || '';
-    cell.innerHTML = `<table class="mq-moves"><tbody>${data.moves.map((m) => `
-        <tr>
-            <td>${m.move_number}${m.color === 'white' ? '.' : '...'} ${m.move_san}</td>
-            <td class="mq-tier-${m.tier || 'none'}">${m.tier || ''}${m.is_miss ? ' · miss' : ''}</td>
-            <td>${(100 * m.wp_before).toFixed(0)}% → ${(100 * m.wp_after).toFixed(0)}%</td>
-            <td>${m.time_spent_seconds != null ? m.time_spent_seconds.toFixed(1) + 's' : '—'}</td>
-        </tr>`).join('')}</tbody></table>
-        ${url ? `<a class="mq-link" href="${url}" target="_blank" rel="noopener">Open on chess.com</a>` : ''}`;
-}
-
 
 // ═══════════════════════════════════════════════════════════
 // Population: the Compare-to band's pooled rate, and the button
@@ -123,14 +79,16 @@ let mqBaseUrl = null;   // the baseline the section last loaded, re-polled for p
 
 function renderMqPopulation(base) {
     const el = document.getElementById('mq-population');
-    if (!base || !base.band) { el.innerHTML = ''; return; }
+    // The button lives beside Compare To, so it reads as acting on the band
+    // picked there rather than on this section.
+    const slot = document.getElementById('band-analyze');
+    if (!base || !base.band) { el.innerHTML = ''; slot.innerHTML = ''; return; }
     const b = base.band, t = base.totals, job = base.job;
 
     const have = t.n_games
         ? `${t.n_games.toLocaleString()} analyzed games from ${t.n_players.toLocaleString()} players`
         : 'no analyzed games yet';
     const notes = [];
-    if (!base.viable) notes.push('a rate needs 30 players and 150 games');
     if (!base.curve_fitted) notes.push(`no ${b.time_class} curve is fitted yet, so these games will not be graded until one is`);
 
     let action;
@@ -140,12 +98,12 @@ function renderMqPopulation(base) {
             ? '<span class="mq-job">Queued</span>'
             : `<span class="mq-job">Analyzing ${job.games_done}/${total}</span>`;
     } else {
-        action = `<button class="btn-sm" onclick="startMqPopulation(this, ${base.default_games})">
+        action = `<button class="baseline-toggle" onclick="startMqPopulation(this, ${base.default_games})"
+            title="Analyze ${base.default_games} more games from players in this range">
             Analyze ${base.default_games} more (~${Math.round(base.estimated_minutes)} min)</button>`;
     }
-    el.innerHTML = `
-        <span>Band ${mqBandName(b)}: ${have}${notes.length ? ' · ' + notes.join(' · ') : ''}</span>
-        ${action}`;
+    el.innerHTML = `<span>${have}${notes.length ? ' · ' + notes.join(' · ') : ''}</span>`;
+    slot.innerHTML = action;
     if (job) mqPoll();
 }
 
