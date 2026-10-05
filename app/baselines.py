@@ -26,6 +26,10 @@ from app import crud
 # PER_PLAYER_CAP, and thin per-bucket rates by the frontend's own gate — so it
 # sits well below the player floor's implied game count on purpose.
 MIN_PLAYERS = 30
+# The Compare To ladder's fixed span, lower edges inclusive. Every band in it
+# is listed, thin or empty, so any range can be picked and pressed for analysis.
+LADDER_LO = 100
+LADDER_HI = 3200
 MIN_GAMES = 150
 
 # No single player may contribute more than this to a band.
@@ -342,14 +346,12 @@ def available_bands(
     opening_names: Optional[str] = None,
 ) -> list[dict]:
     """
-    The band ladder for the dropdown: every 100-band from the lowest viable one
-    to the highest, each flagged for whether it clears the min-sample floor.
+    The band ladder for the dropdown: every 100-band from LADDER_LO to
+    LADDER_HI, each flagged for whether it clears the min-sample floor.
 
-    Interior bands that fall short are returned rather than dropped — a gap in
-    the ladder is information about the corpus, and omitting it makes the range
-    look continuous when it is not. The frontend greys them out. Bands outside
-    the viable span are omitted entirely: a tail of unusable entries above the
-    strongest real band is noise, not information.
+    Bands that fall short are returned rather than dropped, and stay
+    selectable: picking one is how the Analyze button reaches it, and a thin
+    band is exactly where more analysis helps.
 
     The cap here applies across all bands for a player rather than within each
     band, so counts can only understate what resolve_band would find. That is
@@ -408,8 +410,6 @@ def available_bands(
         lo for lo, (p, g) in counts.items()
         if p >= MIN_PLAYERS and g >= MIN_GAMES
     ]
-    if not viable:
-        return []
 
     return [
         {
@@ -419,7 +419,7 @@ def available_bands(
             "n_games": counts.get(lo, (0, 0))[1],
             "eligible": lo in viable,
         }
-        for lo in range(min(viable), max(viable) + 100, 100)
+        for lo in range(LADDER_LO, LADDER_HI + 100, 100)
     ]
 
 

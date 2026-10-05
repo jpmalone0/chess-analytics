@@ -154,6 +154,10 @@ function analyzedByBand(r) {
     return Object.fromEntries((r.analyzed || []).map((x) => [x.elo_lo, x.n_games]));
 }
 
+function playersNote(n) {
+    return `${n.toLocaleString()} player${n === 1 ? '' : 's'}`;
+}
+
 function analyzedNote(analyzed, lo) {
     return ` · ${(analyzed[lo] || 0).toLocaleString()} analyzed`;
 }
@@ -165,7 +169,7 @@ function defaultBandOptionText(r) {
     if (r.resolved.widened) notes.push('widened');
     if (r.resolved.tc_fallback) notes.push(`all ${r.resolved.time_class || 'time controls'}`);
     const analyzed = hi - lo === 99 ? analyzedNote(analyzedByBand(r), lo) : '';
-    return `${lo}–${hi}  (${r.resolved.n_players.toLocaleString()} players${analyzed})`
+    return `${lo}–${hi}  (${playersNote(r.resolved.n_players)}${analyzed})`
         + (notes.length ? `  ·  ${notes.join(', ')}` : '');
 }
 
@@ -202,16 +206,17 @@ async function loadBaselineBands(username) {
             const opt = document.createElement('option');
             opt.value = b.elo_lo;
             if (b.eligible) {
-                opt.textContent = `${b.elo_lo}–${b.elo_hi}  (${b.n_players.toLocaleString()} players`
+                opt.textContent = `${b.elo_lo}–${b.elo_hi}  (${playersNote(b.n_players)}`
                     + `${analyzedNote(analyzed, b.elo_lo)})`;
             } else {
-                // A gap inside the ladder. Shown, but unselectable — the range
-                // exists, we just don't have enough of it to draw a line from.
-                opt.disabled = true;
+                // Too thin to draw a baseline from, but selectable: picking it
+                // is how a press of Analyze reaches it, and the overlays say
+                // when a band is too thin rather than drawing nothing.
                 opt.textContent = `${b.elo_lo}–${b.elo_hi}  `
                     + (b.n_games
-                        ? `(${b.n_players.toLocaleString()} players · too few)`
-                        : '(no data)');
+                        ? `(${playersNote(b.n_players)} · too few`
+                        : '(no data')
+                    + `${analyzedNote(analyzed, b.elo_lo)})`;
             }
             sel.appendChild(opt);
         }
@@ -222,7 +227,7 @@ async function loadBaselineBands(username) {
             const all = document.createElement('option');
             all.value = 'all';
             const total = Object.values(analyzed).reduce((a, n) => a + n, 0);
-            all.textContent = `All players  (${r.all_players.n_players.toLocaleString()} players`
+            all.textContent = `All players  (${playersNote(r.all_players.n_players)}`
                 + ` · ${total.toLocaleString()} analyzed)`;
             sel.appendChild(all);
         }
