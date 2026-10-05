@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import os
 import sys
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, NamedTuple, Optional
@@ -398,7 +398,9 @@ def analyze_games(
             pool.submit(_analyze_one, gid, config.depth, config.multipv) for gid in game_ids
         ]
 
-        for done, future in enumerate(futures, start=1):
+        # As they finish, not as queued: one long game would otherwise hold
+        # the progress count while the games behind it sit done.
+        for done, future in enumerate(as_completed(futures), start=1):
             game_id, rows, status, error, time_class = future.result()
 
             if rows:
