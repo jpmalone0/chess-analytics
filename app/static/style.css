@@ -1882,6 +1882,13 @@ body.compare-mode #stat-winrate     { order: 8; }
     font-size: 0.72rem;
 }
 
+/* A range with nothing left to analyze: says so in place of the button. */
+#band-analyze .mq-exhausted {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    cursor: help;
+}
+
 /* The analyze button is an action, not a toggle, so it always wears the
    overlay's lit look. */
 #band-analyze .baseline-toggle {

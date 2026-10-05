@@ -6,9 +6,11 @@ under the path _isolate_engine_db has already redirected.
 """
 
 from contextlib import contextmanager
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from app import move_quality as mq
@@ -278,6 +280,21 @@ def test_a_press_analyzes_30_games_by_default(client, db, runner):
 
 
 
+def test_the_baseline_says_how_many_games_a_press_could_still_pick(client, db, runner):
+    """Games are only sampled from the local database, so a band runs dry."""
+    me, a, b, c = (make_player(db, n) for n in ("me", "a", "b", "c"))
+    make_game(db, me, a, 1850, 1850)  # mine: never sampled
+    make_game(db, a, b, 1850, 1850)
+    make_game(db, b, c, 1850, 1850)
+    db.commit()
+    url = "/api/players/me/analytics/move-quality/baseline?time_class=rapid&elo_band=1800"
+    assert client.get(url).json()["remaining_games"] == 2
+
+    client.post("/api/players/me/analytics/move-quality/population?time_class=rapid&elo_band=1800")
+    runner.run_pending()
+    assert client.get(url).json()["remaining_games"] == 0
+
+
 # ── Your own games ────────────────────────────────────────
 
 def _sample_player(db, player, **kw):
@@ -355,6 +372,87 @@ def test_the_scorecard_button_queues_30_of_your_games(client, db, runner):
 
     state = client.get("/api/players/me/analytics/scorecard/job?time_class=rapid").json()
     assert state["job"]["job_id"] == r["job"]["job_id"]
+
+
+def test_counting_never_goes_through_run_creation(db, sidecar):
+    """Creating a run rebuilds the sidecar's views, which fails any request
+    reading them at the same moment. The counts run on every page load and
+    poll, so they read the run without creating one."""
+    me, a = make_player(db, "me"), make_player(db, "a")
+    make_game(db, me, a, 1850, 1850)
+    db.commit()
+
+    @contextmanager
+    def connect():
+        c = db.connection()
+        engine_db.attach_engine_db(c)
+        yield c
+
+    def no_creation():
+        raise AssertionError("counting created a run")
+
+    r = JobRunner(sessions=sessionmaker(bind=sidecar), connect=connect,
+                  run_id=no_creation, analyze=None, current_run=lambda: 1)
+    assert r.remaining_player(me.player_id, "rapid") == 1
+    assert r.remaining_band("rapid", 1800, 1899, None) == 1
+
+
+def test_with_no_run_yet_everything_is_left(db, sidecar):
+    me, a = make_player(db, "me"), make_player(db, "a")
+    make_game(db, me, a, 1850, 1850)
+    db.commit()
+    seed_evals(sidecar, WHITE_BLUNDERS, game_id=1)
+
+    @contextmanager
+    def connect():
+        c = db.connection()
+        engine_db.attach_engine_db(c)
+        yield c
+
+    r = JobRunner(sessions=sessionmaker(bind=sidecar), connect=connect,
+                  run_id=lambda: 1, analyze=None, current_run=lambda: None)
+    assert r.remaining_player(me.player_id, "rapid") == 1
+
+
+def test_a_date_range_keeps_your_sample_inside_it(db, sidecar):
+    """A press never reaches past the scorecard's range: games it is not
+    showing would cost engine time for nothing."""
+    me, a = make_player(db, "me"), make_player(db, "a")
+    make_game(db, me, a, 1900, 1900, date_played=date(2026, 8, 1))
+    inside = make_game(db, a, me, 1900, 1900, date_played=date(2026, 9, 20))
+    make_game(db, me, a, 1900, 1900, date_played=date(2026, 10, 3))
+    db.commit()
+    picked = _sample_player(db, me, start_date=date(2026, 9, 1), end_date=date(2026, 9, 30))
+    assert picked == [inside.game_id]
+
+
+def test_a_press_keeps_its_range_until_it_runs(client, db, runner, sidecar):
+    me, a = make_player(db, "me"), make_player(db, "a")
+    make_game(db, me, a, 1900, 1900, date_played=date(2026, 8, 1))
+    inside = make_game(db, a, me, 1900, 1900, date_played=date(2026, 9, 20))
+    db.commit()
+    q = "?time_class=rapid&start_date=2026-09-01&end_date=2026-09-30"
+    assert client.get(f"/api/players/me/analytics/scorecard/job{q}").json()["remaining_games"] == 1
+
+    client.post(f"/api/players/me/analytics/scorecard/analyze{q}")
+    runner.run_pending()
+    with sidecar.connect() as c:
+        done = [r[0] for r in c.execute(text("SELECT game_id FROM game_coverage"))]
+    assert done == [inside.game_id]
+    assert client.get(f"/api/players/me/analytics/scorecard/job{q}").json()["remaining_games"] == 0
+
+
+def test_the_scorecard_button_says_how_many_of_your_games_are_left(client, db, runner):
+    me, a = make_player(db, "me"), make_player(db, "a")
+    make_game(db, me, a, 1900, 1900)
+    make_game(db, a, me, 1900, 1900)
+    db.commit()
+    url = "/api/players/me/analytics/scorecard/job?time_class=rapid"
+    assert client.get(url).json()["remaining_games"] == 2
+
+    client.post("/api/players/me/analytics/scorecard/analyze?time_class=rapid")
+    runner.run_pending()
+    assert client.get(url).json()["remaining_games"] == 0
 
 
 def test_the_app_runner_upgrades_an_older_sidecar(tmp_path, monkeypatch):

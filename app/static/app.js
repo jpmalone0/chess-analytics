@@ -241,6 +241,16 @@ async function loadBaselineBands(username) {
     }
 }
 
+/** Rebuild the Compare To list so its analyzed counts include a job that just
+ *  finished. Not on every poll: rebuilding the options closes the menu if
+ *  it is open. */
+function refreshBandCounts(username) {
+    for (const k of Object.keys(requestCache)) {
+        if (k.includes('/baseline-bands')) delete requestCache[k];
+    }
+    loadBaselineBands(username);
+}
+
 /** Redraw only what the baseline affects. refreshAll() would also refetch
  *  stats, Elo history, games and openings — none of which depend on the band,
  *  and the ~900ms it costs makes the control feel unresponsive. */

@@ -18,7 +18,7 @@ from __future__ import annotations
 import queue
 import threading
 from contextlib import AbstractContextManager
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Callable, Optional
 
 from sqlalchemy import text
@@ -116,14 +116,24 @@ def sample_player(
     time_class: str,
     run_id: int,
     limit: int,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    tz: Optional[str] = None,
 ) -> list[int]:
     """Up to `limit` of one player's games not yet complete under `run_id`,
-    newest first, so each press reaches further back in time."""
-    rows = conn.execute(text("""
+    newest first, so each press reaches further back in time, but never past
+    the date range: the scorecard's own filter, local days and all."""
+    from app.crud import _date_range_clause
+
+    params: dict[str, Any] = {"pid": player_id, "time_class": time_class,
+                              "run_id": run_id, "limit": limit}
+    window = _date_range_clause(start_date, end_date, tz, params)
+    rows = conn.execute(text(f"""
         SELECT g.game_id
         FROM   games g
         WHERE  (g.white_player_id = :pid OR g.black_player_id = :pid)
           AND  g.time_class = :time_class AND g.variant IS NULL
+          {"AND " + window if window else ""}
           AND  EXISTS (SELECT 1 FROM moves m WHERE m.game_id = g.game_id AND m.ply = 2)
           AND  NOT EXISTS (
                    SELECT 1 FROM engine.game_coverage c
@@ -131,7 +141,7 @@ def sample_player(
                      AND c.status = 'complete')
         ORDER  BY g.end_time DESC, g.date_played DESC, g.game_id DESC
         LIMIT  :limit
-    """), {"pid": player_id, "time_class": time_class, "run_id": run_id, "limit": limit})
+    """), params)
     return [r[0] for r in rows]
 
 
@@ -163,6 +173,10 @@ class JobRunner:
       sidecar attached, for sampling.
     * `run_id`: returns the analysis run to sample against and write into.
     * `analyze`: `(game_ids, run_id, progress) -> Summary`.
+    * `current_run`: the run to count against, read-only (None before any run
+      exists). Defaults to `run_id`; the app passes a lookup that never
+      creates a run, because creating one rebuilds the sidecar's views under
+      requests reading them.
     """
 
     def __init__(
@@ -171,10 +185,12 @@ class JobRunner:
         connect: Callable[[], AbstractContextManager],
         run_id: Callable[[], int],
         analyze: Callable[..., Any],
+        current_run: Optional[Callable[[], Optional[int]]] = None,
     ):
         self._sessions = sessions
         self._connect = connect
         self._run_id = run_id
+        self._current_run = current_run or run_id
         self._analyze = analyze
         self._queue: queue.Queue[int] = queue.Queue()
         self._lock = threading.Lock()
@@ -241,9 +257,13 @@ class JobRunner:
         time_class: str,
         target_games: int,
         start: bool = True,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        tz: Optional[str] = None,
     ) -> tuple[dict[str, Any], bool]:
-        """Queue a job over one player's own newest unanalyzed games, or
-        return the one already in flight for that player and time class."""
+        """Queue a job over one player's own newest unanalyzed games in the
+        date range, or return the one already in flight for that player and
+        time class."""
         with self._lock, self._sessions() as s:
             existing = (
                 s.query(PopulationJob)
@@ -255,6 +275,8 @@ class JobRunner:
                 return job_dict(existing), False
             job = PopulationJob(
                 time_class=time_class, elo_lo=0, elo_hi=0, player_id=player_id,
+                start_date=start_date.isoformat() if start_date else None,
+                end_date=end_date.isoformat() if end_date else None, tz=tz,
                 target_games=target_games, games_done=0, status="queued",
                 created_at=datetime.utcnow(),
             )
@@ -272,6 +294,32 @@ class JobRunner:
         if start:
             self._ensure_thread()
         return out, True
+
+    def remaining_band(self, time_class: str, elo_lo: int, elo_hi: int,
+                       exclude_player_id: Optional[int]) -> int:
+        """Games a band press could still pick from the local database: the
+        sampler's own rules with no limit, so zero means pressing does nothing."""
+        with self._connect() as conn:
+            return len(sample_band(
+                conn, time_class=time_class, elo_lo=elo_lo, elo_hi=elo_hi,
+                exclude_player_id=exclude_player_id, run_id=self._counting_run(), limit=-1))
+
+    def remaining_player(self, player_id: int, time_class: str,
+                         start_date: Optional[date] = None,
+                         end_date: Optional[date] = None,
+                         tz: Optional[str] = None) -> int:
+        """The player's games in the class and range not yet analyzed."""
+        with self._connect() as conn:
+            return len(sample_player(
+                conn, player_id=player_id, time_class=time_class,
+                run_id=self._counting_run(), limit=-1,
+                start_date=start_date, end_date=end_date, tz=tz))
+
+    def _counting_run(self) -> int:
+        """The run to count against; before any run exists nothing is
+        analyzed, and no real run has id -1."""
+        run = self._current_run()
+        return -1 if run is None else run
 
     def jobs(self, limit: int = 10) -> list[dict[str, Any]]:
         """Active jobs first, then the most recent finished ones."""
@@ -333,6 +381,11 @@ class JobRunner:
             if job is None or job.status != "queued":
                 return
             player_id = job.player_id
+            window = dict(
+                start_date=date.fromisoformat(job.start_date) if job.start_date else None,
+                end_date=date.fromisoformat(job.end_date) if job.end_date else None,
+                tz=job.tz,
+            )
             params = dict(
                 time_class=job.time_class, elo_lo=job.elo_lo, elo_hi=job.elo_hi,
                 exclude_player_id=job.exclude_player_id, limit=job.target_games,
@@ -345,7 +398,7 @@ class JobRunner:
                 if player_id is not None:
                     ids = sample_player(conn, player_id=player_id,
                                         time_class=params["time_class"],
-                                        run_id=run_id, limit=params["limit"])
+                                        run_id=run_id, limit=params["limit"], **window)
                 else:
                     ids = sample_band(conn, run_id=run_id, **params)
             self._update(job_id, games_total=len(ids))

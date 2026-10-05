@@ -6,8 +6,8 @@
  * dimension as an Elo (the rating whose players typically play that way),
  * with your average rating as a dashed ring. Each Elo's 95% range (Fieller's
  * method) is in the tooltip and the table; "any" means no usable Elo yet. */
-/* global fetchJSON, baselineParams, queryColor, currentOpeningFilter, currentTimeClass,
-   currentUsername, requestCache, mqFetchFresh, loadMoveQuality, setInterval, clearInterval */
+/* global fetchJSON, buildFilterParams, getStartDate, getEndDate, baselineParams, queryColor, currentOpeningFilter,
+   currentUsername, requestCache, mqFetchFresh, loadMoveQuality, setInterval, clearInterval, refreshBandCounts */
 
 let scorecardChart = null;
 
@@ -15,6 +15,9 @@ const SC_RANGE_TIP = 'The dot is your difference from players at your rating; th
     + '95% range. White means the range stays clear of even, so the difference is real; '
     + 'gray means it could be noise.';
 let scPollTimer = null;
+// Rows the server still computes but the section leaves out for now. Remove a
+// key to bring its row and spoke back.
+const SC_HIDDEN = new Set(['advantage', 'resourcefulness']);
 
 /** `bare` drops the unit, for the ends of a range printed after its value.
  *  Per-move rows are shown per 100 moves, where the numbers are readable. */
@@ -255,6 +258,7 @@ async function loadScorecard(username) {
         return;
     }
     body.classList.remove('hidden');
+    data.rows = data.rows.filter((r) => !SC_HIDDEN.has(r.key));
     label.textContent = `${data.games} analyzed games · average rating ${data.own_avg_elo}`
         + ` · ${data.band_games} games from other players`;
 
@@ -287,12 +291,12 @@ async function loadScorecard(username) {
 // ═══════════════════════════════════════════════════════════
 
 function scJobUrl(username) {
-    const q = currentTimeClass ? `?time_class=${currentTimeClass}` : '';
-    return `/api/players/${username}/analytics/scorecard/job${q}`;
+    return `/api/players/${username}/analytics/scorecard/job${buildFilterParams()}`;
 }
 
-/** Your newest games not yet analyzed, in the scorecard's time class. Each
- *  press reaches further back; the date filter only decides what is shown. */
+/** Your newest games not yet analyzed, in the scorecard's time class and date
+ *  range. Each press reaches further back, but never past the range: games
+ *  the scorecard is not showing would cost engine time for nothing. */
 async function renderScAnalyze(username) {
     const el = document.getElementById('sc-analyze');
     let st;
@@ -303,19 +307,29 @@ async function renderScAnalyze(username) {
             <span class="mq-job">${st.job.status === 'queued'
         ? 'Queued' : `Analyzing ${st.job.games_done}/${total}`}</span>`;
         scPoll(username);
+    } else if (st.remaining_games === 0) {
+        el.innerHTML = `<span>All your ${st.time_class} games${scRangeNote()} are analyzed</span>`;
     } else {
-        el.innerHTML = `<span>Your newest ${st.time_class} games not yet analyzed, further back each press</span>
+        const left = st.remaining_games ?? st.default_games;
+        const n = Math.min(st.default_games, left);
+        const mins = Math.max(1, Math.round(st.estimated_minutes * n / st.default_games));
+        el.innerHTML = `<span>Your newest ${st.time_class} games${scRangeNote()} not yet analyzed,
+            further back each press (${left.toLocaleString()} left)</span>
             <button class="btn-sm" onclick="startScAnalyze(this)">
-            Analyze ${st.default_games} more of my games (~${Math.max(1, Math.round(st.estimated_minutes))} min)</button>`;
+            Analyze ${n < st.default_games ? `my last ${n}` : `${n} more of my`} games (~${mins} min)</button>`;
     }
+}
+
+/** " in this range" when a date range narrows what a press can reach. */
+function scRangeNote() {
+    return getStartDate() || getEndDate() ? ' in this range' : '';
 }
 
 // eslint-disable-next-line no-unused-vars -- called from the button's onclick
 async function startScAnalyze(btn) {
     btn.disabled = true;
-    const q = currentTimeClass ? `?time_class=${currentTimeClass}` : '';
     try {
-        await mqFetchFresh(`/api/players/${currentUsername}/analytics/scorecard/analyze${q}`,
+        await mqFetchFresh(`/api/players/${currentUsername}/analytics/scorecard/analyze${buildFilterParams()}`,
             { method: 'POST' });
     } catch (e) {
         btn.disabled = false;
@@ -341,5 +355,6 @@ function scPoll(username) {
         }
         loadScorecard(username);
         loadMoveQuality(username);
+        refreshBandCounts(username);
     }, 5000);
 }

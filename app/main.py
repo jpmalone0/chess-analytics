@@ -464,7 +464,13 @@ def get_population_runner() -> JobRunner:
 
         from app.database import engine as canonical
         from engine import db as engine_db
-        from engine.analyze import RunConfig, analyze_games, get_or_create_run
+        from engine.analyze import (
+            RunConfig,
+            analyze_games,
+            engine_version,
+            find_run,
+            get_or_create_run,
+        )
         from engine.views import upgrade_engine_schema
 
         # Tables and columns only: the runner reads population_jobs before any
@@ -480,9 +486,25 @@ def get_population_runner() -> JobRunner:
                 engine_db.attach_engine_db(conn)
                 yield conn
 
+        # The buttons' counts read the run on every page load and poll, so
+        # they look it up once, read-only: get_or_create_run launches the
+        # engine and rebuilds the views. Kept only once found, so the first
+        # job's new run is picked up.
+        found: list[int] = []
+
+        def current_run() -> Optional[int]:
+            if not found:
+                config = RunConfig()
+                run = find_run(config, engine_version(config.engine_path))
+                if run is None:
+                    return None
+                found.append(run)
+            return found[0]
+
         runner = JobRunner(
             sessions=engine_db.SessionLocal,
             connect=connect,
+            current_run=current_run,
             run_id=lambda: get_or_create_run(RunConfig()),
             analyze=lambda ids, run_id, progress: analyze_games(
                 ids, RunConfig(), run_id=run_id, progress=progress),
@@ -526,6 +548,8 @@ def move_quality_baseline(
     out = mq.band_move_quality(
         db, band, player.player_id, player_color, opening_names)
     out["job"] = runner.active_job(band["time_class"], band["elo_lo"], band["elo_hi"])
+    out["remaining_games"] = runner.remaining_band(
+        band["time_class"], band["elo_lo"], band["elo_hi"], player.player_id)
     out["default_games"] = DEFAULT_TARGET_GAMES
     out["estimated_minutes"] = round(
         estimated_minutes(DEFAULT_TARGET_GAMES, default_workers(), DEFAULT_DEPTH), 1)
@@ -579,6 +603,9 @@ def _scorecard_job_target(db: Session, username: str, time_class: Optional[str])
 def scorecard_job(
     username: str,
     time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     db: Session = Depends(get_db),
     runner: JobRunner = Depends(get_population_runner),
 ):
@@ -588,6 +615,8 @@ def scorecard_job(
     return {
         "time_class": tc,
         "job": runner.active_player_job(player.player_id, tc),
+        "remaining_games": runner.remaining_player(
+            player.player_id, tc, start_date=start_date, end_date=end_date, tz=tz),
         "default_games": DEFAULT_TARGET_GAMES,
         "estimated_minutes": round(
             estimated_minutes(DEFAULT_TARGET_GAMES, default_workers(), DEFAULT_DEPTH), 1),
@@ -598,18 +627,23 @@ def scorecard_job(
 def analyze_own_games(
     username: str,
     time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    tz: Optional[str] = None,
     games: int = Query(DEFAULT_TARGET_GAMES, ge=1, le=MAX_TARGET_GAMES),
     db: Session = Depends(get_db),
     runner: JobRunner = Depends(get_population_runner),
 ):
     """Queue the player's newest unanalyzed games, or return the job in flight.
 
-    Ignores the date filter on purpose: each press reaches further back in time,
-    and a game outside the current window still counts once the window widens.
+    Each press reaches further back in time, but only within the date range:
+    the scorecard shows that range, so games outside it would cost engine time
+    without changing what is on screen.
     """
     player, tc = _scorecard_job_target(db, username, time_class)
     job, created = runner.enqueue_player(
-        player_id=player.player_id, time_class=tc, target_games=games)
+        player_id=player.player_id, time_class=tc, target_games=games,
+        start_date=start_date, end_date=end_date, tz=tz)
     return {"job": job, "created": created}
 
 

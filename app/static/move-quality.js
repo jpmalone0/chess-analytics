@@ -2,7 +2,7 @@
  *
  * Engine coverage is a fraction of the corpus, so the empty state is the
  * normal state and says so rather than rendering an empty table. */
-/* global fetchJSON, colorParams, queryColor, currentOpeningFilter, baselineParams, currentUsername, setInterval, clearInterval */
+/* global fetchJSON, colorParams, queryColor, currentOpeningFilter, baselineParams, currentUsername, setInterval, clearInterval, refreshBandCounts */
 
 const MQ_TIERS = ['inaccuracies', 'mistakes', 'blunders', 'misses'];
 
@@ -98,13 +98,27 @@ function renderMqPopulation(base) {
             ? '<span class="mq-job">Queued</span>'
             : `<span class="mq-job">Analyzing ${job.games_done}/${total}</span>`;
     } else {
-        action = `<button class="baseline-toggle" onclick="startMqPopulation(this, ${base.default_games})"
-            title="Analyze ${base.default_games} more games from players in this range">
-            Analyze ${base.default_games} more (~${Math.round(base.estimated_minutes)} min)</button>`;
+        action = mqAnalyzeButton(base);
     }
     el.innerHTML = `<span>${have}${notes.length ? ' · ' + notes.join(' · ') : ''}</span>`;
     slot.innerHTML = action;
     if (job) mqPoll();
+}
+
+/** The press, sized to what the local database still has: games are only
+ *  sampled from what is already downloaded, so a band can run dry. */
+function mqAnalyzeButton(base) {
+    const left = base.remaining_games ?? base.default_games;
+    if (left === 0) {
+        return `<span class="mq-exhausted" title="Every eligible game in this range in your database is analyzed. Looking up more players at this rating adds games.">
+            Range fully analyzed</span>`;
+    }
+    const n = Math.min(base.default_games, left);
+    const mins = Math.max(1, Math.round(base.estimated_minutes * n / base.default_games));
+    const label = n < base.default_games ? `Analyze last ${n}` : `Analyze ${n} more`;
+    return `<button class="baseline-toggle" onclick="startMqPopulation(this, ${n})"
+        title="${left.toLocaleString()} unanalyzed games from players in this range left in your database">
+        ${label} (~${mins} min)</button>`;
 }
 
 async function startMqPopulation(btn, games) {
@@ -138,6 +152,7 @@ function mqPoll() {
         if (!active.length) { clearInterval(mqPollTimer); mqPollTimer = null; }
         if (finished || !active.length) {
             loadMoveQuality(currentUsername);
+            refreshBandCounts(currentUsername);
         } else if (mqBaseUrl) {
             // The band line carries the running job's count; redraw it.
             try { renderMqPopulation(await mqFetchFresh(mqBaseUrl)); } catch { /* next tick */ }

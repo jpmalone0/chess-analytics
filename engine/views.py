@@ -363,7 +363,8 @@ _ADDED_ENGINE_COLUMNS = {
     # Runs recorded before this column existed searched one line each.
     "analysis_runs": {"multipv": "INTEGER NOT NULL DEFAULT 1"},
     # Jobs recorded before this column existed were all band jobs.
-    "population_jobs": {"player_id": "INTEGER"},
+    "population_jobs": {"player_id": "INTEGER", "start_date": "VARCHAR(10)",
+                        "end_date": "VARCHAR(10)", "tz": "VARCHAR(64)"},
 }
 
 
