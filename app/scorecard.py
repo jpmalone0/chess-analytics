@@ -96,13 +96,20 @@ def _facts(db: Session, rows: Sequence[Any], curves: dict[str, float]
 
 
 def _calibration(db: Session, time_class: str, exclude_player_id: int,
-                 curves: dict[str, float]) -> dict[str, Optional[sc.Fit]]:
+                 curves: dict[str, float]
+                 ) -> tuple[dict[str, Optional[sc.Fit]], dict[str, sc.Norm]]:
     """One band line per dimension, over analyzed games the player is not in.
 
     Their opponents are dropped too, not just their own seat: an opponent's
     side of the player's game is the player's game seen from the other chair,
     and keeping it would bring back the mirror symmetry this comparison exists
     to avoid (your conversion is exactly their failure to save).
+
+    Each player adds at most a few games, so nobody's line is mostly one
+    other player, and every viewer's line is nearly the same.
+
+    Also returns the pool's per-state phase norms, which the lines and the
+    player's own rows are both standardised on.
     """
     rows = db.execute(text(f"""
         SELECT g.game_id, c.run_id, g.time_class,
@@ -114,25 +121,28 @@ def _calibration(db: Session, time_class: str, exclude_player_id: int,
           AND  {_LATEST_RUN}
     """), {"tc": time_class, "pid": exclude_player_id}).all()
     facts = _facts(db, rows, curves)
-    obs: list[tuple[float, sc.SideFacts]] = []
+    sides = []
     for r in rows:
         f = facts.get(r.game_id)
         if f is None:
             continue
-        for color, elo in (("white", r.white_elo), ("black", r.black_elo)):
+        for color, pid, elo in (("white", r.white_player_id, r.white_elo),
+                                ("black", r.black_player_id, r.black_elo)):
             if elo:
-                obs.append((float(elo), f[color]))
+                sides.append((r.game_id, pid, float(elo), f[color]))
+    obs = [(elo, side) for _, _, elo, side in sc.cap_per_player(sides)]
+    norms = sc.phase_norms([side for _, side in obs])
     fits = {}
     for dim in sc.DIMENSIONS:
         xs, ys, ws = [], [], []
         for elo, side in obs:
-            num, den = sc.calibration_counts(dim.key, side)
+            num, den = sc.calibration_counts(dim.key, side, norms)
             if den > 0:
                 xs.append(elo)
                 ys.append(num / den)
                 ws.append(den)
         fits[dim.key] = sc.fit_band(xs, ys, ws)
-    return fits
+    return fits, norms
 
 
 def player_scorecard(
@@ -176,7 +186,7 @@ def player_scorecard(
 
     tc = time_class or (Counter(r.time_class for r in used).most_common(1)[0][0]
                         if used else None)
-    fits = _calibration(db, tc, player_id, curves) if tc in curves else {}
+    fits, norms = _calibration(db, tc, player_id, curves) if tc in curves else ({}, {})
 
     def avg(xs):
         xs = [x for x in xs if x]
@@ -185,7 +195,7 @@ def player_scorecard(
     rating = avg(r.own_elo for r in used)
     selected = elo_band is not None and elo_band.isdigit()
     compare_rating = int(elo_band) + 50 if selected and elo_band else rating
-    out_rows = (sc.compare_to_band(sides, fits, compare_rating) if compare_rating
+    out_rows = (sc.compare_to_band(sides, fits, compare_rating, norms) if compare_rating
                 else sc.compare_to_band(sides, {}, 0))
 
     return {

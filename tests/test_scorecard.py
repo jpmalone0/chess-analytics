@@ -10,13 +10,16 @@ from engine.scorecard import (
     RATING_MIN,
     Division,
     GameInput,
+    Norm,
     SideFacts,
     calibration_counts,
+    cap_per_player,
     compare_to_band,
     divide_boards,
     elo_range,
     fit_band,
     game_sides,
+    phase_norms,
     ratio_and_variance,
     unit_counts,
 )
@@ -366,3 +369,82 @@ def test_every_dimension_says_what_it_measures():
     rows = compare_to_band([SideFacts()], {}, 1500)
     assert all(r["description"] for r in rows)
     assert len(rows) == len(DIMENSIONS)
+
+
+class TestPerPlayerCap:
+    """One prolific player must not make up most of a band: a viewer whose own
+    games are dropped from their line would otherwise see a different line from
+    a friend who keeps them."""
+
+    def test_a_player_keeps_at_most_the_cap(self):
+        sides = [(g, 7, "side") for g in range(1, 21)]
+        assert len(cap_per_player(sides, cap=5)) == 5
+
+    def test_other_players_are_untouched(self):
+        sides = [(g, 7, "a") for g in range(1, 21)] + [(100, 8, "b"), (101, 9, "c")]
+        kept = cap_per_player(sides, cap=5)
+        assert {pid for _, pid, _ in kept} == {7, 8, 9}
+        assert sum(pid == 7 for _, pid, _ in kept) == 5
+
+    def test_the_kept_games_do_not_depend_on_input_order(self):
+        sides = [(g, 7, g) for g in range(1, 21)]
+        forward = cap_per_player(sides, cap=5)
+        backward = cap_per_player(list(reversed(sides)), cap=5)
+        assert sorted(forward) == sorted(backward)
+
+    def test_the_sampler_s_picks_survive(self):
+        """The band sampler keeps a player's lowest-hash games, so the cap keeps
+        the same ones and never drops a game it just paid to analyze."""
+        def h(g):
+            return (g * 2654435761) % 4294967291
+        sides = [(g, 7, None) for g in range(1, 21)]
+        lowest = sorted(range(1, 21), key=h)[:5]
+        assert sorted(g for g, _, _ in cap_per_player(sides, cap=5)) == sorted(lowest)
+
+
+class TestStandardisedPhases:
+    """Phase rows compare each move with the pool's moves from the same kind of
+    position. Balanced positions cost the most per move, so a player whose
+    games stay balanced longer looked worse on the raw average at the same
+    play."""
+
+    def test_moves_are_counted_by_the_state_before_them(self):
+        sides = game_sides(game(["e4", "e5", "Nf3"], flat(3)), K, division=Division(2, None))
+        assert sides["white"].opening_states == (0, 0, 1, 0, 0)
+        assert sides["white"].middlegame_states == (0, 0, 1, 0, 0)
+
+    def test_the_norm_is_the_pool_mean_in_each_state(self):
+        pool = [
+            SideFacts(middlegame=-0.4, middlegame_moves=10,
+                      middlegame_states=(0, 0, 10, 0, 0),
+                      middlegame_state_change=(0, 0, -0.4, 0, 0)),
+            SideFacts(middlegame=-0.1, middlegame_moves=10,
+                      middlegame_states=(10, 0, 0, 0, 0),
+                      middlegame_state_change=(-0.1, 0, 0, 0, 0)),
+        ]
+        norm = phase_norms(pool)["middlegame"]
+        assert norm.means[2] == pytest.approx(-0.04)
+        assert norm.means[0] == pytest.approx(-0.01)
+        assert norm.overall == pytest.approx(-0.025)
+
+    def test_playing_like_the_pool_in_every_state_reads_as_the_pool(self):
+        """Mostly balanced moves, each exactly the pool's rate: average, not worse."""
+        norms = {"middlegame": Norm(means=(-0.01, 0, -0.04, 0, 0), overall=-0.025)}
+        s = SideFacts(middlegame=-0.37, middlegame_moves=10,
+                      middlegame_states=(1, 0, 9, 0, 0),
+                      middlegame_state_change=(-0.01, 0, -0.36, 0, 0))
+        num, den = calibration_counts("middlegame", s, norms)
+        assert den == 10
+        assert num / den == pytest.approx(-0.025)
+
+    def test_without_norms_the_rate_is_raw(self):
+        s = SideFacts(middlegame=-0.37, middlegame_moves=10, middlegame_states=(1, 0, 9, 0, 0))
+        assert calibration_counts("middlegame", s) == (-0.37, 10)
+
+    def test_the_rows_use_the_norms(self):
+        norms = {"middlegame": Norm(means=(-0.01, 0, -0.04, 0, 0), overall=-0.025)}
+        s = SideFacts(middlegame=-0.37, middlegame_moves=10,
+                      middlegame_states=(1, 0, 9, 0, 0),
+                      middlegame_state_change=(-0.01, 0, -0.36, 0, 0))
+        row = {r["key"]: r for r in compare_to_band([s] * 5, {}, 1900, norms)}["middlegame"]
+        assert row["you"] == pytest.approx(-0.025)

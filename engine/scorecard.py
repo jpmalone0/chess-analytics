@@ -53,6 +53,13 @@ FIT_BAND_WIDTH = 200
 
 Z95 = 1.96
 
+# The mover's expected score before a move, cut into five states. A move from a
+# balanced position can swing the result; one from a decided position barely
+# moves it. So a phase's raw loss per move depends on how balanced the games
+# were as much as on the play: measured on rapid at 1800-1999, balanced
+# middlegame moves cost about twice what moves from a lost position do.
+STATE_EDGES = (0.2, 0.4, 0.6, 0.8)
+
 
 class Division(NamedTuple):
     """Position indexes where the middlegame and endgame begin, if they do."""
@@ -155,6 +162,14 @@ class SideFacts(NamedTuple):
     clock_ahead: int = 0
     clock_even: int = 0
     clock_behind: int = 0
+    # Each phase's moves and summed change by the state before the move (see
+    # STATE_EDGES), so the rows can compare like positions with like.
+    opening_states: tuple = (0,) * 5
+    middlegame_states: tuple = (0,) * 5
+    endgame_states: tuple = (0,) * 5
+    opening_state_change: tuple = (0.0,) * 5
+    middlegame_state_change: tuple = (0.0,) * 5
+    endgame_state_change: tuple = (0.0,) * 5
 
 
 def _white_cp(cp: Optional[int], mate_in: Optional[int], index: int) -> Optional[float]:
@@ -176,6 +191,11 @@ def _white_cp(cp: Optional[int], mate_in: Optional[int], index: int) -> Optional
 def _wp(white_cp: float, color: str, k: float) -> float:
     sign = 1 if color == "white" else -1
     return 1.0 / (1.0 + math.exp(-(sign * white_cp) / k))
+
+
+def _state(wp: float) -> int:
+    """Which of the five STATE_EDGES states an expected score falls in."""
+    return sum(wp >= edge for edge in STATE_EDGES)
 
 
 def _mover(index: int) -> str:
@@ -257,7 +277,9 @@ def game_sides(game: GameInput, k: float,
     acc: dict[str, dict] = {
         c: {"opening": 0.0, "middlegame": 0.0, "endgame": 0.0,
             "reached": False, "fell": False, "chances": 0, "found": 0, "blunders": 0,
-            "opening_moves": 0, "middlegame_moves": 0, "endgame_moves": 0}
+            "opening_moves": 0, "middlegame_moves": 0, "endgame_moves": 0,
+            **{p + "_states": [0] * 5 for p in ("opening", "middlegame", "endgame")},
+            **{p + "_state_change": [0.0] * 5 for p in ("opening", "middlegame", "endgame")}}
         for c in ("white", "black")
     }
 
@@ -278,10 +300,14 @@ def game_sides(game: GameInput, k: float,
             continue
         color = _mover(i)
         side = acc[color]
-        change = _wp(after, color, k) - _wp(before, color, k)
+        wp_before = _wp(before, color, k)
+        change = _wp(after, color, k) - wp_before
         phase = _phase(i, division)
         side[phase] += change
         side[phase + "_moves"] += 1
+        state = _state(wp_before)
+        side[phase + "_states"][state] += 1
+        side[phase + "_state_change"][state] += change
         loss = max(0.0, -change)
         chance = phase != "opening" and _is_chance(
             game, i, boards[i],
@@ -310,6 +336,9 @@ def game_sides(game: GameInput, k: float,
             endgame_moves=side["endgame_moves"],
             clock_ahead=clock[color][0], clock_even=clock[color][1],
             clock_behind=clock[color][2],
+            **{f"{p}_{f}": tuple(side[f"{p}_{f}"])
+               for p in ("opening", "middlegame", "endgame")
+               for f in ("states", "state_change")},
         )
     return out
 
@@ -338,13 +367,19 @@ class Dimension(NamedTuple):
 DIMENSIONS = (
     Dimension("opening", "Opening", "points_per_move", True, description=(
         "Expected score gained or lost against the engine per 100 moves, "
-        "before the middlegame begins.")),
+        "before the middlegame begins. "
+        "Scored against players in equally balanced positions, so close games "
+        "that stay balanced longer are not penalised.")),
     Dimension("middlegame", "Middlegame", "points_per_move", True, description=(
         "Expected score gained or lost against the engine per 100 moves, "
-        "from the middlegame until the endgame.")),
+        "from the middlegame until the endgame. "
+        "Scored against players in equally balanced positions, so close games "
+        "that stay balanced longer are not penalised.")),
     Dimension("endgame", "Endgame", "points_per_move", True, description=(
         "Expected score gained or lost against the engine per 100 moves, "
-        "from six or fewer queens, rooks and minor pieces to the end.")),
+        "from six or fewer queens, rooks and minor pieces to the end. "
+        "Scored against players in equally balanced positions, so close games "
+        "that stay balanced longer are not penalised.")),
     Dimension("tactics", "Tactics found", "percent", True, description=(
         "Share of tactical chances you took: a capture or check, not a plain "
         "recapture, that beat every other move by 10% or more.")),
@@ -390,7 +425,33 @@ def unit_counts(key: str, s: SideFacts) -> tuple[float, float]:
     raise KeyError(key)
 
 
-def calibration_counts(key: str, s: SideFacts) -> tuple[float, float]:
+class Norm(NamedTuple):
+    """The pool's change per move in each state, and over all its moves."""
+    means: tuple
+    overall: float
+
+
+PHASES = ("opening", "middlegame", "endgame")
+
+
+def phase_norms(pool: Sequence[SideFacts]) -> dict[str, Norm]:
+    """Each phase's per-state means over a pool of other players' sides."""
+    norms = {}
+    for phase in PHASES:
+        moves = np.zeros(5)
+        change = np.zeros(5)
+        for s in pool:
+            moves += getattr(s, phase + "_states")
+            change += getattr(s, phase + "_state_change")
+        if moves.sum() == 0:
+            continue
+        means = tuple(float(c / m) if m else 0.0 for c, m in zip(change, moves, strict=True))
+        norms[phase] = Norm(means, float(change.sum() / moves.sum()))
+    return norms
+
+
+def calibration_counts(key: str, s: SideFacts,
+                       norms: Optional[dict[str, Norm]] = None) -> tuple[float, float]:
     """The (numerator, denominator) a rating line is fitted on.
 
     Per move for the phase rows and blunders, where the rows show per game.
@@ -398,15 +459,53 @@ def calibration_counts(key: str, s: SideFacts) -> tuple[float, float]:
     they rarely reach an endgame and have fewer moves to blunder on, and a
     per-game total makes them look better. Measured on the first calibration
     sample, endgame points per game *fell* with rating (t = -3.8). Within one
-    game both seats share its length, so the rows can stay per game."""
-    if key in ("opening", "middlegame", "endgame"):
-        return getattr(s, key), float(getattr(s, key + "_moves"))
+    game both seats share its length, so the rows can stay per game.
+
+    With `norms`, the phase rows are standardised on the state before each
+    move (indirect standardisation against the pool)."""
+    if key in PHASES:
+        moves = float(getattr(s, key + "_moves"))
+        norm = (norms or {}).get(key)
+        if norm is None:
+            return getattr(s, key), moves
+        # Observed minus what the pool loses from the same states, put back on
+        # the pool's scale: playing like the pool in every state reads as the
+        # pool, whatever the mix of states.
+        expected = sum(n * m for n, m in zip(getattr(s, key + "_states"), norm.means, strict=True))
+        return getattr(s, key) - expected + moves * norm.overall, moves
     if key == "blunders":
         return float(s.blunders), float(s.opening_moves + s.middlegame_moves + s.endgame_moves)
     return unit_counts(key, s)
 
 
 # ── The rating band
+
+# Games one player may add to a band line. The band sampler's own cap, so a
+# line can hold only what a band press could have picked: without it, a viewer
+# who analyzed hundreds of their own games makes up most of their band in
+# everyone else's line and is missing from their own.
+PER_PLAYER_CAP = 5
+
+
+def _shuffle(game_id: int) -> int:
+    """population.SHUFFLE in Python: the order the band sampler picks in."""
+    return (game_id * 2654435761) % 4294967291
+
+
+def cap_per_player(sides: Sequence[tuple], cap: int = PER_PLAYER_CAP) -> list[tuple]:
+    """At most `cap` of each player's (game_id, player_id, ...) sides.
+
+    Kept in the sampler's order, so the games a band press analyzed are the
+    ones that stay, and the choice never depends on how the rows arrived."""
+    kept: list[tuple] = []
+    count: dict[int, int] = {}
+    for side in sorted(sides, key=lambda s: (_shuffle(s[0]), s[0])):
+        pid = side[1]
+        if count.get(pid, 0) < cap:
+            count[pid] = count.get(pid, 0) + 1
+            kept.append(side)
+    return kept
+
 
 class Fit(NamedTuple):
     """A weighted least-squares line of a metric on rating."""
@@ -513,7 +612,7 @@ def band_score(value: float, band: float) -> float:
 
 
 def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
-                    rating: float) -> list[dict]:
+                    rating: float, norms: Optional[dict[str, Norm]] = None) -> list[dict]:
     """One row per dimension: the player's value against the band's at their rating.
 
     Everything here is closed-form, so the same games always give the same
@@ -524,7 +623,8 @@ def compare_to_band(sides: Sequence[SideFacts], fits: dict[str, Optional[Fit]],
     """
     rows = []
     for dim in DIMENSIONS:
-        counts = np.array([calibration_counts(dim.key, s) for s in sides]).reshape(len(sides), 2)
+        counts = np.array([calibration_counts(dim.key, s, norms)
+                           for s in sides]).reshape(len(sides), 2)
         den = counts[:, 1].sum()
         fit = fits.get(dim.key)
         row: dict = {"key": dim.key, "label": dim.label, "unit": dim.unit,
