@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    Chess Analytics — Frontend JS
    ═══════════════════════════════════════════════════════════ */
-/* global loadStylePanel, loadMoveQuality, loadScorecard */
+/* global loadStylePanel, loadMoveQuality, loadScorecard, ENGINE_RELIABLE_ELO_MAX */
 
 const API = '';
 let currentUsername = '';
@@ -197,12 +197,14 @@ async function loadBaselineBands(username) {
         const auto = document.createElement('option');
         auto.value = '';
         auto.textContent = defaultBandOptionText(r);
-        sel.appendChild(auto);
+        // The default sits in its own band's place, so the list keeps its
+        // order. Only a widened or class-level default, which matches no one
+        // band, goes on top.
+        if (coveredByDefault === null) sel.appendChild(auto);
 
-        // Descending: the strongest bands sit nearest the default entry, which
-        // is where a player looking to compare upward will reach first.
+        // Descending, strongest first.
         for (const b of [...r.bands].reverse()) {
-            if (b.elo_lo === coveredByDefault) continue;
+            if (b.elo_lo === coveredByDefault) { sel.appendChild(auto); continue; }
             const opt = document.createElement('option');
             opt.value = b.elo_lo;
             if (b.eligible) {
@@ -221,12 +223,19 @@ async function loadBaselineBands(username) {
             sel.appendChild(opt);
         }
 
+        // A default band outside the ladder (an elite player's 2800+) has no
+        // place in it, so it goes on top.
+        if (!auto.parentNode) sel.insertBefore(auto, sel.firstChild);
+
         // Last: it is the fallback for when sample size matters more than a
         // like-for-like comparison, not a band anyone scans the list for.
         if (r.all_players && r.all_players.n_players) {
             const all = document.createElement('option');
             all.value = 'all';
-            const total = Object.values(analyzed).reduce((a, n) => a + n, 0);
+            // What "All players" pools: only ratings the engine can judge.
+            const total = Object.entries(analyzed)
+                .filter(([lo]) => Number(lo) <= ENGINE_RELIABLE_ELO_MAX)
+                .reduce((a, [, n]) => a + n, 0);
             all.textContent = `All players  (${playersNote(r.all_players.n_players)}`
                 + ` · ${total.toLocaleString()} analyzed)`;
             sel.appendChild(all);

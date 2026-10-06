@@ -106,7 +106,8 @@ def _calibration(db: Session, time_class: str, exclude_player_id: int,
     to avoid (your conversion is exactly their failure to save).
 
     Each player adds at most a few games, so nobody's line is mostly one
-    other player, and every viewer's line is nearly the same.
+    other player, and every viewer's line is nearly the same. Sides rated past
+    what the engine can judge are left out.
 
     Also returns the pool's per-state phase norms, which the lines and the
     player's own rows are both standardised on.
@@ -130,7 +131,8 @@ def _calibration(db: Session, time_class: str, exclude_player_id: int,
                                 ("black", r.black_player_id, r.black_elo)):
             if elo:
                 sides.append((r.game_id, pid, float(elo), f[color]))
-    obs = [(elo, side) for _, _, elo, side in sc.cap_per_player(sides)]
+    obs = [(elo, side) for _, _, elo, side
+           in sc.cap_per_player(sc.within_engine_range(sides))]
     norms = sc.phase_norms([side for _, side in obs])
     fits = {}
     for dim in sc.DIMENSIONS:

@@ -20,7 +20,14 @@ from typing import NamedTuple, Optional, Sequence
 import chess
 import numpy as np
 
-from engine.views import BLUNDER_WP, EVAL_CLAMP_CP, MATE_CP, MATE_MAX_PLIES, MATE_STEP_CP
+from engine.views import (
+    BLUNDER_WP,
+    ENGINE_RELIABLE_ELO_MAX,
+    EVAL_CLAMP_CP,
+    MATE_CP,
+    MATE_MAX_PLIES,
+    MATE_STEP_CP,
+)
 
 # Reaching this expected score after the opening is an advantage to convert;
 # falling to RESOURCE_WP is a position to save. Aimchess's own cutoffs.
@@ -490,6 +497,12 @@ PER_PLAYER_CAP = 5
 def _shuffle(game_id: int) -> int:
     """population.SHUFFLE in Python: the order the band sampler picks in."""
     return (game_id * 2654435761) % 4294967291
+
+
+def within_engine_range(sides: Sequence[tuple]) -> list[tuple]:
+    """(game_id, player_id, elo, ...) sides the engine can judge: rated at most
+    ENGINE_RELIABLE_ELO_MAX. The other seat of the same game still counts."""
+    return [s for s in sides if s[2] <= ENGINE_RELIABLE_ELO_MAX]
 
 
 def cap_per_player(sides: Sequence[tuple], cap: int = PER_PLAYER_CAP) -> list[tuple]:

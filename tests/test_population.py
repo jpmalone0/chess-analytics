@@ -254,6 +254,14 @@ def test_pressing_the_button_pins_the_selected_band_and_queues_it(client, db, ru
     assert base["totals"]["n_games"] == 1
 
 
+def test_all_players_stops_where_the_engine_can_still_judge(db):
+    me, a = make_player(db, "me"), make_player(db, "a")
+    make_game(db, me, a, 1900, 1900)
+    db.commit()
+    band = mq.resolve_mq_band(db, me.player_id, "all", time_class="rapid")
+    assert (band["elo_lo"], band["elo_hi"]) == (0, 2799)
+
+
 def test_a_derived_band_comes_from_the_median_within_the_class(client, db):
     me, a = make_player(db, "me"), make_player(db, "a")
     make_game(db, me, a, 1920, 1900)

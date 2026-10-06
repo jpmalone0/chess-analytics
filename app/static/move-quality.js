@@ -5,6 +5,9 @@
 /* global fetchJSON, colorParams, queryColor, currentOpeningFilter, baselineParams, currentUsername, setInterval, clearInterval, refreshBandCounts */
 
 const MQ_TIERS = ['inaccuracies', 'mistakes', 'blunders', 'misses'];
+// engine.views.ENGINE_RELIABLE_ELO_MAX: the engine cannot judge players above
+// it, so no pooled rate or comparison uses their games.
+const ENGINE_RELIABLE_ELO_MAX = 2799;
 
 function mqPct(n, d) {
     return d ? ((100 * n) / d).toFixed(1) + '%' : '—';
@@ -163,7 +166,7 @@ function mqPoll() {
 function renderMqJobs(active) {
     const el = document.getElementById('mq-jobs');
     el.innerHTML = active.length > 1 ? 'Queue: ' + active.map((j) =>
-        `${mqBandName({ ...j, source: j.elo_lo === 0 && j.elo_hi === 4000 ? 'all' : 'band' })}`
+        `${mqBandName({ ...j, source: j.elo_lo === 0 && j.elo_hi >= ENGINE_RELIABLE_ELO_MAX ? 'all' : 'band' })}`
         + (j.status === 'running' ? ` (${j.games_done}/${j.games_total ?? j.target_games})` : '')
     ).join(' → ') : '';
 }

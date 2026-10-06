@@ -129,9 +129,10 @@ def test_available_bands_flags_bands_below_floor(db):
     assert entry["n_players"] >= baselines.MIN_PLAYERS
 
 
-def test_the_ladder_always_spans_100_to_3200(db):
+def test_the_ladder_always_spans_100_to_2799(db):
     """Every band is listed, thin or empty, so any range can be picked and
-    pressed for analysis; the thin ones are flagged, not dropped."""
+    pressed for analysis; the thin ones are flagged, not dropped. It stops
+    below 2800, where the engine can no longer judge the players."""
     seed_band(db, 1500, n_players=300, games_each=2)
     target = make_player(db, "target")
     db.commit()
@@ -139,8 +140,8 @@ def test_the_ladder_always_spans_100_to_3200(db):
     bands = baselines.available_bands(
         db, player_id=target.player_id, time_class="rapid", time_control="600")
 
-    assert [b["elo_lo"] for b in bands] == list(range(100, 3300, 100))
-    assert bands[0]["elo_hi"] == 199 and bands[-1]["elo_lo"] == 3200
+    assert [b["elo_lo"] for b in bands] == list(range(100, 2800, 100))
+    assert bands[0]["elo_hi"] == 199 and bands[-1]["elo_hi"] == 2799
     assert not bands[-1]["eligible"] and bands[-1]["n_games"] == 0
 
 

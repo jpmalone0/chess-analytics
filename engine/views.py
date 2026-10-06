@@ -217,6 +217,12 @@ JOIN       best_move_features    AS b
 # thresholds (MISS_HANDED_WP, MISS_RETURNED_WP). Retuning either one here also
 # retunes what counts as a Miss.
 BLUNDER_WP = 0.20
+
+# The highest rating the engine's verdicts are trusted for. Stockfish 19 at
+# depth 14 with three lines plays at roughly 2700-3000, so it cannot reliably
+# judge players at or above that. Their games stay analyzed and viewable on
+# their own pages, but no players line, pooled rate or band press uses them.
+ENGINE_RELIABLE_ELO_MAX = 2799
 MISTAKE_WP = 0.10
 INACCURACY_WP = 0.05
 

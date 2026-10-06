@@ -7,7 +7,7 @@
  * with your average rating as a dashed ring. Each Elo's 95% range (Fieller's
  * method) is in the tooltip and the table; "any" means no usable Elo yet. */
 /* global fetchJSON, buildFilterParams, getStartDate, getEndDate, baselineParams, queryColor, currentOpeningFilter,
-   currentUsername, requestCache, mqFetchFresh, loadMoveQuality, setInterval, clearInterval, refreshBandCounts */
+   currentUsername, requestCache, mqFetchFresh, loadMoveQuality, setInterval, clearInterval, refreshBandCounts, ENGINE_RELIABLE_ELO_MAX */
 
 let scorecardChart = null;
 
@@ -261,6 +261,11 @@ async function loadScorecard(username) {
     data.rows = data.rows.filter((r) => !SC_HIDDEN.has(r.key));
     label.textContent = `${data.games} analyzed games · average rating ${data.own_avg_elo}`
         + ` · ${data.band_games} games from other players`;
+    // The engine plays at roughly 2700-3000: past ENGINE_RELIABLE_ELO_MAX its
+    // verdicts on these games are shown for interest, not trusted.
+    if (data.own_avg_elo > ENGINE_RELIABLE_ELO_MAX) {
+        label.textContent += ' · above 2800 the engine cannot reliably judge these games, so treat these numbers as rough';
+    }
 
     drawScorecardRadar(data.rows, data.compare_rating,
         data.compare_source === 'selected'

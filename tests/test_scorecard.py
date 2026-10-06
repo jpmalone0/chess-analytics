@@ -22,7 +22,9 @@ from engine.scorecard import (
     phase_norms,
     ratio_and_variance,
     unit_counts,
+    within_engine_range,
 )
+from engine.views import ENGINE_RELIABLE_ELO_MAX
 
 K = 360.0
 
@@ -448,3 +450,15 @@ class TestStandardisedPhases:
                       middlegame_state_change=(-0.01, 0, -0.36, 0, 0))
         row = {r["key"]: r for r in compare_to_band([s] * 5, {}, 1900, norms)}["middlegame"]
         assert row["you"] == pytest.approx(-0.025)
+
+
+class TestEngineRange:
+    """The engine plays at roughly 2700-3000, so it cannot judge players at or
+    above that: their sides stay analyzed and viewable but feed no line."""
+
+    def test_sides_rated_2800_or_more_are_left_out(self):
+        sides = [(1, 7, 2799.0, "a"), (2, 8, 2800.0, "b"), (3, 9, 3100.0, "c")]
+        assert within_engine_range(sides) == [(1, 7, 2799.0, "a")]
+
+    def test_the_limit_is_2799(self):
+        assert ENGINE_RELIABLE_ELO_MAX == 2799

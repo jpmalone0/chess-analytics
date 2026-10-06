@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import crud
+from engine.views import ENGINE_RELIABLE_ELO_MAX
 
 # A band is usable only above both floors.
 #
@@ -28,8 +29,9 @@ from app import crud
 MIN_PLAYERS = 30
 # The Compare To ladder's fixed span, lower edges inclusive. Every band in it
 # is listed, thin or empty, so any range can be picked and pressed for analysis.
+# It stops at the highest rating the engine can judge (engine.views).
 LADDER_LO = 100
-LADDER_HI = 3200
+LADDER_HI = ENGINE_RELIABLE_ELO_MAX + 1 - 100
 MIN_GAMES = 150
 
 # No single player may contribute more than this to a band.

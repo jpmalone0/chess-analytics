@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app import baselines, crud
 from engine.db import attach_engine_db
 from engine.population import POPULATION_PER_PLAYER_CAP, SHUFFLE, band_sides_sql
-from engine.views import MISS_SQL
+from engine.views import ENGINE_RELIABLE_ELO_MAX, MISS_SQL
 
 # A game analyzed under several runs would otherwise appear once per run.
 # Newest run wins: it is the deepest search anybody has pointed at that game.
@@ -205,7 +205,9 @@ def resolve_mq_band(
     if tc is None:
         return None
     if elo_band == "all":
-        return {"time_class": tc, "elo_lo": 0, "elo_hi": 4000, "source": "all"}
+        # Everyone the engine can judge: a press here never samples 2800+.
+        return {"time_class": tc, "elo_lo": 0, "elo_hi": ENGINE_RELIABLE_ELO_MAX,
+                "source": "all"}
     if elo_band:
         lo = int(elo_band)
         return {"time_class": tc, "elo_lo": lo, "elo_hi": lo + 99, "source": "selected"}
