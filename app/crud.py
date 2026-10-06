@@ -81,6 +81,21 @@ def _zone_or_default(tz: Optional[str]) -> ZoneInfo:
     return ZoneInfo("America/New_York")
 
 
+def _local_date(end_time: Optional[int], date_played: Any, zone: ZoneInfo) -> Optional[date]:
+    """A game's calendar day in the viewer's zone.
+
+    date_played is the PGN's UTC date, so a game finished in the viewer's
+    evening carries tomorrow's. end_time is the real instant; games loaded in
+    bulk lack it and keep their stored date."""
+    if end_time is not None:
+        return datetime.fromtimestamp(end_time, tz=zone).date()
+    if date_played is None:
+        return None
+    if isinstance(date_played, date):
+        return date_played
+    return datetime.strptime(str(date_played)[:10], "%Y-%m-%d").date()
+
+
 def _local_day_bounds(
     start_date: Optional[date],
     end_date: Optional[date],
@@ -269,6 +284,7 @@ def get_games_for_player(
             g.game_id,
             g.result,
             g.date_played,
+            g.end_time,
             g.time_class,
             g.white_elo,
             g.black_elo,
@@ -284,7 +300,11 @@ def get_games_for_player(
         ORDER  BY g.date_played DESC, g.game_id DESC
         LIMIT  :limit OFFSET :offset
     """)
-    return db.execute(sql, params).mappings().all()
+    zone = _zone_or_default(tz)
+    return [
+        {**r, "date_played": _local_date(r["end_time"], r["date_played"], zone)}
+        for r in db.execute(sql, params).mappings().all()
+    ]
 
 
 def get_game(db: Session, game_id: int):
@@ -1054,6 +1074,7 @@ def winrate_by_color_rolling(
     sql = text(f"""
         SELECT
             g.date_played,
+            g.end_time,
             CASE WHEN g.white_player_id = :player_id THEN 1 ELSE 0 END AS is_white,
             CASE
                 WHEN (g.white_player_id = :player_id AND g.result = '1-0')
@@ -1071,15 +1092,13 @@ def winrate_by_color_rolling(
     if not rows:
         return []
 
-    def _to_date(v) -> date:
-        if isinstance(v, date):
-            return v
-        return datetime.strptime(str(v), "%Y-%m-%d").date()
-
-    # Group games by date
+    # Group games by the viewer's day: an evening game's UTC date is tomorrow.
+    zone = _zone_or_default(tz)
     by_date: dict[date, list[dict]] = {}
     for r in rows:
-        d = _to_date(r["date_played"])
+        d = _local_date(r["end_time"], r["date_played"], zone)
+        if d is None:
+            continue
         by_date.setdefault(d, []).append({
             "is_white": r["is_white"], "is_win": r["is_win"], "is_draw": r["is_draw"]
         })
@@ -1168,6 +1187,7 @@ def winrate_vs_first_move_rolling(
     sql = text(f"""
         SELECT
             g.date_played,
+            g.end_time,
             m.move_san AS first_move,
             CASE WHEN g.result = '0-1' THEN 1 ELSE 0 END AS is_win,
             CASE WHEN g.result = '1/2-1/2' THEN 1 ELSE 0 END AS is_draw
@@ -1182,14 +1202,12 @@ def winrate_vs_first_move_rolling(
     if not rows:
         return []
 
-    def _to_date(v) -> date:
-        if isinstance(v, date):
-            return v
-        return datetime.strptime(str(v), "%Y-%m-%d").date()
-
+    zone = _zone_or_default(tz)
     by_date: dict[date, dict[str, list]] = {}
     for r in rows:
-        d = _to_date(r["date_played"])
+        d = _local_date(r["end_time"], r["date_played"], zone)
+        if d is None:
+            continue
         entry = by_date.setdefault(d, {"e4": [], "d4": []})
         entry[r["first_move"]].append({"is_win": r["is_win"], "is_draw": r["is_draw"]})
 
@@ -1259,8 +1277,11 @@ def streak_reaction(
         clauses.append("g.time_class = :time_class")
         params["time_class"] = time_class
     if end_date:
-        clauses.append("g.date_played <= :end_date")
-        params["end_date"] = end_date
+        # Timezone-aware, like every other range: a plain date_played bound
+        # drops tonight's games, which carry tomorrow's UTC date.
+        upper = _date_range_clause(None, end_date, tz, params)
+        if upper:
+            clauses.append(upper)
 
     where = " AND ".join(clauses)
     sql = text(f"""
