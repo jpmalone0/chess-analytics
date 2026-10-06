@@ -7,7 +7,7 @@
  * with your average rating as a dashed ring. Each Elo's 95% range (Fieller's
  * method) is in the tooltip and the table; "any" means no usable Elo yet. */
 /* global fetchJSON, buildFilterParams, getStartDate, getEndDate, baselineParams, queryColor, currentOpeningFilter,
-   currentUsername, requestCache, mqFetchFresh, loadMoveQuality, setInterval, clearInterval, refreshBandCounts, ENGINE_RELIABLE_ELO_MAX */
+   currentUsername, requestCache, mqFetchFresh, loadMoveQuality, setInterval, clearInterval, refreshBandCounts, ENGINE_RELIABLE_ELO_MAX, mqJobLabel */
 
 let scorecardChart = null;
 
@@ -155,7 +155,10 @@ const scLabelLayer = {
     },
 };
 
-function drawScorecardRadar(rows, rating, ringLabel) {
+/** `band` is the comparison band [lo, hi] or null. The outline is drawn where
+ *  the numbers are read: a solid line at a band's lower edge, or a dashed one
+ *  at your average for "All players". */
+function drawScorecardRadar(rows, rating, ringLabel, band) {
     const ctx = document.getElementById('scorecard-chart');
     if (scorecardChart) scorecardChart.destroy();
     const css = window.getComputedStyle(document.documentElement);
@@ -185,7 +188,8 @@ function drawScorecardRadar(rows, rating, ringLabel) {
                     data: rows.map(() => rating),
                     borderColor: muted,
                     backgroundColor: 'transparent',
-                    borderDash: [4, 4],
+                    borderDash: band ? [] : [4, 4],
+                    borderWidth: band ? 1.5 : 2,
                     pointRadius: 0,
                 },
             ],
@@ -208,7 +212,10 @@ function drawScorecardRadar(rows, rating, ringLabel) {
                 },
             },
             plugins: {
-                legend: { position: 'bottom', labels: { color: text, boxWidth: 12 } },
+                legend: {
+                    position: 'bottom',
+                    labels: { color: text, boxWidth: 12 },
+                },
                 scLabels: { rows },
                 tooltip: {
                     filter: (c) => c.datasetIndex === 0,
@@ -268,9 +275,10 @@ async function loadScorecard(username) {
     }
 
     drawScorecardRadar(data.rows, data.compare_rating,
-        data.compare_source === 'selected'
+        data.compare_band
             ? 'players'
-            : `your average rating over these games (${data.compare_rating})`);
+            : `your average rating over these games (${data.compare_rating})`,
+        data.compare_band);
 
     document.getElementById('sc-table').innerHTML = `
         <thead><tr>
@@ -308,9 +316,7 @@ async function renderScAnalyze(username) {
     try { st = await mqFetchFresh(scJobUrl(username)); } catch { el.innerHTML = ''; return; }
     if (st.job) {
         const total = st.job.games_total ?? st.job.target_games;
-        el.innerHTML = `<span>Your ${st.time_class} games</span>
-            <span class="mq-job">${st.job.status === 'queued'
-        ? 'Queued' : `Analyzing ${st.job.games_done}/${total}`}</span>`;
+        el.innerHTML = `<span>Your ${st.time_class} games</span> ${mqJobLabel(st.job, total)}`;
         scPoll(username);
     } else if (st.remaining_games === 0) {
         el.innerHTML = `<span>All your ${st.time_class} games${scRangeNote()} are analyzed</span>`;

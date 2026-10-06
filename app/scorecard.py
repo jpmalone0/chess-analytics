@@ -158,8 +158,9 @@ def player_scorecard(
     tz: Optional[str] = None,
     elo_band: Optional[str] = None,
 ) -> dict[str, Any]:
-    """`elo_band` is the Compare-to selection: a band's lower edge reads the
-    band lines at that band's middle instead of at the player's average."""
+    """`elo_band` is the Compare-to selection, a band's lower edge. Bands, the
+    player's own included, read the lines at that edge; "all" reads them at
+    the player's average."""
     attach_engine_db(db.connection())
     where, params = crud._build_game_filters(
         player_id=player_id, time_class=time_class,
@@ -196,7 +197,17 @@ def player_scorecard(
 
     rating = avg(r.own_elo for r in used)
     selected = elo_band is not None and elo_band.isdigit()
-    compare_rating = int(elo_band) + 50 if selected and elo_band else rating
+    # The players line is fitted on every rating and read at one: for a band,
+    # picked or your own, at its lower edge, the round number the outline is
+    # drawn at. "All players" has no band and reads it at your exact average.
+    if selected and elo_band:
+        band_lo: Optional[int] = int(elo_band)
+        source = "selected"
+    elif elo_band == "all" or rating is None:
+        band_lo, source = None, "average"
+    else:
+        band_lo, source = rating // 100 * 100, "own_band"
+    compare_rating = band_lo if band_lo is not None else rating
     out_rows = (sc.compare_to_band(sides, fits, compare_rating, norms) if compare_rating
                 else sc.compare_to_band(sides, {}, 0))
 
@@ -208,7 +219,8 @@ def player_scorecard(
         "curve_fitted": bool(tc and tc in curves),
         "own_avg_elo": rating,
         "compare_rating": compare_rating,
-        "compare_source": "selected" if selected else "average",
+        "compare_source": source,
+        "compare_band": [band_lo, band_lo + 99] if band_lo is not None else None,
         "opp_avg_elo": avg(r.opp_elo for r in used),
         # Side-games behind the band lines: other players' games only.
         "band_games": max((f.n for f in fits.values() if f), default=0),

@@ -116,23 +116,28 @@ def test_clocks_reach_the_scorecard(db, sidecar):
     assert inputs[g.game_id].clocks == [595.0, 595.0, 590.0]
 
 
-def test_the_scorecard_compares_at_your_average_by_default(client, db, sidecar):
+def test_the_scorecard_compares_with_your_own_band_by_default(client, db, sidecar):
+    """Your band works like any other: the line is read and drawn at its lower edge."""
     me, them = make_player(db, "me"), make_player(db, "them")
     g = legal_game(db, them, me, ["e4", "e5"], result="1-0")
     seed_evals(sidecar, [(0, 0), (1, 0), (2, 100)], game_id=g.game_id)
 
     body = client.get("/api/players/me/analytics/scorecard").json()
     assert body["compare_rating"] == 1900
-    assert body["compare_source"] == "average"
+    assert body["compare_band"] == [1900, 1999]
+    assert body["compare_source"] == "own_band"
 
 
-def test_a_compare_to_band_moves_the_comparison_to_its_middle(client, db, sidecar):
+def test_a_compare_to_band_compares_at_its_lower_edge(client, db, sidecar):
+    """The scorecard reads the players line at one rating; for a band, the round
+    number it starts at, where the outline is drawn."""
     me, them = make_player(db, "me"), make_player(db, "them")
     g = legal_game(db, them, me, ["e4", "e5"], result="1-0")
     seed_evals(sidecar, [(0, 0), (1, 0), (2, 100)], game_id=g.game_id)
 
     body = client.get("/api/players/me/analytics/scorecard?elo_band=2200").json()
-    assert body["compare_rating"] == 2250
+    assert body["compare_rating"] == 2200
+    assert body["compare_band"] == [2200, 2299]
     assert body["compare_source"] == "selected"
     assert body["own_avg_elo"] == 1900
 
@@ -144,3 +149,4 @@ def test_all_players_compares_at_your_average(client, db, sidecar):
 
     body = client.get("/api/players/me/analytics/scorecard?elo_band=all").json()
     assert body["compare_rating"] == 1900
+    assert body["compare_band"] is None
