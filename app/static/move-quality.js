@@ -2,7 +2,7 @@
  *
  * Engine coverage is a fraction of the corpus, so the empty state is the
  * normal state and says so rather than rendering an empty table. */
-/* global fetchJSON, colorParams, queryColor, currentOpeningFilter, baselineParams, currentUsername, setInterval, clearInterval, refreshBandCounts */
+/* global fetchJSON, colorParams, queryColor, currentOpeningFilter, baselineParams, currentUsername, setInterval, clearInterval, refreshBandCounts, renderScAnalyze */
 
 const MQ_TIERS = ['inaccuracies', 'mistakes', 'blunders', 'misses'];
 // engine.views.ENGINE_RELIABLE_ELO_MAX: the engine cannot judge players above
@@ -97,15 +97,38 @@ function renderMqPopulation(base) {
     let action;
     if (job) {
         const total = job.games_total ?? job.target_games;
-        action = job.status === 'queued'
-            ? '<span class="mq-job">Queued</span>'
-            : `<span class="mq-job">Analyzing ${job.games_done}/${total}</span>`;
+        action = mqJobLabel(job, total);
     } else {
         action = mqAnalyzeButton(base);
     }
     el.innerHTML = `<span>${have}${notes.length ? ' · ' + notes.join(' · ') : ''}</span>`;
     slot.innerHTML = action;
     if (job) mqPoll();
+}
+
+/** A job's progress, with a Cancel button while it can still be stopped. */
+function mqJobLabel(job, total) {
+    if (job.status === 'cancelling') return '<span class="mq-job">Cancelling…</span>';
+    const text = job.status === 'queued' ? 'Queued' : `Analyzing ${job.games_done}/${total}`;
+    return `<span class="mq-job">${text}</span>
+        <button class="baseline-toggle mq-cancel" onclick="cancelJob(this, ${job.job_id})"
+            title="Stop before the rest are analyzed; games already finished are kept">Cancel</button>`;
+}
+
+/** Ask the server to stop a job. Games already being analyzed finish and are
+ *  kept; the rest are dropped. Both sections redraw as the job winds down. */
+// eslint-disable-next-line no-unused-vars -- called from the button's onclick
+async function cancelJob(btn, jobId) {
+    btn.disabled = true;
+    try {
+        await mqFetchFresh(`/api/population/jobs/${jobId}/cancel`, { method: 'POST' });
+    } catch (e) {
+        btn.disabled = false;
+        console.warn('Cancel failed:', e);
+        return;
+    }
+    loadMoveQuality(currentUsername);
+    if (typeof renderScAnalyze === 'function') renderScAnalyze(currentUsername);
 }
 
 /** The press, sized to what the local database still has: games are only
@@ -148,7 +171,7 @@ function mqPoll() {
     mqPollTimer = setInterval(async () => {
         let jobs;
         try { jobs = (await mqFetchFresh('/api/population/jobs')).jobs; } catch { return; }
-        const active = jobs.filter((j) => j.status === 'queued' || j.status === 'running');
+        const active = jobs.filter((j) => ['queued', 'running', 'cancelling'].includes(j.status));
         renderMqJobs(active);
         const finished = active.length < mqActiveCount;
         mqActiveCount = active.length;

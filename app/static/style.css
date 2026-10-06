@@ -1882,6 +1882,13 @@ body.compare-mode #stat-winrate     { order: 8; }
     font-size: 0.72rem;
 }
 
+/* Cancel beside a running job's progress, sized to the progress text. */
+.mq-cancel {
+    font-size: 0.72rem;
+    padding: 0.15rem 0.45rem;
+    margin-left: 0.35rem;
+}
+
 /* A range with nothing left to analyze: says so in place of the button. */
 #band-analyze .mq-exhausted {
     font-size: 0.72rem;

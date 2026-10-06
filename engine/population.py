@@ -33,7 +33,8 @@ POPULATION_PER_PLAYER_CAP = 5
 DEFAULT_TARGET_GAMES = 30
 MAX_TARGET_GAMES = 3000
 
-ACTIVE = ("queued", "running")
+# "cancelling" is a running job told to stop; it ends "cancelled", never failed.
+ACTIVE = ("queued", "running", "cancelling")
 
 # A multiplicative hash over game_id: a fixed shuffle that is spread across the
 # corpus's dates and stable across calls. ORDER BY RANDOM() would redraw the
@@ -172,7 +173,7 @@ class JobRunner:
     * `connect`: a context manager yielding a canonical connection with the
       sidecar attached, for sampling.
     * `run_id`: returns the analysis run to sample against and write into.
-    * `analyze`: `(game_ids, run_id, progress) -> Summary`.
+    * `analyze`: `(game_ids, run_id, progress, should_stop) -> Summary`.
     * `current_run`: the run to count against, read-only (None before any run
       exists). Defaults to `run_id`; the app passes a lookup that never
       creates a run, because creating one rebuilds the sidecar's views under
@@ -194,6 +195,7 @@ class JobRunner:
         self._analyze = analyze
         self._queue: queue.Queue[int] = queue.Queue()
         self._lock = threading.Lock()
+        self._cancelled: set[int] = set()
         self._thread: Optional[threading.Thread] = None
 
     def recover_interrupted(self) -> int:
@@ -204,6 +206,10 @@ class JobRunner:
         finished are skipped by the sampler.
         """
         with self._sessions() as s:
+            # A cancel the restart cut short is still a cancel, not a failure.
+            s.query(PopulationJob).filter(PopulationJob.status == "cancelling").update(
+                {"status": "cancelled", "finished_at": datetime.utcnow()},
+                synchronize_session=False)
             n = (
                 s.query(PopulationJob)
                 .filter(PopulationJob.status.in_(ACTIVE))
@@ -321,6 +327,21 @@ class JobRunner:
         run = self._current_run()
         return -1 if run is None else run
 
+    def cancel(self, job_id: int) -> Optional[dict[str, Any]]:
+        """Stop a job: a queued one never starts; a running one drops the games
+        it has not finished and ends "cancelled". None if it is not active."""
+        with self._lock, self._sessions() as s:
+            job = s.get(PopulationJob, job_id)
+            if job is None or job.status not in ("queued", "running"):
+                return None
+            if job.status == "queued":
+                job.status, job.finished_at = "cancelled", datetime.utcnow()
+            else:
+                job.status = "cancelling"
+                self._cancelled.add(job_id)
+            s.commit()
+            return job_dict(job)
+
     def jobs(self, limit: int = 10) -> list[dict[str, Any]]:
         """Active jobs first, then the most recent finished ones."""
         with self._sessions() as s:
@@ -403,10 +424,19 @@ class JobRunner:
                     ids = sample_band(conn, run_id=run_id, **params)
             self._update(job_id, games_total=len(ids))
 
+            finished = [0]
+
             def progress(done, total, summary):
+                finished[0] = done
                 self._update(job_id, games_done=done)
 
-            summary = self._analyze(ids, run_id, progress)
+            summary = self._analyze(ids, run_id, progress,
+                                    lambda: job_id in self._cancelled)
+            if job_id in self._cancelled:
+                self._cancelled.discard(job_id)
+                self._update(job_id, status="cancelled", games_done=finished[0],
+                             finished_at=datetime.utcnow())
+                return
             failed = getattr(summary, "failed", 0)
             self._update(
                 job_id, status="complete", games_done=len(ids),

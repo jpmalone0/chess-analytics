@@ -56,9 +56,11 @@ def runner(db, sidecar):
         engine_db.attach_engine_db(c)
         yield c
 
-    def analyze(ids, run_id, progress):
+    def analyze(ids, run_id, progress, should_stop=lambda: False):
         s = Summary(run_id=run_id, requested=len(ids))
         for n, gid in enumerate(ids, start=1):
+            if should_stop():
+                break
             seed_evals(sidecar, WHITE_BLUNDERS, game_id=gid, run_id=run_id)
             s.complete += 1
             progress(n, len(ids), s)
@@ -203,7 +205,7 @@ def test_a_job_samples_analyzes_and_records_progress(db, runner):
 
 
 def test_a_failing_job_records_its_error_and_frees_the_band(runner):
-    def boom(ids, run_id, progress):
+    def boom(ids, run_id, progress, should_stop):
         raise RuntimeError("stockfish went away")
     runner._analyze = boom
 
@@ -213,6 +215,59 @@ def test_a_failing_job_records_its_error_and_frees_the_band(runner):
     assert job["status"] == "failed"
     assert "stockfish went away" in job["error"]
     assert runner.enqueue(**_band())[1]  # the band can be pressed again
+
+
+def test_a_queued_job_can_be_cancelled_before_it_runs(db, runner):
+    a, b = make_player(db, "a"), make_player(db, "b")
+    make_game(db, a, b, 1850, 1850)
+    db.commit()
+    job, _ = runner.enqueue(**_band())
+    assert runner.cancel(job["job_id"])["status"] == "cancelled"
+    runner.run_pending()
+    assert runner.jobs()[0]["status"] == "cancelled"
+    assert runner.jobs()[0]["games_done"] == 0
+
+
+def test_a_running_job_stops_and_keeps_what_finished(db, runner, sidecar):
+    players = [make_player(db, f"p{i}") for i in range(6)]
+    for w, b in zip(players[::2], players[1::2], strict=True):
+        make_game(db, w, b, 1850, 1850)
+    db.commit()
+    job, _ = runner.enqueue(**{**_band(), "target_games": 3})
+    real = runner._analyze
+
+    def cancel_after_first(ids, run_id, progress, should_stop):
+        def progress_then_cancel(done, total, summary):
+            progress(done, total, summary)
+            runner.cancel(job["job_id"])
+        return real(ids, run_id, progress_then_cancel, should_stop)
+
+    runner._analyze = cancel_after_first
+    runner.run_pending()
+    done = runner.jobs()[0]
+    assert (done["status"], done["games_done"], done["error"]) == ("cancelled", 1, None)
+
+
+def test_cancelling_an_unknown_or_finished_job_changes_nothing(runner):
+    assert runner.cancel(999) is None
+
+
+def test_a_restart_finishes_a_cancel_instead_of_failing_it(runner):
+    job, _ = runner.enqueue(**_band())
+    with runner._sessions() as s:
+        s.get(PopulationJob, job["job_id"]).status = "cancelling"
+        s.commit()
+    runner.recover_interrupted()
+    assert runner.jobs()[0]["status"] == "cancelled"
+
+
+def test_the_cancel_route(client, db, runner):
+    me = make_player(db, "me")
+    db.commit()
+    job, _ = runner.enqueue(**{**_band(), "exclude_player_id": me.player_id})
+    r = client.post(f"/api/population/jobs/{job['job_id']}/cancel")
+    assert r.status_code == 200 and r.json()["job"]["status"] == "cancelled"
+    assert client.post("/api/population/jobs/999/cancel").status_code == 404
 
 
 def test_a_restart_fails_whatever_was_left_in_flight(runner):

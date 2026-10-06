@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import os
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, NamedTuple, Optional
@@ -372,6 +372,7 @@ def analyze_games(
     workers: Optional[int] = None,
     run_id: Optional[int] = None,
     progress=None,
+    should_stop=None,
 ) -> Summary:
     """Evaluate a set of games. Resumable, and safe to re-run.
 
@@ -399,30 +400,47 @@ def analyze_games(
         ]
 
         # As they finish, not as queued: one long game would otherwise hold
-        # the progress count while the games behind it sit done.
-        for done, future in enumerate(as_completed(futures), start=1):
-            game_id, rows, status, error, time_class = future.result()
-
-            if rows:
-                store_game(session, run_id, game_id, rows)
-
-            session.merge(GameCoverage(
-                run_id=run_id,
-                game_id=game_id,
-                plies_analyzed=len(rows),
-                status=status,
-                error=error,
-                completed_at=datetime.utcnow(),
-                time_class=time_class,
-            ))
-            session.commit()
-
-            summary.positions += len(rows)
-            setattr(summary, status, getattr(summary, status) + 1)
-            if progress:
-                progress(done, len(game_ids), summary)
+        # the progress count while the games behind it sit done. Polled, not
+        # blocked on, so a cancel lands within half a second.
+        done = 0
+        pending = set(futures)
+        while pending:
+            finished, pending = wait(pending, timeout=0.5, return_when=FIRST_COMPLETED)
+            for future in finished:
+                done += 1
+                _store_result(session, run_id, summary, future.result())
+                if progress:
+                    progress(done, len(game_ids), summary)
+            if pending and should_stop and should_stop():
+                # Games in progress are discarded, not waited for: their
+                # workers are ended, which takes their engines with them.
+                for future in pending:
+                    future.cancel()
+                for proc in list(getattr(pool, "_processes", {}).values()):
+                    proc.terminate()
+                pool.shutdown(wait=False, cancel_futures=True)
+                break
 
     return summary
+
+
+def _store_result(session, run_id: int, summary: Summary, result: AnalyzedGame) -> None:
+    """Write one finished game and count it."""
+    game_id, rows, status, error, time_class = result
+    if rows:
+        store_game(session, run_id, game_id, rows)
+    session.merge(GameCoverage(
+        run_id=run_id,
+        game_id=game_id,
+        plies_analyzed=len(rows),
+        status=status,
+        error=error,
+        completed_at=datetime.utcnow(),
+        time_class=time_class,
+    ))
+    session.commit()
+    summary.positions += len(rows)
+    setattr(summary, status, getattr(summary, status) + 1)
 
 
 def stderr_progress(done: int, total: int, summary: Summary):

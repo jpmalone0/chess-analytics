@@ -506,8 +506,9 @@ def get_population_runner() -> JobRunner:
             connect=connect,
             current_run=current_run,
             run_id=lambda: get_or_create_run(RunConfig()),
-            analyze=lambda ids, run_id, progress: analyze_games(
-                ids, RunConfig(), run_id=run_id, progress=progress),
+            analyze=lambda ids, run_id, progress, should_stop: analyze_games(
+                ids, RunConfig(), run_id=run_id, progress=progress,
+                should_stop=should_stop),
         )
         runner.recover_interrupted()
         _population_runner = runner
@@ -650,6 +651,15 @@ def analyze_own_games(
 @app.get("/api/population/jobs")
 def population_jobs(runner: JobRunner = Depends(get_population_runner)):
     return {"jobs": runner.jobs()}
+
+
+@app.post("/api/population/jobs/{job_id}/cancel")
+def cancel_population_job(job_id: int, runner: JobRunner = Depends(get_population_runner)):
+    """Stop a queued or running job; games it already finished are kept."""
+    job = runner.cancel(job_id)
+    if job is None:
+        raise HTTPException(404, "No queued or running job with that id")
+    return {"job": job}
 
 
 # ── Population Baselines ─────────────────────────────────
