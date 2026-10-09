@@ -412,3 +412,83 @@ class TestRuns:
         with sidecar.connect() as conn:
             assert conn.execute(text(
                 "SELECT multipv FROM analysis_runs WHERE run_id = 1")).scalar() == 1
+
+
+class TestProgress:
+    """Progress counts games as they finish, not in the order they were queued:
+    one long game must not hold the counter while games behind it are done."""
+
+    @pytest.fixture
+    def sidecar(self, tmp_path, monkeypatch):
+        eng = create_engine(f"sqlite:///{tmp_path / 'sidecar.db'}")
+        monkeypatch.setattr(views, "engine", eng)
+        monkeypatch.setattr(analyze, "SessionLocal", sessionmaker(bind=eng))
+        monkeypatch.setattr(analyze, "engine_version", lambda path: "Stockfish 19")
+        return eng
+
+    def test_a_slow_first_game_does_not_hold_back_the_rest(self, sidecar, monkeypatch):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        released = threading.Event()
+        waited = []
+
+        def analyze_one(game_id, depth, multipv):
+            if game_id == 1:
+                # Finishes once the other two are reported, or times out when
+                # they are held behind it.
+                waited.append(released.wait(timeout=2))
+            return game_id, [], "complete", None, "rapid"
+
+        monkeypatch.setattr(analyze, "ProcessPoolExecutor", ThreadPoolExecutor)
+        monkeypatch.setattr(analyze, "_init_worker", lambda *args: None)
+        monkeypatch.setattr(analyze, "_analyze_one", analyze_one)
+
+        def progress(done, total, summary):
+            if done == 2:
+                released.set()
+
+        summary = analyze.analyze_games([1, 2, 3], workers=3, progress=progress)
+
+        assert waited == [True]
+        assert summary.complete == 3
+
+
+class TestCancel:
+    """A cancelled batch stops at once: games not started are dropped, and a
+    game still being analyzed is discarded rather than waited for."""
+
+    @pytest.fixture
+    def sidecar(self, tmp_path, monkeypatch):
+        eng = create_engine(f"sqlite:///{tmp_path / 'sidecar.db'}")
+        monkeypatch.setattr(views, "engine", eng)
+        monkeypatch.setattr(analyze, "SessionLocal", sessionmaker(bind=eng))
+        monkeypatch.setattr(analyze, "engine_version", lambda path: "Stockfish 19")
+        return eng
+
+    def test_only_games_finished_before_the_cancel_are_kept(self, sidecar, monkeypatch):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        release = threading.Event()
+
+        def analyze_one(game_id, depth, multipv):
+            if game_id != 1:
+                release.wait(timeout=2)  # still running when the cancel lands
+            return game_id, [], "complete", None, "rapid"
+
+        monkeypatch.setattr(analyze, "ProcessPoolExecutor", ThreadPoolExecutor)
+        monkeypatch.setattr(analyze, "_init_worker", lambda *args: None)
+        monkeypatch.setattr(analyze, "_analyze_one", analyze_one)
+
+        stop = threading.Event()
+
+        def progress(done, total, summary):
+            stop.set()  # cancel right after the first game
+
+        summary = analyze.analyze_games([1, 2, 3], workers=2, progress=progress,
+                                        should_stop=stop.is_set)
+        release.set()
+        assert summary.complete == 1
+        with sidecar.connect() as c:
+            assert [r[0] for r in c.execute(text("SELECT game_id FROM game_coverage"))] == [1]

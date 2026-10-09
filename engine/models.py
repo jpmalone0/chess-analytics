@@ -148,7 +148,8 @@ class WpCurve(Base):
 
 
 class PopulationJob(Base):
-    """One press of the Analyze population button: a band, and how far it got.
+    """One press of an Analyze button: a band (or one player's games), and how
+    far it got.
 
     The band is recorded as it was at press time rather than re-derived, because
     the band a player's filters resolve to moves with the date range. What was
@@ -163,6 +164,14 @@ class PopulationJob(Base):
     elo_lo            = Column(Integer, nullable=False)
     elo_hi            = Column(Integer, nullable=False)
     exclude_player_id = Column(Integer)
+    # Set for a press of the Scorecard's button: that player's own newest
+    # unanalyzed games instead of a band. elo_lo/elo_hi are then 0.
+    player_id         = Column(Integer)
+    # A player press's date range, as pressed (ISO dates and the viewer's
+    # zone): it samples only inside it. NULL for band jobs and open ranges.
+    start_date        = Column(String(10))
+    end_date          = Column(String(10))
+    tz                = Column(String(64))
     target_games      = Column(Integer, nullable=False)
     games_total       = Column(Integer)
     games_done        = Column(Integer, nullable=False, default=0)

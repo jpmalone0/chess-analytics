@@ -175,7 +175,8 @@ def test_the_filter_bar_reaches_the_counts(client, db, sidecar):
 
 
 def test_the_opponent_mirror_totals_the_other_seat(client, db, sidecar):
-    """`me` blunders at ply 1; `them` blunders it back at ply 2, a Miss."""
+    """`me` blunders at ply 1; `them` loses twice the gift at ply 2, fresh
+    damage, so a blunder and not a Miss."""
     me = make_player(db, "me")
     them = make_player(db, "them")
     g = make_game(db, me, them, 1900, 1850)
@@ -189,7 +190,7 @@ def test_the_opponent_mirror_totals_the_other_seat(client, db, sidecar):
     assert opp["games_analyzed"] == 1
     assert opp["moves_scored"] == 1
     assert opp["blunders"] == 1
-    assert opp["misses"] == 1
+    assert opp["misses"] == 0
     assert opp["avg_elo"] == 1850
 
 
@@ -199,3 +200,16 @@ def test_the_empty_result_carries_an_empty_mirror(client, db, sidecar):
     opp = client.get("/api/players/me/analytics/move-quality").json()["opponents"]
     assert opp["games_analyzed"] == 0
     assert opp["avg_elo"] is None
+
+
+def test_the_drill_list_shows_a_miss_without_a_tier(client, db, sidecar):
+    """Misses are exclusive with the tiers, here as in the views."""
+    me, them = make_player(db, "me"), make_player(db, "them")
+    g = make_game(db, me, them, 1900, 1900)
+    db.commit()
+    # White hands over 0.1225; Black gives back 0.0809 of it.
+    seed_evals(sidecar, [(0, 0), (1, -180), (2, -60)], game_id=g.game_id)
+
+    moves = {m["ply"]: m for m in client.get(f"/api/games/{g.game_id}/move-quality").json()["moves"]}
+    assert moves[2]["is_miss"] == 1
+    assert moves[2]["tier"] is None

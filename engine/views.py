@@ -217,6 +217,12 @@ JOIN       best_move_features    AS b
 # thresholds (MISS_HANDED_WP, MISS_RETURNED_WP). Retuning either one here also
 # retunes what counts as a Miss.
 BLUNDER_WP = 0.20
+
+# The highest rating the engine's verdicts are trusted for. Stockfish 19 at
+# depth 14 with three lines plays at roughly 2700-3000, so it cannot reliably
+# judge players at or above that. Their games stay analyzed and viewable on
+# their own pages, but no players line, pooled rate or band press uses them.
+ENGINE_RELIABLE_ELO_MAX = 2799
 MISTAKE_WP = 0.10
 INACCURACY_WP = 0.05
 
@@ -286,40 +292,49 @@ FROM lost
 
 # A Miss is the opponent's unpunished error, seen from the other side of the
 # board: they handed over at least a mistake, and the reply gave at least an
-# inaccuracy of it back.
+# inaccuracy of it back -- but no more than they handed over.
 #
-# Chess.com's Miss is mutually exclusive with mistake and blunder. Ours is not,
-# on purpose. Exclusivity needs an arbitrary precedence rule and destroys
-# information -- a 0.40 blunder that was also a miss would be counted once,
-# making blunders silently undercount. A flag keeps both facts and lets the
-# caller cut either way.
+# Miss is exclusive with the tiers, so the four categories sum to the flagged
+# moves. Precedence is decided by the gift. A reply that gives back no more than
+# the opponent handed over only returned the gift: it is a Miss and has no tier.
+# A reply that loses more than that did fresh damage of its own, and is graded
+# by its tier rather than hidden as a Miss. On ballasack6's rapid games this
+# moves 137 of 240 overlapping moves to Miss and leaves 103 in their tiers, 72
+# of them blunders. MISS_ROUNDING keeps a reply that gives back exactly the
+# gift a Miss: the two losses are the same size computed from opposite sides.
 MISS_HANDED_WP = MISTAKE_WP
 MISS_RETURNED_WP = INACCURACY_WP
+MISS_ROUNDING = 1e-9
+
+# The Miss condition over a move `s` and its predecessor `prev`, shared with
+# app.move_quality, which restates the view over a pre-filtered set.
+MISS_SQL = (
+    f"COALESCE(prev.wp_loss >= {MISS_HANDED_WP}"
+    f" AND s.wp_loss >= {MISS_RETURNED_WP}"
+    f" AND s.wp_loss <= prev.wp_loss + {MISS_ROUNDING}, 0)"
+)
 
 MOVE_QUALITY_VIEW = f"""
 CREATE VIEW IF NOT EXISTS move_quality AS
+WITH flagged AS (
+    SELECT
+        s.run_id, s.game_id, s.ply, s.color,
+        s.cp_before, s.cp_after, s.wp_before, s.wp_after, s.wp_loss, s.tier,
+        -- COALESCE, not a bare comparison: ply 1 has no predecessor, and a NULL
+        -- here would propagate into every count downstream as NULL rather than 0.
+        {MISS_SQL} AS is_miss
+    FROM      move_severity AS s
+    LEFT JOIN move_severity AS prev
+           ON prev.run_id  = s.run_id
+          AND prev.game_id = s.game_id
+          AND prev.ply     = s.ply - 1
+)
 SELECT
-    s.run_id,
-    s.game_id,
-    s.ply,
-    s.color,
-    s.cp_before,
-    s.cp_after,
-    s.wp_before,
-    s.wp_after,
-    s.wp_loss,
-    s.tier,
-    -- COALESCE, not a bare comparison: ply 1 has no predecessor, and a NULL
-    -- here would propagate into every count downstream as NULL rather than 0.
-    COALESCE(
-        prev.wp_loss >= {MISS_HANDED_WP} AND s.wp_loss >= {MISS_RETURNED_WP},
-        0
-    ) AS is_miss
-FROM      move_severity AS s
-LEFT JOIN move_severity AS prev
-       ON prev.run_id  = s.run_id
-      AND prev.game_id = s.game_id
-      AND prev.ply     = s.ply - 1
+    run_id, game_id, ply, color,
+    cp_before, cp_after, wp_before, wp_after, wp_loss,
+    CASE WHEN is_miss = 1 THEN NULL ELSE tier END AS tier,
+    is_miss
+FROM flagged
 """
 
 
@@ -336,8 +351,7 @@ SELECT
     SUM(CASE WHEN tier = 'inaccuracy' THEN 1 ELSE 0 END) AS inaccuracies,
     SUM(CASE WHEN tier = 'mistake'    THEN 1 ELSE 0 END) AS mistakes,
     SUM(CASE WHEN tier = 'blunder'    THEN 1 ELSE 0 END) AS blunders,
-    -- Overlaps the three above rather than partitioning them. Any caller
-    -- presenting these as a total is presenting a wrong number.
+    -- Exclusive with the three above: the four sum to the flagged moves.
     SUM(is_miss)                                      AS misses,
     SUM(wp_loss)                                      AS wp_lost
 FROM  move_quality
@@ -354,6 +368,9 @@ _ADDED_ENGINE_COLUMNS = {
     "game_coverage": {"time_class": "VARCHAR(20)"},
     # Runs recorded before this column existed searched one line each.
     "analysis_runs": {"multipv": "INTEGER NOT NULL DEFAULT 1"},
+    # Jobs recorded before this column existed were all band jobs.
+    "population_jobs": {"player_id": "INTEGER", "start_date": "VARCHAR(10)",
+                        "end_date": "VARCHAR(10)", "tz": "VARCHAR(64)"},
 }
 
 
@@ -370,6 +387,16 @@ def _add_missing_engine_columns():
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl_type}"))
 
 
+def upgrade_engine_schema():
+    """Create missing tables and add missing columns, leaving views alone.
+
+    Safe to run while other connections are reading: unlike init_engine_db it
+    drops nothing, so a query in flight never finds a view missing.
+    """
+    Base.metadata.create_all(bind=engine)
+    _add_missing_engine_columns()
+
+
 def init_engine_db():
     """Create the engine schema and the derivation views (idempotent).
 
@@ -382,8 +409,7 @@ def init_engine_db():
     Dropped in dependency order, deepest first: game_move_quality reads
     move_quality, which reads move_severity, which reads move_evals.
     """
-    Base.metadata.create_all(bind=engine)
-    _add_missing_engine_columns()
+    upgrade_engine_schema()
     with engine.begin() as conn:
         assert_sqlite_has_math(conn)
         for view in (

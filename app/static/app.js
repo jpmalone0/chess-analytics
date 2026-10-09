@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════
    Chess Analytics — Frontend JS
    ═══════════════════════════════════════════════════════════ */
-/* global loadStylePanel, loadMoveQuality */
+/* global loadStylePanel, loadMoveQuality, loadScorecard, ENGINE_RELIABLE_ELO_MAX */
 
 const API = '';
 let currentUsername = '';
@@ -25,9 +25,14 @@ let currentOpeningColor = 'global';  // 'global' | 'white' | 'black'
 // therefore has to remember which side's row was clicked, or every query
 // silently widens to both colours. '' when nothing is filtered.
 let currentOpeningFilterColor = '';  // '' | 'white' | 'black'
-const ANALYTICS_SECTIONS = ['outcomes', 'time', 'style', 'form'];
+// 'style' (Pro Comparison) removed from the page 2026-10-01; its code is kept.
+const ANALYTICS_SECTIONS = ['outcomes', 'time', 'form'];
 const collapsedSections = new Set();  // sections the user has collapsed
 const OPENINGS_PREVIEW_COUNT = 6;     // opening rows shown before "show all"
+// The opening card is pinned to the Scorecard's height beside it, and its list
+// fills that space and scrolls, so every opening shows and nothing needs
+// expanding. False restores the preview with its "Show all" toggle.
+const OPENINGS_FILL_CARD = true;
 let openingsExpanded = false;
 let lastTopOpenings = null;           // cached so the toggle can re-render
 let winrateMode = 'color';
@@ -116,14 +121,12 @@ function baselineLineStyle(extra = {}) {
     };
 }
 
+/** The overlay's legend. The range and time control are left to the Compare
+ *  To menu, which already shows them. */
 function baselineLabel(meta) {
-    if (!meta) return 'Average';
-    const [lo, hi] = meta.elo_band;
-    const tc = meta.tc_fallback ? (meta.time_class || 'all') : meta.time_control;
-    const who = meta.source === 'all' ? 'All players'
-        : meta.source === 'selected' ? `Compared to ${lo}–${hi}`
-        : `Average ${lo}–${hi}`;
-    return `${who} · ${tc} · ${meta.n_players.toLocaleString()} players`;
+    if (!meta) return 'Players';
+    const who = meta.source === 'all' ? 'All players' : 'Players';
+    return `${who} (${meta.n_players.toLocaleString()})`;
 }
 
 /** Explicit empty state: a selected band with no data must say so, rather
@@ -137,11 +140,7 @@ function renderBaselineNotice() {
     const results = Object.values(baselineResults);
     const noneResolved = results.length > 0 && results.every(m => m === null);
     if (baselineEnabled && selectedBaselineBand && noneResolved) {
-        const lo = Number(selectedBaselineBand);
-        const which = selectedBaselineBand === 'all'
-            ? 'all players'
-            : `${lo}–${lo + 99}`;
-        el.textContent = `No baseline for ${which} under the current filters.`;
+        el.textContent = 'No players under the current filters.';
         el.style.display = '';
     } else {
         el.style.display = 'none';
@@ -150,13 +149,27 @@ function renderBaselineNotice() {
 
 /** Text for the default (auto) entry: the band the charts actually resolved to,
  *  named concretely. It may be widened or class-level, so say which. */
+/** Engine-analyzed games per band lower edge, from the ladder response. */
+function analyzedByBand(r) {
+    return Object.fromEntries((r.analyzed || []).map((x) => [x.elo_lo, x.n_games]));
+}
+
+function playersNote(n) {
+    return `${n.toLocaleString()} player${n === 1 ? '' : 's'}`;
+}
+
+function analyzedNote(analyzed, lo) {
+    return ` · ${(analyzed[lo] || 0).toLocaleString()} analyzed`;
+}
+
 function defaultBandOptionText(r) {
     if (!r.resolved) return 'No baseline available';
     const [lo, hi] = r.resolved.elo_band;
     const notes = [];
     if (r.resolved.widened) notes.push('widened');
     if (r.resolved.tc_fallback) notes.push(`all ${r.resolved.time_class || 'time controls'}`);
-    return `${lo}–${hi}  (${r.resolved.n_players.toLocaleString()} players)`
+    const analyzed = hi - lo === 99 ? analyzedNote(analyzedByBand(r), lo) : '';
+    return `${lo}–${hi}  (${playersNote(r.resolved.n_players)}${analyzed})`
         + (notes.length ? `  ·  ${notes.join(', ')}` : '');
 }
 
@@ -171,6 +184,7 @@ async function loadBaselineBands(username) {
         const r = await fetchJSON(`/api/players/${username}/analytics/baseline-bands`
             + colorParams(queryColor(), currentOpeningFilter));
         const previous = selectedBaselineBand;
+        const analyzed = analyzedByBand(r);
 
         // The default entry stands in for the player's own band, so listing that
         // band again below would duplicate it. Only skip it when the resolver
@@ -183,34 +197,47 @@ async function loadBaselineBands(username) {
         const auto = document.createElement('option');
         auto.value = '';
         auto.textContent = defaultBandOptionText(r);
-        sel.appendChild(auto);
+        // The default sits in its own band's place, so the list keeps its
+        // order. Only a widened or class-level default, which matches no one
+        // band, goes on top.
+        if (coveredByDefault === null) sel.appendChild(auto);
 
-        // Descending: the strongest bands sit nearest the default entry, which
-        // is where a player looking to compare upward will reach first.
+        // Descending, strongest first.
         for (const b of [...r.bands].reverse()) {
-            if (b.elo_lo === coveredByDefault) continue;
+            if (b.elo_lo === coveredByDefault) { sel.appendChild(auto); continue; }
             const opt = document.createElement('option');
             opt.value = b.elo_lo;
             if (b.eligible) {
-                opt.textContent = `${b.elo_lo}–${b.elo_hi}  (${b.n_players.toLocaleString()} players)`;
+                opt.textContent = `${b.elo_lo}–${b.elo_hi}  (${playersNote(b.n_players)}`
+                    + `${analyzedNote(analyzed, b.elo_lo)})`;
             } else {
-                // A gap inside the ladder. Shown, but unselectable — the range
-                // exists, we just don't have enough of it to draw a line from.
-                opt.disabled = true;
+                // Too thin to draw a baseline from, but selectable: picking it
+                // is how a press of Analyze reaches it, and the overlays say
+                // when a band is too thin rather than drawing nothing.
                 opt.textContent = `${b.elo_lo}–${b.elo_hi}  `
                     + (b.n_games
-                        ? `(${b.n_players.toLocaleString()} players · too few)`
-                        : '(no data)');
+                        ? `(${playersNote(b.n_players)} · too few`
+                        : '(no data')
+                    + `${analyzedNote(analyzed, b.elo_lo)})`;
             }
             sel.appendChild(opt);
         }
+
+        // A default band outside the ladder (an elite player's 2800+) has no
+        // place in it, so it goes on top.
+        if (!auto.parentNode) sel.insertBefore(auto, sel.firstChild);
 
         // Last: it is the fallback for when sample size matters more than a
         // like-for-like comparison, not a band anyone scans the list for.
         if (r.all_players && r.all_players.n_players) {
             const all = document.createElement('option');
             all.value = 'all';
-            all.textContent = `All players  (${r.all_players.n_players.toLocaleString()} players)`;
+            // What "All players" pools: only ratings the engine can judge.
+            const total = Object.entries(analyzed)
+                .filter(([lo]) => Number(lo) <= ENGINE_RELIABLE_ELO_MAX)
+                .reduce((a, [, n]) => a + n, 0);
+            all.textContent = `All players  (${playersNote(r.all_players.n_players)}`
+                + ` · ${total.toLocaleString()} analyzed)`;
             sel.appendChild(all);
         }
         // Selection is sticky across filter changes, even if the band just
@@ -226,6 +253,16 @@ async function loadBaselineBands(username) {
     } catch (e) {
         console.warn('Baseline bands unavailable:', e);
     }
+}
+
+/** Rebuild the Compare To list so its analyzed counts include a job that just
+ *  finished. Not on every poll: rebuilding the options closes the menu if
+ *  it is open. */
+function refreshBandCounts(username) {
+    for (const k of Object.keys(requestCache)) {
+        if (k.includes('/baseline-bands')) delete requestCache[k];
+    }
+    loadBaselineBands(username);
 }
 
 /** Redraw only what the baseline affects. refreshAll() would also refetch
@@ -244,13 +281,14 @@ async function refreshBaselineOverlays() {
 async function onBaselineBandChange() {
     selectedBaselineBand = document.getElementById('baseline-band').value;
     loadMoveQuality(currentUsername);
+    loadScorecard(currentUsername);
     await refreshBaselineOverlays();
 }
 
 async function toggleBaseline() {
     baselineEnabled = !baselineEnabled;
-    // Inverted on purpose: lit means "press to bring the average back".
-    document.getElementById('baseline-toggle').classList.toggle('active', !baselineEnabled);
+    // Lit while the overlay is showing.
+    document.getElementById('baseline-toggle').classList.toggle('active', baselineEnabled);
     await refreshBaselineOverlays();
 }
 
@@ -267,9 +305,21 @@ function getEndDate() { return document.getElementById('end-date').value || ''; 
  *  date, so without this a game finished after local evening lands on the next
  *  day and disappears from a range ending "today". */
 const VIEWER_TZ = (() => {
-    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
+    try {
+        const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+        // Privacy-hardened browsers report UTC whatever the real zone. Sending
+        // nothing lets the server fall back to the app's zone (US Eastern)
+        // rather than dating evening games tomorrow.
+        return /^(UTC|GMT|Etc\/.*)$/.test(zone) ? '' : zone;
+    }
     catch { return ''; }
 })();
+
+/** Today's YYYY-MM-DD in the zone the server will use for this viewer. */
+function viewerToday() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: VIEWER_TZ || 'America/New_York' })
+        .format(new Date());
+}
 
 function buildFilterParams() {
     const parts = [];
@@ -329,9 +379,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const localDate = (d) => `${d.getFullYear()}-`
         + `${String(d.getMonth() + 1).padStart(2, '0')}-`
         + `${String(d.getDate()).padStart(2, '0')}`;
-    const now = new Date();
-    const today = localDate(now);
-    const monthAgo = new Date(now);
+    const today = viewerToday();
+    const monthAgo = new Date(`${today}T12:00:00`);
     monthAgo.setMonth(monthAgo.getMonth() - 1);
     const startDefault = localDate(monthAgo);
     document.getElementById('start-date').value = startDefault;
@@ -593,6 +642,7 @@ async function refreshAll() {
         loadGames(currentUsername),
         initRepertoireTabs(currentUsername),
         loadMoveQuality(currentUsername),
+        loadScorecard(currentUsername),
     ];
     if (compareMode && currentCompareUsername) {
         promises.push(loadCompareStats(currentCompareUsername));
@@ -1176,16 +1226,18 @@ function renderOpeningTables() {
         // Sort before slicing, so the preview shows the top rows by whatever
         // the user sorted on rather than the top rows by games, re-ordered.
         const sorted = sortOpenings(openings);
-        const shown = openingsExpanded ? sorted : sorted.slice(0, OPENINGS_PREVIEW_COUNT);
+        const expanded = openingsExpanded || OPENINGS_FILL_CARD;
+        const shown = expanded ? sorted : sorted.slice(0, OPENINGS_PREVIEW_COUNT);
 
         // A player can have hundreds of opening families, so the expanded list
         // scrolls in its own box rather than pushing the dashboard down. The
         // toggle sits outside that box: inside it, collapsing would mean
         // scrolling past every row to reach the button.
-        let html = `<div class="openings-box${openingsExpanded ? ' openings-scroll' : ''}">`
+        const boxClass = OPENINGS_FILL_CARD ? ' openings-fill' : expanded ? ' openings-scroll' : '';
+        let html = `<div class="openings-box${boxClass}">`
                  + buildOpeningTable(shown, showColorPip, summaryRows)
                  + `</div>`;
-        if (openings.length > OPENINGS_PREVIEW_COUNT) {
+        if (!OPENINGS_FILL_CARD && openings.length > OPENINGS_PREVIEW_COUNT) {
             const label = openingsExpanded ? 'Show fewer' : `Show all ${openings.length}`;
             const hint = openingsExpanded
                 ? `Collapse back to the top ${OPENINGS_PREVIEW_COUNT}`
@@ -1282,6 +1334,7 @@ function applyOpeningFilter(op, filterColor = currentOpeningFilterColor) {
     loadColorAnalytics(currentUsername, currentOpeningColor, op, currentOpeningFilterColor);
     loadGames(currentUsername);
     loadMoveQuality(currentUsername);
+    loadScorecard(currentUsername);
     if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
 }
 
@@ -1296,6 +1349,7 @@ function applyOpeningColor(color) {
     loadColorAnalytics(currentUsername, color, '', '');
     loadGames(currentUsername);
     loadMoveQuality(currentUsername);
+    loadScorecard(currentUsername);
     if (compareMode && currentCompareUsername) loadGames(currentCompareUsername, '-compare');
 }
 
@@ -1984,72 +2038,77 @@ async function loadMoveTime(username, color, op, loadId, suffix = '') {
         if (charts[moveKey]) charts[moveKey].destroy();
 
         // ── Distribution histogram ──
-        const distDatasets = [{
-            label: 'Moves',
-            data: data.buckets.map(b => b.count),
-            backgroundColor: 'rgba(111, 188, 216, 0.7)',
-            borderRadius: 4,
-        }];
-        if (baseline) {
-            distDatasets.push(baselineLineStyle({
-                type: 'line',
-                label: baselineLabel(baseline.meta),
-                data: baseline.data.buckets.map(b => b.pct),
-                yAxisID: 'yPct',
-            }));
-        }
-        charts[distKey] = new Chart(document.getElementById("move-time-dist-chart" + suffix).getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: data.buckets.map(b => b.label),
-                datasets: distDatasets,
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false, animation: false,
-                plugins: {
-                    legend: { display: !!baseline, position: 'top', labels: { boxWidth: 20, font: { size: 11 } } },
-                    tooltip: {
-                        callbacks: {
-                            label: (item) => {
-                                if (item.datasetIndex === 0) {
-                                    const b = data.buckets[item.dataIndex];
-                                    return `${b.count.toLocaleString()} moves (${b.pct}%)`;
+        // Removed from the page 2026-10-01 but kept: drawn only if its canvas
+        // is present, so restoring the markup brings it back.
+        const distCanvas = document.getElementById("move-time-dist-chart" + suffix);
+        if (distCanvas) {
+            const distDatasets = [{
+                label: 'Moves',
+                data: data.buckets.map(b => b.count),
+                backgroundColor: 'rgba(111, 188, 216, 0.7)',
+                borderRadius: 4,
+            }];
+            if (baseline) {
+                distDatasets.push(baselineLineStyle({
+                    type: 'line',
+                    label: baselineLabel(baseline.meta),
+                    data: baseline.data.buckets.map(b => b.pct),
+                    yAxisID: 'yPct',
+                }));
+            }
+            charts[distKey] = new Chart(distCanvas.getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: data.buckets.map(b => b.label),
+                    datasets: distDatasets,
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, animation: false,
+                    plugins: {
+                        legend: { display: !!baseline, position: 'top', labels: { boxWidth: 20, font: { size: 11 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: (item) => {
+                                    if (item.datasetIndex === 0) {
+                                        const b = data.buckets[item.dataIndex];
+                                        return `${b.count.toLocaleString()} moves (${b.pct}%)`;
+                                    }
+                                    return `${item.dataset.label}: ${item.formattedValue}% of moves`;
                                 }
-                                return `${item.dataset.label}: ${item.formattedValue}% of moves`;
                             }
                         }
-                    }
-                },
-                scales: {
-                    x: { grid: { display: false } },
-                    y: { grid: { color: 'rgba(42, 53, 72, 0.5)' }, title: { display: true, text: 'Moves', color: '#5a6a85' } },
-                    yPct: {
-                        display: !!baseline,
-                        position: 'right',
-                        grid: { display: false },
-                        title: { display: true, text: '% of moves', color: '#5a6a85' },
-                        ticks: { callback: v => v + '%' },
                     },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: { grid: { color: 'rgba(42, 53, 72, 0.5)' }, title: { display: true, text: 'Moves', color: '#5a6a85' } },
+                        yPct: {
+                            display: !!baseline,
+                            position: 'right',
+                            grid: { display: false },
+                            title: { display: true, text: '% of moves', color: '#5a6a85' },
+                            ticks: { callback: v => v + '%' },
+                        },
+                    }
                 }
-            }
-        });
+            });
 
-        document.getElementById("move-time-stats" + suffix).innerHTML = `
-            <div style="display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0;">
-                <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Mean</div>
-                    <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${data.mean}s</div>
+            document.getElementById("move-time-stats" + suffix).innerHTML = `
+                <div style="display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0;">
+                    <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Mean</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${data.mean}s</div>
+                    </div>
+                    <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Median</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${data.median}s</div>
+                    </div>
+                    <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
+                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Std Dev</div>
+                        <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">±${data.std_dev}s</div>
+                    </div>
                 </div>
-                <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Median</div>
-                    <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">${data.median}s</div>
-                </div>
-                <div style="padding: 0.6rem 0.75rem; border-left: 3px solid #475569;">
-                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.2rem;">Std Dev</div>
-                    <div style="font-size: 1.1rem; font-weight: 700; color: var(--text-primary);">±${data.std_dev}s</div>
-                </div>
-            </div>
-        `;
+            `;
+        }
 
 
         // ── Avg think time by move number ──

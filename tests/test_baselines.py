@@ -113,7 +113,7 @@ def test_dominant_time_control_is_the_modal_one(db):
     assert baselines.dominant_time_control(db, target.player_id, time_class="rapid") == "600"
 
 
-def test_available_bands_omits_bands_below_floor(db):
+def test_available_bands_flags_bands_below_floor(db):
     seed_band(db, 1500, n_players=300, games_each=2)  # viable
     seed_band(db, 1700, n_players=5, games_each=1)    # too thin
     target = make_player(db, "target")
@@ -122,12 +122,27 @@ def test_available_bands_omits_bands_below_floor(db):
     bands = baselines.available_bands(
         db, player_id=target.player_id, time_class="rapid", time_control="600")
 
-    los = [b["elo_lo"] for b in bands]
-    assert 1500 in los
-    assert 1700 not in los
+    eligible = {b["elo_lo"]: b["eligible"] for b in bands}
+    assert eligible[1500] and not eligible[1700]
     entry = next(b for b in bands if b["elo_lo"] == 1500)
     assert entry["elo_hi"] == 1599
     assert entry["n_players"] >= baselines.MIN_PLAYERS
+
+
+def test_the_ladder_always_spans_100_to_2799(db):
+    """Every band is listed, thin or empty, so any range can be picked and
+    pressed for analysis; the thin ones are flagged, not dropped. It stops
+    below 2800, where the engine can no longer judge the players."""
+    seed_band(db, 1500, n_players=300, games_each=2)
+    target = make_player(db, "target")
+    db.commit()
+
+    bands = baselines.available_bands(
+        db, player_id=target.player_id, time_class="rapid", time_control="600")
+
+    assert [b["elo_lo"] for b in bands] == list(range(100, 2800, 100))
+    assert bands[0]["elo_hi"] == 199 and bands[-1]["elo_hi"] == 2799
+    assert not bands[-1]["eligible"] and bands[-1]["n_games"] == 0
 
 
 def test_move_time_baseline_reflects_population_not_target(db):

@@ -880,6 +880,42 @@ body {
     overflow-y: auto;
 }
 
+/* The opening card beside the Scorecard: its height is the Scorecard's
+   (contain: size keeps the list from stretching the row), and the list fills
+   what is left under the header and scrolls. */
+#opening-stats-overview:not(.hidden) {
+    display: flex;
+    flex-direction: column;
+}
+
+#opening-stats-overview > .games-table-wrap,
+#opening-stats-overview > .games-table-wrap > div:not(.hidden) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.openings-fill {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+@media (min-width: 901px) {
+    #layer-2 #opening-stats-overview {
+        contain: size;
+    }
+}
+
+/* Stacked under the Scorecard there is no height to borrow. */
+@media (max-width: 900px) {
+    .openings-fill {
+        max-height: max(320px, 60vh);
+    }
+}
+
+.openings-fill .opening-stats-table th,
 .openings-scroll .opening-stats-table th {
     position: sticky;
     top: 0;
@@ -1221,11 +1257,28 @@ body {
     box-sizing: border-box;
 }
 
+/* Scorecard and Opening Overview, side by side like layer 1. Both are tall,
+   so the cards stretch to a common height. */
+#layer-2 {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2rem;
+    align-items: stretch;
+}
+
+@media (max-width: 900px) {
+    #layer-2 {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 body.compare-mode #layer-1 {
     display: block;
 }
 
-body.compare-mode #layer-1-right {
+/* The opening table is not compare-aware, so compare mode hides it wherever
+   it sits. */
+body.compare-mode #opening-stats-overview {
     display: none;
 }
 
@@ -1647,9 +1700,7 @@ body.compare-mode #stat-winrate     { order: 8; }
     cursor: pointer;
 }
 
-/* Highlighted when the overlay is OFF, because the button advertises what
-   pressing it will do rather than the state you are already in: blank while
-   the average is showing, lit when pressing it would bring the average back. */
+/* Lit while the overlay is showing, gray while it is off. */
 .baseline-toggle.active {
     color: var(--text-primary);
     border-color: rgba(148, 163, 184, 0.85);
@@ -1799,6 +1850,11 @@ body.compare-mode #stat-winrate     { order: 8; }
 
 /* ── Move quality: population ────────────────────────────── */
 
+/* Four cards in a half-width section: a fixed 2x2, never three and one. */
+#move-quality-section .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .mq-population {
     display: flex;
     align-items: center;
@@ -1820,8 +1876,302 @@ body.compare-mode #stat-winrate     { order: 8; }
     color: var(--accent-light);
 }
 
+/* Job progress beside Compare To, sized down to sit with the filter bar's
+   small buttons. */
+#band-analyze .mq-job {
+    font-size: 0.72rem;
+}
+
+/* Cancel beside a running job's progress, sized to the progress text. */
+.mq-cancel {
+    font-size: 0.72rem;
+    padding: 0.15rem 0.45rem;
+    margin-left: 0.35rem;
+}
+
+/* A range with nothing left to analyze: says so in place of the button. */
+#band-analyze .mq-exhausted {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    cursor: help;
+}
+
+/* The analyze button is an action, not a toggle, so it always wears the
+   overlay's lit look. */
+#band-analyze .baseline-toggle {
+    color: var(--text-primary);
+    border-color: rgba(148, 163, 184, 0.85);
+}
+
 .mq-jobs {
     margin-bottom: 0.75rem;
     font-size: 0.75rem;
     color: var(--text-secondary, #8b9ab8);
+}
+
+/* ── Scorecard ─────────────────────────────────────────── */
+
+.sc-warning {
+    display: inline-block;
+    margin-left: 0.35rem;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    line-height: 1.1rem;
+    text-align: center;
+    vertical-align: middle;
+    color: var(--text-muted);
+    border: 1px solid var(--border-light);
+}
+
+.sc-radar {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto 1rem;
+}
+
+/* Header labels may wrap in the narrower column; cells stay on one line. */
+.sc-table th {
+    white-space: normal;
+    vertical-align: bottom;
+}
+
+
+.sc-labels {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.sc-spoke {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    font-size: 11px;
+    line-height: 1.25;
+    color: var(--text-secondary);
+    text-align: center;
+    white-space: nowrap;
+}
+
+.sc-spoke-sub {
+    color: var(--text-muted);
+}
+
+.sc-info {
+    position: relative;
+    display: inline-block;
+    margin-left: 0.3em;
+    width: 1.15em;
+    height: 1.15em;
+    border-radius: 50%;
+    border: 1px solid var(--border-light);
+    color: var(--text-muted);
+    font-size: 0.8em;
+    line-height: 1.05em;
+    font-style: italic;
+    text-align: center;
+    pointer-events: auto;
+}
+
+.sc-info:hover,
+.sc-info:focus {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+    outline: none;
+}
+
+.sc-tip {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    width: 220px;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-style: normal;
+    line-height: 1.4;
+    text-align: left;
+    white-space: normal;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* Open toward the middle of the chart, so side spokes stay on the page. */
+.sc-spoke[data-side="left"] .sc-tip {
+    left: 0;
+    transform: none;
+}
+
+.sc-spoke[data-side="right"] .sc-tip {
+    left: auto;
+    right: 0;
+    transform: none;
+}
+
+.sc-info:hover .sc-tip,
+.sc-info:focus .sc-tip {
+    display: block;
+}
+
+/* Each name is its own stacking context (it is transformed), so an open
+   tooltip would sit under the names drawn after it; lift the active one. */
+.sc-spoke:hover,
+.sc-spoke:focus-within {
+    z-index: 30;
+}
+
+.sc-info-head {
+    font-size: 0.85em;
+    vertical-align: middle;
+}
+
+/* A section title's icon: sized to the heading, tooltip opening rightward
+   since titles sit at the section's left edge. */
+.sc-info-title {
+    font-size: 0.55em;
+    font-weight: 400;
+    vertical-align: middle;
+}
+
+.sc-info-title .sc-tip {
+    left: 0;
+    transform: none;
+    width: 280px;
+    font-size: 0.85rem;
+}
+
+/* The header sits toward the table's right edge, inside a scroll box that
+   would clip a centred tooltip, so this one opens leftward. */
+.sc-info-head .sc-tip {
+    left: auto;
+    right: 0;
+    transform: none;
+    font-weight: 400;
+}
+
+.sc-table-wrap {
+    overflow-x: auto;
+}
+
+.sc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.sc-table th,
+.sc-table td {
+    padding: 0.4rem 0.35rem;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.sc-table th {
+    font-weight: 500;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.sc-range-head {
+    text-align: center !important;
+}
+
+.sc-label {
+    color: var(--text-primary);
+}
+
+.sc-muted {
+    color: var(--text-muted);
+}
+
+.sc-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.sc-range {
+    width: 30%;
+    min-width: 90px;
+}
+
+/* Names may wrap ("Advantage capitalization"), so the half-width section can
+   hold the table. */
+.sc-table td.sc-label {
+    white-space: normal;
+    min-width: 6.5rem;
+}
+
+.sc-bar {
+    position: relative;
+}
+
+.sc-bar:focus {
+    outline: none;
+}
+
+.sc-track {
+    position: relative;
+    height: 14px;
+}
+
+/* To the bar's left, vertically centred: above or below would be clipped by
+   the table's scroll box on the first and last rows. */
+.sc-bar .sc-bar-tip {
+    top: 50%;
+    left: auto;
+    right: calc(100% + 8px);
+    transform: translateY(-50%);
+    width: auto;
+    white-space: nowrap;
+}
+
+.sc-bar:hover .sc-bar-tip,
+.sc-bar:focus .sc-bar-tip {
+    display: block;
+}
+
+/* Lower-is-better rows are mirrored so "better" is always to the right. */
+.sc-flip .sc-track {
+    transform: scaleX(-1);
+}
+
+.sc-zero {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    border-left: 1px dashed var(--border-light);
+}
+
+.sc-whisker {
+    position: absolute;
+    top: 6px;
+    height: 2px;
+    background: currentColor;
+}
+
+.sc-dot {
+    position: absolute;
+    top: 3px;
+    width: 8px;
+    height: 8px;
+    margin-left: -4px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.sc-real { color: var(--text-primary); }
+.sc-noise { color: var(--text-muted); }
+
+@media (max-width: 700px) {
+    .sc-table { font-size: 0.75rem; }
+    .sc-table td:nth-child(5) .sc-muted { display: none; }
 }
