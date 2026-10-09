@@ -10,6 +10,12 @@ from app.main import app
 from app.models import Move
 from engine import db as engine_db
 from engine.scorecard import DIMENSIONS
+from engine.views import (
+    GAME_MOVE_QUALITY_VIEW,
+    MOVE_EVALS_VIEW,
+    MOVE_QUALITY_VIEW,
+    MOVE_SEVERITY_VIEW,
+)
 from tests.conftest import build_sidecar, make_game, make_player, seed_evals
 
 POSITION_PV_DDL = """
@@ -38,7 +44,10 @@ def client(db):
 
 @pytest.fixture
 def sidecar():
-    eng = build_sidecar(url=engine_db.ENGINE_DATABASE_URL)
+    eng = build_sidecar(
+        MOVE_EVALS_VIEW, MOVE_SEVERITY_VIEW, MOVE_QUALITY_VIEW, GAME_MOVE_QUALITY_VIEW,
+        url=engine_db.ENGINE_DATABASE_URL,
+    )
     with eng.begin() as conn:
         conn.execute(text(POSITION_PV_DDL))
     yield eng
@@ -150,3 +159,71 @@ def test_all_players_compares_at_your_average(client, db, sidecar):
     body = client.get("/api/players/me/analytics/scorecard?elo_band=all").json()
     assert body["compare_rating"] == 1900
     assert body["compare_band"] is None
+
+
+# White gives back Black's blunder at ply 3: Black handed over 400cp at ply 2,
+# and White's reply returns exactly that. Move Quality calls it a Miss, not a
+# blunder; the Scorecard must count it the same way.
+GIFT_RETURNED = [(0, 0), (1, 0), (2, 400), (3, 0), (4, 0)]
+SANS4 = ["e4", "e5", "Nf3", "Nc6"]
+
+
+def test_blunders_are_counted_as_move_quality_counts_them(client, db, sidecar):
+    me, them = make_player(db, "me"), make_player(db, "them")
+    g = legal_game(db, me, them, SANS4, result="1/2-1/2")
+    seed_evals(sidecar, GIFT_RETURNED, game_id=g.game_id)
+
+    mq = client.get("/api/players/me/analytics/move-quality").json()["totals"]
+    assert (mq["blunders"], mq["misses"], mq["moves_scored"]) == (0, 1, 2)
+    rows = {r["key"]: r for r in
+            client.get("/api/players/me/analytics/scorecard").json()["rows"]}
+    assert rows["blunders"]["you"] == mq["blunders"] / mq["moves_scored"]
+
+
+def other_players_games(db, sidecar, ratings=(1500, 1900, 2300), per_rating=6):
+    """Pairs of strangers at each rating; White blunders at ply 1 every time,
+    so every rating's players blunder on one move in four."""
+    n = 0
+    for elo in ratings:
+        for _ in range(per_rating):
+            n += 1
+            w, b = make_player(db, f"w{n}"), make_player(db, f"b{n}")
+            g = legal_game(db, w, b, SANS4)
+            g.white_elo = g.black_elo = elo
+            db.commit()
+            seed_evals(sidecar, [(0, 0), (1, -310), (2, -310), (3, -310), (4, -310)],
+                       game_id=g.game_id)
+
+
+def test_move_quality_reads_the_players_line_at_the_scorecards_rating(db, sidecar):
+    me, them = make_player(db, "me"), make_player(db, "them")
+    g = legal_game(db, me, them, SANS4)
+    seed_evals(sidecar, GIFT_RETURNED, game_id=g.game_id)
+    other_players_games(db, sidecar)
+
+    line = scorecard_module.players_move_quality(db, me.player_id, time_class="rapid")
+    assert line["rating"] == 1900
+    assert line["band"] == [1900, 1999]
+    assert line["rates"]["blunders"] == pytest.approx(0.25)
+    assert line["rates"]["misses"] == pytest.approx(0.0)
+    assert line["rates"]["inaccuracies"] == pytest.approx(0.0)
+
+
+def test_move_quality_reads_a_picked_band_at_its_lower_edge(db, sidecar):
+    me, them = make_player(db, "me"), make_player(db, "them")
+    g = legal_game(db, me, them, SANS4)
+    seed_evals(sidecar, GIFT_RETURNED, game_id=g.game_id)
+    other_players_games(db, sidecar)
+
+    line = scorecard_module.players_move_quality(
+        db, me.player_id, time_class="rapid", elo_band="2200")
+    assert line["rating"] == 2200
+
+
+def test_move_quality_has_no_line_without_other_players(db, sidecar):
+    me, them = make_player(db, "me"), make_player(db, "them")
+    g = legal_game(db, me, them, SANS4)
+    seed_evals(sidecar, GIFT_RETURNED, game_id=g.game_id)
+
+    line = scorecard_module.players_move_quality(db, me.player_id, time_class="rapid")
+    assert line["rates"] is None

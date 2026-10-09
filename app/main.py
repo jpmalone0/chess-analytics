@@ -540,7 +540,8 @@ def move_quality_baseline(
     db: Session = Depends(get_db),
     runner: JobRunner = Depends(get_population_runner),
 ):
-    """The pooled rate for the Compare-to band, plus what pressing would cost."""
+    """The Compare-to band's analyzed games and players line, plus what
+    pressing would cost."""
     player, band = _mq_band_or_404(
         db, username, elo_band, time_class, start_date, end_date,
         player_color, opening_names, tz)
@@ -548,6 +549,10 @@ def move_quality_baseline(
         return {"band": None}
     out = mq.band_move_quality(
         db, band, player.player_id, player_color, opening_names)
+    # The "players" figures: the Scorecard's lines, read where it reads them.
+    out["line"] = sc.players_move_quality(
+        db, player.player_id, band["time_class"], start_date, end_date,
+        player_color, opening_names, tz, elo_band)
     out["job"] = runner.active_job(band["time_class"], band["elo_lo"], band["elo_hi"])
     out["remaining_games"] = runner.remaining_band(
         band["time_class"], band["elo_lo"], band["elo_hi"], player.player_id)

@@ -74,6 +74,31 @@ def _load_inputs(db: Session, keys: list[tuple[int, int]]) -> dict[int, sc.GameI
     return out
 
 
+def _load_tiers(db: Session, keys: list[tuple[int, int]]
+                ) -> dict[int, dict[str, dict[str, int]]]:
+    """Move Quality's counts per side, from the same view that section reads,
+    so a blunder is one thing on both. A side with no scored moves is absent."""
+    if not keys:
+        return {}
+    ids = ",".join(str(g) for g, _ in keys)
+    run_of = dict(keys)
+    out: dict[int, dict[str, dict[str, int]]] = {g: {} for g, _ in keys}
+    for r in db.execute(text(
+            f"SELECT run_id, game_id, color, moves_scored, {', '.join(sc.TIERS)} "
+            f"FROM engine.game_move_quality WHERE game_id IN ({ids})")).mappings():
+        if run_of[r["game_id"]] == r["run_id"]:
+            out[r["game_id"]][r["color"]] = {
+                k: int(r[k] or 0) for k in ("moves_scored", *sc.TIERS)}
+    return out
+
+
+def _with_tiers(side: sc.SideFacts, counts: dict[str, int]) -> sc.SideFacts:
+    return side._replace(
+        moves_scored=counts.get("moves_scored", 0),
+        inaccuracies=counts.get("inaccuracies", 0), mistakes=counts.get("mistakes", 0),
+        blunders=counts.get("blunders", 0), misses=counts.get("misses", 0))
+
+
 def _facts(db: Session, rows: Sequence[Any], curves: dict[str, float]
            ) -> dict[int, Optional[dict[str, sc.SideFacts]]]:
     """Per-game facts for rows carrying game_id, run_id and time_class."""
@@ -81,12 +106,17 @@ def _facts(db: Session, rows: Sequence[Any], curves: dict[str, float]
             if r.time_class in curves
             and (r.game_id, r.run_id, curves[r.time_class]) not in _FACTS]
     inputs = _load_inputs(db, todo)
+    tiers = _load_tiers(db, todo)
     for r in rows:
         if r.game_id not in inputs:
             continue
         k = curves[r.time_class]
         try:
-            _FACTS[(r.game_id, r.run_id, k)] = sc.game_sides(inputs[r.game_id], k)
+            sides = sc.game_sides(inputs[r.game_id], k)
+            counts = tiers.get(r.game_id, {})
+            _FACTS[(r.game_id, r.run_id, k)] = {
+                color: _with_tiers(side, counts.get(color, {}))
+                for color, side in sides.items()}
         except ValueError:
             # A move list that does not replay (a corrupt import, a variant
             # that slipped the filter) is skipped rather than failing the page.
@@ -135,32 +165,25 @@ def _calibration(db: Session, time_class: str, exclude_player_id: int,
            in sc.cap_per_player(sc.within_engine_range(sides))]
     norms = sc.phase_norms([side for _, side in obs])
     fits = {}
-    for dim in sc.DIMENSIONS:
+    # The Scorecard's rows, and Move Quality's categories for that section.
+    for key in dict.fromkeys([d.key for d in sc.DIMENSIONS] + list(sc.TIERS)):
         xs, ys, ws = [], [], []
         for elo, side in obs:
-            num, den = sc.calibration_counts(dim.key, side, norms)
+            num, den = sc.calibration_counts(key, side, norms)
             if den > 0:
                 xs.append(elo)
                 ys.append(num / den)
                 ws.append(den)
-        fits[dim.key] = sc.fit_band(xs, ys, ws)
+        fits[key] = sc.fit_band(xs, ys, ws)
     return fits, norms
 
 
-def player_scorecard(
-    db: Session,
-    player_id: int,
-    time_class: Optional[str] = None,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
-    player_color: Optional[str] = None,
-    opening_names: Optional[str] = None,
-    tz: Optional[str] = None,
-    elo_band: Optional[str] = None,
-) -> dict[str, Any]:
-    """`elo_band` is the Compare-to selection, a band's lower edge. Bands, the
-    player's own included, read the lines at that edge; "all" reads them at
-    the player's average."""
+def _window(db: Session, player_id: int, time_class: Optional[str],
+            start_date: Optional[date], end_date: Optional[date],
+            player_color: Optional[str], opening_names: Optional[str],
+            tz: Optional[str]):
+    """The player's analyzed games in the filter window: the rows used, their
+    sides, the time class shown, and the fitted curves."""
     attach_engine_db(db.connection())
     where, params = crud._build_game_filters(
         player_id=player_id, time_class=time_class,
@@ -186,28 +209,81 @@ def player_scorecard(
             continue
         sides.append(f[r.color])
         used.append(r)
-
     tc = time_class or (Counter(r.time_class for r in used).most_common(1)[0][0]
                         if used else None)
+    return used, sides, tc, curves
+
+
+def _avg(xs) -> Optional[int]:
+    xs = [x for x in xs if x]
+    return round(sum(xs) / len(xs)) if xs else None
+
+
+def _compare_point(rating: Optional[int], elo_band: Optional[str]
+                   ) -> tuple[Optional[int], str, Optional[int]]:
+    """Where the players line is read: (band lower edge, source, rating).
+
+    For a band, picked or your own, at its lower edge, the round number the
+    outline is drawn at. "All players" has no band and reads it at your exact
+    average."""
+    if elo_band is not None and elo_band.isdigit():
+        return int(elo_band), "selected", int(elo_band)
+    if elo_band == "all" or rating is None:
+        return None, "average", rating
+    lo = rating // 100 * 100
+    return lo, "own_band", lo
+
+
+def players_move_quality(
+    db: Session,
+    player_id: int,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    tz: Optional[str] = None,
+    elo_band: Optional[str] = None,
+) -> dict[str, Any]:
+    """Move Quality's "players" figures: each category's players line, per
+    move, read at the rating the Scorecard reads its lines at. `rates` is None
+    until enough other players' games stand behind every line."""
+    used, _, tc, curves = _window(db, player_id, time_class, start_date, end_date,
+                                  player_color, opening_names, tz)
+    band_lo, source, at = _compare_point(_avg(r.own_elo for r in used), elo_band)
+    fits = _calibration(db, tc, player_id, curves)[0] if tc in curves else {}
+    lines = [fits.get(k) for k in sc.TIERS]
+    rates = None
+    if at is not None and all(lines):
+        rates = {k: max(0.0, f.at(at)) for k, f in zip(sc.TIERS, lines, strict=True) if f}
+    return {
+        "rating": at,
+        "source": source,
+        "band": [band_lo, band_lo + 99] if band_lo is not None else None,
+        "rates": rates,
+        "band_games": max((f.n for f in lines if f), default=0),
+    }
+
+
+def player_scorecard(
+    db: Session,
+    player_id: int,
+    time_class: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    player_color: Optional[str] = None,
+    opening_names: Optional[str] = None,
+    tz: Optional[str] = None,
+    elo_band: Optional[str] = None,
+) -> dict[str, Any]:
+    """`elo_band` is the Compare-to selection, a band's lower edge. Bands, the
+    player's own included, read the lines at that edge; "all" reads them at
+    the player's average."""
+    used, sides, tc, curves = _window(db, player_id, time_class, start_date, end_date,
+                                      player_color, opening_names, tz)
     fits, norms = _calibration(db, tc, player_id, curves) if tc in curves else ({}, {})
-
-    def avg(xs):
-        xs = [x for x in xs if x]
-        return round(sum(xs) / len(xs)) if xs else None
-
-    rating = avg(r.own_elo for r in used)
-    selected = elo_band is not None and elo_band.isdigit()
-    # The players line is fitted on every rating and read at one: for a band,
-    # picked or your own, at its lower edge, the round number the outline is
-    # drawn at. "All players" has no band and reads it at your exact average.
-    if selected and elo_band:
-        band_lo: Optional[int] = int(elo_band)
-        source = "selected"
-    elif elo_band == "all" or rating is None:
-        band_lo, source = None, "average"
-    else:
-        band_lo, source = rating // 100 * 100, "own_band"
-    compare_rating = band_lo if band_lo is not None else rating
+    rating = _avg(r.own_elo for r in used)
+    band_lo, source, compare_rating = _compare_point(rating, elo_band)
     out_rows = (sc.compare_to_band(sides, fits, compare_rating, norms) if compare_rating
                 else sc.compare_to_band(sides, {}, 0))
 
@@ -221,7 +297,7 @@ def player_scorecard(
         "compare_rating": compare_rating,
         "compare_source": source,
         "compare_band": [band_lo, band_lo + 99] if band_lo is not None else None,
-        "opp_avg_elo": avg(r.opp_elo for r in used),
+        "opp_avg_elo": _avg(r.opp_elo for r in used),
         # Side-games behind the band lines: other players' games only.
         "band_games": max((f.n for f in fits.values() if f), default=0),
         "rows": out_rows,

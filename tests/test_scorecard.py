@@ -137,13 +137,13 @@ class TestTactics:
     def test_found(self):
         g = game(self.SANS, [(0, None), (0, None), (400, None), (400, None)], pvs=self.CHANCE)
         white = game_sides(g, K, division=Division(0, None))["white"]
-        assert (white.chances, white.found, white.blunders) == (1, 1, 0)
+        assert (white.chances, white.found) == (1, 1)
 
-    def test_missed_is_not_also_a_blunder(self):
+    def test_missed(self):
         g = game(["e4", "d5", "Nc3"], [(0, None), (0, None), (400, None), (0, None)],
                  pvs=self.CHANCE)
         white = game_sides(g, K, division=Division(0, None))["white"]
-        assert (white.chances, white.found, white.blunders) == (1, 0, 0)
+        assert (white.chances, white.found) == (1, 0)
 
     def test_small_gap_is_not_a_chance(self):
         pvs = {2: [("e4d5", 100, None), ("b1c3", 60, None)]}
@@ -161,11 +161,13 @@ class TestTactics:
         white = game_sides(game(sans, evals, pvs=pvs), K, division=Division(0, None))["white"]
         assert white.chances == 0
 
-    def test_blunder_from_a_quiet_position(self):
+    def test_blunders_are_left_to_move_quality(self):
+        """Blunders have one definition, engine.views' move_quality, which the
+        loader reads; game_sides does not count its own."""
         pvs = {2: [("b1c3", 0, None), ("g1f3", -10, None)]}
         g = game(self.SANS, [(0, None), (0, None), (0, None), (-400, None)], pvs=pvs)
         white = game_sides(g, K, division=Division(0, None))["white"]
-        assert (white.chances, white.blunders) == (0, 1)
+        assert (white.chances, white.blunders) == (0, 0)
 
 
 def line(slope=0.001, noise=0.05, n=200):
@@ -210,7 +212,7 @@ class TestBandLine:
 class TestCompareToBand:
     @staticmethod
     def side(blunders, moves=10):
-        return SideFacts(blunders=blunders, opening_moves=moves)
+        return SideFacts(blunders=blunders, moves_scored=moves)
 
     @staticmethod
     def flat_band(value):
@@ -261,8 +263,13 @@ class TestCalibrationUnits:
         assert calibration_counts("middlegame", s) == (-0.3, 30)
 
     def test_blunders_calibrate_per_move(self):
-        s = SideFacts(blunders=2, opening_moves=10, middlegame_moves=20, endgame_moves=10)
+        s = SideFacts(blunders=2, moves_scored=40)
         assert calibration_counts("blunders", s) == (2, 40)
+
+    def test_every_tier_calibrates_per_scored_move(self):
+        s = SideFacts(inaccuracies=3, mistakes=2, misses=1, moves_scored=40)
+        assert [calibration_counts(k, s) for k in ("inaccuracies", "mistakes", "misses")] \
+            == [(3, 40), (2, 40), (1, 40)]
 
     def test_rates_calibrate_as_they_are_shown(self):
         s = SideFacts(found=3, chances=4)
@@ -317,7 +324,7 @@ class TestEloRange:
         xs = [600 + 200 * (i % 8) for i in range(200)]
         ys = [0.0001 * x + (0.01 if (i // 8) % 2 else -0.01) for i, x in enumerate(xs)]
         fit = fit_band(xs, ys, [10] * 200)
-        sides = [SideFacts(blunders=1 + i % 2, opening_moves=10) for i in range(60)]
+        sides = [SideFacts(blunders=1 + i % 2, moves_scored=10) for i in range(60)]
         row = {r["key"]: r for r in compare_to_band(sides, {"blunders": fit}, 1500)}["blunders"]
         assert row["elo_lo"] < row["elo"] < row["elo_hi"]
 

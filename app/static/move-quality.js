@@ -57,10 +57,11 @@ async function loadMoveQuality(username) {
     label.textContent =
         `${t.games_analyzed} analyzed games, ${t.moves_scored.toLocaleString()} scored moves`;
 
-    // Players: the Compare-to band's analyzed games. Shown whenever it
-    // has any analyzed moves; its size is on the line above the cards, so a
-    // thin band reads as one.
-    const bandRate = base && base.totals && base.totals.moves_scored ? base.totals : null;
+    // Players: the Scorecard's players line for each category, read at the
+    // same rating as the Scorecard (a band's lower edge, or your average on
+    // "All players"), so the two sections never disagree about a 1900 player.
+    const line = base && base.line && base.line.rates ? base.line : null;
+    const at = line ? (line.band ? `${line.rating}` : `${line.rating} avg`) : '';
     // Compared per 100 moves, not per game: the two seats of a game can play
     // a different number of moves, and per game would fold that in.
     document.getElementById('mq-totals').innerHTML = MQ_TIERS.map((k) => `
@@ -68,7 +69,7 @@ async function loadMoveQuality(username) {
             <div class="stat-label">${k[0].toUpperCase() + k.slice(1)}</div>
             <div class="stat-value">${(t[k] / t.games_analyzed).toFixed(2)}</div>
             <div class="stat-sub">per game · ${mqPct(t[k], t.moves_scored)} of moves</div>
-            ${bandRate ? `<div class="stat-sub mq-mirror">players ${mqPct(bandRate[k], bandRate.moves_scored)} of moves</div>` : ''}
+            ${line ? `<div class="stat-sub mq-mirror">players at ${at}: ${(100 * line.rates[k]).toFixed(1)}% of moves</div>` : ''}
         </div>`).join('');
 }
 
@@ -88,9 +89,15 @@ function renderMqPopulation(base) {
     if (!base || !base.band) { el.innerHTML = ''; slot.innerHTML = ''; return; }
     const b = base.band, t = base.totals, job = base.job;
 
-    const have = t.n_games
-        ? `${t.n_games.toLocaleString()} analyzed games from ${t.n_players.toLocaleString()} players`
-        : 'no analyzed games yet';
+    // The players figures come from a line fitted over every rating, so its
+    // game count is what they rest on; the band's own count is for the button.
+    const line = base.line;
+    const have = line && line.rates
+        ? `players line from ${line.band_games.toLocaleString()} analyzed games at every rating`
+            + ` · ${t.n_games.toLocaleString()} in ${b.elo_lo}–${b.elo_hi}`
+        : t.n_games
+            ? `${t.n_games.toLocaleString()} analyzed games in ${b.elo_lo}–${b.elo_hi}, too few for a players line`
+            : 'no analyzed games yet';
     const notes = [];
     if (!base.curve_fitted) notes.push(`no ${b.time_class} curve is fitted yet, so these games will not be graded until one is`);
 

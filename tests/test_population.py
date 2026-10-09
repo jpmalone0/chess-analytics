@@ -18,7 +18,7 @@ from app.database import get_db
 from app.main import app, get_population_runner
 from engine import db as engine_db
 from engine.analyze import Summary
-from engine.models import PopulationJob
+from engine.models import PopulationJob, PositionPV
 from engine.population import (
     POPULATION_PER_PLAYER_CAP,
     JobRunner,
@@ -44,6 +44,9 @@ def sidecar():
         url=engine_db.ENGINE_DATABASE_URL,
     )
     PopulationJob.__table__.create(bind=eng)
+    # The baseline reads the Scorecard's players line, which replays games
+    # with their engine lines.
+    PositionPV.__table__.create(bind=eng)
     yield eng
     eng.dispose()
 

@@ -21,7 +21,6 @@ import chess
 import numpy as np
 
 from engine.views import (
-    BLUNDER_WP,
     ENGINE_RELIABLE_ELO_MAX,
     EVAL_CLAMP_CP,
     MATE_CP,
@@ -161,7 +160,14 @@ class SideFacts(NamedTuple):
     saved: bool = False
     chances: int = 0
     found: int = 0
+    # Move Quality's tier counts and the moves they are out of. They have one
+    # definition, engine.views' move_quality, so game_sides leaves them at zero
+    # and the loader fills them from that view.
+    moves_scored: int = 0
+    inaccuracies: int = 0
+    mistakes: int = 0
     blunders: int = 0
+    misses: int = 0
     opening_moves: int = 0
     middlegame_moves: int = 0
     endgame_moves: int = 0
@@ -283,7 +289,7 @@ def game_sides(game: GameInput, k: float,
 
     acc: dict[str, dict] = {
         c: {"opening": 0.0, "middlegame": 0.0, "endgame": 0.0,
-            "reached": False, "fell": False, "chances": 0, "found": 0, "blunders": 0,
+            "reached": False, "fell": False, "chances": 0, "found": 0,
             "opening_moves": 0, "middlegame_moves": 0, "endgame_moves": 0,
             **{p + "_states": [0] * 5 for p in ("opening", "middlegame", "endgame")},
             **{p + "_state_change": [0.0] * 5 for p in ("opening", "middlegame", "endgame")}}
@@ -323,8 +329,6 @@ def game_sides(game: GameInput, k: float,
             side["chances"] += 1
             if loss <= TACTIC_FOUND_WP:
                 side["found"] += 1
-        elif loss >= BLUNDER_WP:
-            side["blunders"] += 1
 
     clock = _clock_counts(game)
     out = {}
@@ -337,15 +341,18 @@ def game_sides(game: GameInput, k: float,
             endgame=side["endgame"],
             reached=side["reached"], won=won and side["reached"],
             fell=side["fell"], saved=(won or drew) and side["fell"],
-            chances=side["chances"], found=side["found"], blunders=side["blunders"],
+            chances=side["chances"], found=side["found"],
             opening_moves=side["opening_moves"],
             middlegame_moves=side["middlegame_moves"],
             endgame_moves=side["endgame_moves"],
             clock_ahead=clock[color][0], clock_even=clock[color][1],
             clock_behind=clock[color][2],
-            **{f"{p}_{f}": tuple(side[f"{p}_{f}"])
-               for p in ("opening", "middlegame", "endgame")
-               for f in ("states", "state_change")},
+            opening_states=tuple(side["opening_states"]),
+            middlegame_states=tuple(side["middlegame_states"]),
+            endgame_states=tuple(side["endgame_states"]),
+            opening_state_change=tuple(side["opening_state_change"]),
+            middlegame_state_change=tuple(side["middlegame_state_change"]),
+            endgame_state_change=tuple(side["endgame_state_change"]),
         )
     return out
 
@@ -391,8 +398,9 @@ DIMENSIONS = (
         "Share of tactical chances you took: a capture or check, not a plain "
         "recapture, that beat every other move by 10% or more.")),
     Dimension("blunders", "Blunders", "per_move", False, description=(
-        "Moves that lost 20% or more of your expected score, per 100 moves, "
-        "outside tactical chances.")),
+        "Moves that lost 20% or more of your expected score, per 100 moves. "
+        "Counted as Move Quality counts them: only giving back your "
+        "opponent's own error is a miss instead.")),
     # The 0-100 dimensions, grouped last so the wheel keeps them together.
     Dimension("advantage", "Advantage capitalization", "percent", True,
               has_elo=False, score="vs_band", description=(
@@ -430,6 +438,11 @@ def unit_counts(key: str, s: SideFacts) -> tuple[float, float]:
     if key == "blunders":
         return float(s.blunders), 1.0
     raise KeyError(key)
+
+
+# Move Quality's four categories, in the order the section shows them. Each
+# also gets a players line, so the section can read it where the Scorecard does.
+TIERS = ("inaccuracies", "mistakes", "blunders", "misses")
 
 
 class Norm(NamedTuple):
@@ -480,8 +493,8 @@ def calibration_counts(key: str, s: SideFacts,
         # pool, whatever the mix of states.
         expected = sum(n * m for n, m in zip(getattr(s, key + "_states"), norm.means, strict=True))
         return getattr(s, key) - expected + moves * norm.overall, moves
-    if key == "blunders":
-        return float(s.blunders), float(s.opening_moves + s.middlegame_moves + s.endgame_moves)
+    if key in TIERS:
+        return float(getattr(s, key)), float(s.moves_scored)
     return unit_counts(key, s)
 
 
