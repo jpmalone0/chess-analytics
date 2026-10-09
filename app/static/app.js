@@ -305,9 +305,21 @@ function getEndDate() { return document.getElementById('end-date').value || ''; 
  *  date, so without this a game finished after local evening lands on the next
  *  day and disappears from a range ending "today". */
 const VIEWER_TZ = (() => {
-    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
+    try {
+        const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+        // Privacy-hardened browsers report UTC whatever the real zone. Sending
+        // nothing lets the server fall back to the app's zone (US Eastern)
+        // rather than dating evening games tomorrow.
+        return /^(UTC|GMT|Etc\/.*)$/.test(zone) ? '' : zone;
+    }
     catch { return ''; }
 })();
+
+/** Today's YYYY-MM-DD in the zone the server will use for this viewer. */
+function viewerToday() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: VIEWER_TZ || 'America/New_York' })
+        .format(new Date());
+}
 
 function buildFilterParams() {
     const parts = [];
@@ -367,9 +379,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const localDate = (d) => `${d.getFullYear()}-`
         + `${String(d.getMonth() + 1).padStart(2, '0')}-`
         + `${String(d.getDate()).padStart(2, '0')}`;
-    const now = new Date();
-    const today = localDate(now);
-    const monthAgo = new Date(now);
+    const today = viewerToday();
+    const monthAgo = new Date(`${today}T12:00:00`);
     monthAgo.setMonth(monthAgo.getMonth() - 1);
     const startDefault = localDate(monthAgo);
     document.getElementById('start-date').value = startDefault;
